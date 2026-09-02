@@ -1,0 +1,12 @@
+# Generated from this template by scripts/configure-fs-uae.sh.
+[fs-uae]
+amiga_model = A1200
+chip_memory = 2048
+fast_memory = 0
+ntsc_mode = 0
+joystick_port_1 = none
+kickstart_file = @KICKSTART_ROM@
+hard_drive_0 = @AMIGAOS_SYSTEM@
+hard_drive_0_read_only = 1
+hard_drive_1 = @PROJECT_STAGING@
+hard_drive_1_label = MAGI80

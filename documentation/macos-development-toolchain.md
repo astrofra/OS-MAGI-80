@@ -1,6 +1,6 @@
 # MAGI-80 macOS Development Toolchain Plan
 
-**Document status:** Host bootstrap, AmigaPorts compiler, `amitools`, and `vamos` validated; FS-UAE profiles remain planned
+**Document status:** Host bootstrap, AmigaPorts compiler, `amitools`, `vamos`, and Kickstart 3.0 ROM/HD FS-UAE profiles validated; Kickstart 3.1 remains pending  
 **Host:** Apple Silicon Mac running macOS 14.1  
 **Target:** Stock PAL Amiga 1200, 68EC020, AGA, 2 MiB Chip RAM, no Fast RAM or FPU  
 **Related document:** [MAGI-80 Specification and Roadmap](./miga-80-specification-and-roadmap.md)
@@ -103,9 +103,9 @@ The isolated Python tooling was installed and smoke-tested on 2026-09-02:
 - `amitools` 0.8.1;
 - `machine68k` 0.3.0;
 - Python 3.13.15 inside the `pipx` environment;
-- working `xdftool`, `xdfscan`, `hunktool`, `rdbtool`, and `vamos` commands.
+- working `xdftool`, `xdfscan`, `hunktool`, `romtool`, `rdbtool`, and `vamos` commands.
 
-FS-UAE project profiles and licensed Workbench installations remain pending for their respective setup phases.
+The stock PAL A1200 FS-UAE profile has also been generated and launched with the local Kickstart 3.0/39.106 ROM. A local Workbench 3.0 HDF was validated with `xdfscan` and launched read-only as a development system. A valid stock Kickstart 3.1/40.068 ROM and Workbench 3.1 system are not currently available, so the 3.1 integration profiles remain pending.
 
 ## 4. Installation Layout
 
@@ -435,21 +435,33 @@ The resulting local layout is:
 
 ```text
 /Users/fra/Documents/Amiga/amiga-roms/
+/Users/fra/Documents/Amiga/Workbench V3.0 (1992)(Commodore).hdf
 /Users/fra/Documents/FS-UAE/Hard Drives/Workbench-3.0/
 /Users/fra/Documents/FS-UAE/Hard Drives/Workbench-3.1/
 ```
 
+The standalone Workbench 3.0 HDF is the current convenience system. It has a valid OFS structure and a Workbench 3.0 startup sequence, but it is an old customized image with little free space, not the future clean reference installation. The two directories under `FS-UAE/Hard Drives` are the recommended eventual locations for clean 3.0 and 3.1 systems.
+
 These files must never be added to the repository or copied into generated public artifacts without confirmed redistribution rights.
 
-The repository should provide an ignored local configuration file containing the exact selected ROM paths, without assuming filenames inside the collection:
+The repository provides an ignored local configuration file containing the exact selected ROM paths, without assuming filenames inside the collection. Start from the versioned example:
 
 ```sh
-MIGA80_ROMS_DIR=/Users/fra/Documents/Amiga/amiga-roms
-MIGA80_KICKSTART_30=/Users/fra/Documents/Amiga/amiga-roms/@LOCAL_KS30_FILENAME@
-MIGA80_KICKSTART_31=/Users/fra/Documents/Amiga/amiga-roms/@LOCAL_KS31_FILENAME@
+cp config/fs-uae/local.env.example config/fs-uae/local.env
 ```
 
-The FS-UAE configuration generator should resolve these values into concrete configuration files. ROM files do not need to be copied into FS-UAE's default Kickstarts directory.
+Then set either or both of the following path/checksum pairs:
+
+```sh
+MAGI80_KICKSTART_30="/absolute/path/to/a1200-kickstart-39.106.rom"
+MAGI80_KICKSTART_30_SHA256="optional-local-sha256"
+MAGI80_KICKSTART_31="/absolute/path/to/a1200-kickstart-40.068.rom"
+MAGI80_KICKSTART_31_SHA256="optional-local-sha256"
+```
+
+The generator requires at least one ROM, verifies its size, optional SHA-256 digest, internal ROM checksum, and exact revision with `romtool`, then resolves it into concrete FS-UAE files under the ignored `build/fs-uae/` directory. ROM files do not need to be copied into FS-UAE's default Kickstarts directory.
+
+The current local collection contains a valid Kickstart 3.0/39.106 image. Its file labelled 3.1/40.069 is deliberately not selected: FS-UAE reports it as an unknown ROM, and its fingerprint corresponds to the modified Harry Sintonen version-number image rather than the stock Commodore A1200 3.1/40.068 ROM. The project must obtain a legally licensed, unmodified 40.068 image before certifying the 3.1 profile. See the [Kickstart 3.1 version notes](https://www.lemonamiga.com/page/kickstart-rom-3-1) and the [matching TOSEC record](https://data.spludlow.co.uk/tosec/tosec/Commodore%20Amiga%20-%20Firmware/Kickstart%20v3.1%20r40.068%20%281993-12%29%28Commodore%29%28A1200%29%5Bf%20Harry%20Sintonen%5D%5Bh%20version%20number%5D).
 
 ### 9.2 Certified emulator model
 
@@ -478,7 +490,14 @@ Explicit values are preferred even when they match FS-UAE defaults. This prevent
 
 ### 9.3 Configuration matrix
 
-Four primary configurations should be maintained as templates:
+Two ROM-only profiles provide the first configuration and Kickstart checks:
+
+| Profile | Purpose |
+|---|---|
+| `a1200-pal-ks30-rom` | Validate the stock machine with Kickstart 3.0/39.106 |
+| `a1200-pal-ks31-rom` | Validate the stock machine with Kickstart 3.1/40.068 |
+
+Four media-backed configurations are maintained as templates:
 
 | Profile | Kickstart/Workbench | Boot source | Purpose |
 |---|---|---|---|
@@ -506,10 +525,11 @@ fast_memory = 0
 ntsc_mode = 0
 kickstart_file = @KICKSTART_ROM@
 hard_drive_0 = @AMIGAOS_SYSTEM_DIRECTORY@
+hard_drive_0_read_only = 1
 hard_drive_1 = @PROJECT_BUILD_DIRECTORY@
 ```
 
-This loop avoids rebuilding an ADF for every edit:
+The licensed system HDF is mounted read-only to keep emulator tests from altering the source image; the generated staging directory remains writable. FS-UAE documents both HDF and host-directory mounts, including the per-drive read-only option, in its [hard-drive configuration reference](https://github.com/FrodeSolheim/fs-uae/blob/main/docs/options/hard_drive_0). This loop avoids rebuilding an ADF for every edit:
 
 ```text
 edit -> host tests -> cross-compile -> launch FS-UAE -> run from mounted directory
@@ -526,7 +546,7 @@ chip_memory = 2048
 fast_memory = 0
 ntsc_mode = 0
 kickstart_file = @KICKSTART_ROM@
-floppy_drive_0 = @MIGA80_ADF@
+floppy_drive_0 = @MAGI80_ADF@
 ```
 
 The ADF loop is:
@@ -536,6 +556,27 @@ cross-compile -> stage files -> create ADF -> verify ADF -> boot ADF in FS-UAE
 ```
 
 Both OFS and FFS candidate images should be generated during Phase 0. The selected release format must be based on measured payload capacity, boot behavior, memory use, compatibility, and disk-write requirements.
+
+### 9.6 Generate, check, and run the profiles
+
+Generate every profile whose local dependencies are available:
+
+```sh
+./scripts/configure-fs-uae.sh
+./scripts/test-fs-uae-config.sh
+```
+
+The generator removes its six known generated files before rebuilding them, preventing stale profiles after a local ROM or media path is removed. It skips an unavailable Kickstart branch, Workbench system, or ADF with an explicit status rather than substituting another machine configuration.
+
+Launch the currently validated ROM-only profile with:
+
+```sh
+./scripts/run-fs-uae.sh a1200-pal-ks30-rom
+```
+
+The 2026-09-02 ROM launch was confirmed in the FS-UAE log as an A1200 in PAL mode at 50 Hz, with a 68020-class CPU, no FPU, no JIT, 2 MiB Chip RAM, no Fast RAM, and recognized Kickstart 3.0/39.106. The HD launch additionally confirmed a read-only `DH0:` hardfile and writable `DH1:MAGI80` host-directory mount, followed by the Workbench interlaced PAL display mode.
+
+This validates the emulator and mounted-directory baseline, but not execution of a MAGI-80 target binary, AGA application code, Paula output, or real-hardware timing. The current automated launch environment emitted OpenAL source errors; audio must therefore remain a separate pending smoke test.
 
 ## 10. Phase 6 — Project Build Integration
 
@@ -560,7 +601,25 @@ tests/smoke/
     main.c
 ```
 
-The remaining proposed integration files are:
+The FS-UAE phase adds the following versioned files:
+
+```text
+scripts/
+  configure-fs-uae.sh
+  run-fs-uae.sh
+  test-fs-uae-config.sh
+
+config/fs-uae/
+  local.env.example
+  a1200-pal-ks30-rom.fs-uae.in
+  a1200-pal-ks31-rom.fs-uae.in
+  a1200-pal-ks30-hd.fs-uae.in
+  a1200-pal-ks31-hd.fs-uae.in
+  a1200-pal-ks30-adf.fs-uae.in
+  a1200-pal-ks31-adf.fs-uae.in
+```
+
+The remaining proposed integration files and directories are:
 
 ```text
 toolchain/
@@ -568,15 +627,7 @@ toolchain/
 
 scripts/
   bootstrap-macos.sh
-  configure-fs-uae.sh
   make-adf.sh
-  run-fs-uae.sh
-
-config/fs-uae/
-  a1200-pal-ks30-hd.fs-uae.in
-  a1200-pal-ks31-hd.fs-uae.in
-  a1200-pal-ks30-adf.fs-uae.in
-  a1200-pal-ks31-adf.fs-uae.in
 
 tests/smoke/
   amiga-libraries/
@@ -615,7 +666,7 @@ The build must fail clearly when a proprietary local input is absent. It must ne
 
 The following portable components should also compile natively with Apple Clang:
 
-- MIGA Lua lexer, parser, and type checker;
+- MAGI Lua lexer, parser, and type checker;
 - typed intermediate representation;
 - 68020 instruction encoder and relocation logic;
 - cartridge parser and serializer;
@@ -728,16 +779,18 @@ The installation should be performed in small, independently verifiable steps:
 3. [x] Build the complete AmigaPorts suite into the user-local prefix.
 4. [x] Compile and inspect a minimal 68020 soft-float C99 executable.
 5. [x] Install `amitools`; validate `xdftool`, `hunktool`, and `vamos`.
-6. [ ] Configure legal Kickstart 3.0 and 3.1 assets outside the repository.
-7. [ ] Create the four stock-A1200 FS-UAE profiles.
-8. [ ] Establish the mounted-directory development loop.
-9. [ ] Compare C runtimes and freeze the target ABI.
-10. [x] Generate and verify OFS and FFS test ADFs.
-11. [ ] Boot the selected ADF under both target Kickstart versions.
-12. [ ] Add the first AGA, input, and Paula smoke tests.
-13. [ ] Package and checksum the validated compiler prefix.
-14. [ ] Complete the initial version manifest with later-phase versions and archive checksums.
-15. [ ] Re-run the smoke-test sequence on a real stock A1200.
+6. [ ] Configure legal Kickstart assets outside the repository: 3.0/39.106 is complete; stock 3.1/40.068 is pending.
+7. [x] Add, generate, inspect, and launch the stock-A1200 Kickstart 3.0 ROM-only profile.
+8. [x] Add the Kickstart 3.1 ROM-only template and all four HD/ADF templates.
+9. [ ] Prepare clean reference Workbench systems: the existing 3.0 HDF/profile works read-only; 3.1 is pending.
+10. [ ] Complete the mounted-directory loop by staging and running a target executable from `MAGI80:`.
+11. [ ] Compare C runtimes and freeze the target ABI.
+12. [x] Generate and verify OFS and FFS test ADFs.
+13. [ ] Generate a MAGI-80 ADF profile and boot it under both target Kickstart versions.
+14. [ ] Add the first AGA, input, and Paula smoke tests.
+15. [ ] Package and checksum the validated compiler prefix.
+16. [ ] Complete the version manifest with later-phase versions and archive checksums.
+17. [ ] Re-run the smoke-test sequence on a real stock A1200.
 
 ## 16. Definition of Done
 

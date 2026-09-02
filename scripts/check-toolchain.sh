@@ -152,6 +152,7 @@ check_future_command "Target objdump" m68k-amigaos-objdump
 check_future_command "VASM" vasmm68k_mot
 check_future_command "ADF tools" xdftool
 check_future_command "Hunk tools" hunktool
+check_future_command "Kickstart ROM tools" romtool
 check_future_command "vamos" vamos
 
 printf '\n'

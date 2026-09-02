@@ -1,0 +1,8 @@
+# Generated from this template by scripts/configure-fs-uae.sh.
+[fs-uae]
+amiga_model = A1200
+chip_memory = 2048
+fast_memory = 0
+ntsc_mode = 0
+joystick_port_1 = none
+kickstart_file = @KICKSTART_ROM@
