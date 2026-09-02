@@ -1,13 +1,13 @@
-# MIGA-80 macOS Development Toolchain Plan
+# MAGI-80 macOS Development Toolchain Plan
 
 **Document status:** Proposed installation and validation plan  
 **Host:** Apple Silicon Mac running macOS 14.1  
 **Target:** Stock PAL Amiga 1200, 68EC020, AGA, 2 MiB Chip RAM, no Fast RAM or FPU  
-**Related document:** [MIGA-80 Specification and Roadmap](./miga-80-specification-and-roadmap.md)
+**Related document:** [MAGI-80 Specification and Roadmap](./MAGI-80-specification-and-roadmap.md)
 
 ## 1. Purpose
 
-This document defines the development environment required to build, inspect, package, run, and test MIGA-80 from macOS.
+This document defines the development environment required to build, inspect, package, run, and test MAGI-80 from macOS.
 
 The toolchain must support:
 
@@ -22,7 +22,7 @@ The toolchain must support:
 - both hard-disk/directory and bootable-floppy development workflows;
 - reproducible builds without committing proprietary ROM or Workbench files.
 
-This is a host-development setup. It does not alter the MIGA-80 architectural decision to use AmigaOS services while editing and to take exclusive control only while a game is running.
+This is a host-development setup. It does not alter the MAGI-80 architectural decision to use AmigaOS services while editing and to take exclusive control only while a game is running.
 
 ## 2. Recommended Tool Stack
 
@@ -51,7 +51,7 @@ References:
 
 ## 3. Current Host Inventory
 
-The following components were detected on the development machine on 2026-09-02:
+The following components were detected on the development machine on 2026-09-02 before bootstrap:
 
 - Apple Silicon (`arm64`);
 - macOS 14.1;
@@ -65,7 +65,7 @@ The following components were detected on the development machine on 2026-09-02:
 - GNU sed;
 - Python 3.14 and `pipx`.
 
-The following required or useful components were not installed:
+The following required or useful components were initially absent:
 
 - Homebrew Bash;
 - Automake;
@@ -76,6 +76,18 @@ The following required or useful components were not installed:
 - `lhasa`, which is useful for Amiga `.lha` archives.
 
 Neither `m68k-amigaos-gcc` nor `vasmm68k_mot` was present in `PATH`.
+
+Host bootstrap was completed on 2026-09-02. The versioned `Brewfile` is satisfied, and the following components are now installed and validated:
+
+- Homebrew Bash 5.3;
+- Automake;
+- Bison 3.8 and Flex 2.6;
+- GNU Coreutils, tar, grep, sed, and Make;
+- FS-UAE 3.2.35;
+- Lhasa;
+- the remaining compiler-build libraries listed in the `Brewfile`.
+
+The AmigaPorts cross-toolchain and `amitools` remain intentionally pending for their respective setup phases.
 
 ## 4. Installation Layout
 
@@ -238,7 +250,7 @@ Initial flags to evaluate are:
 -fdata-sections
 ```
 
-`-msoft-float` is a safeguard against generating FPU instructions for the stock A1200. MIGA-80 should avoid floating-point code in target builds altogether. Section garbage collection and the final link flags must be tested against the selected Hunk linker before becoming mandatory.
+`-msoft-float` is a safeguard against generating FPU instructions for the stock A1200. MAGI-80 should avoid floating-point code in target builds altogether. Section garbage collection and the final link flags must be tested against the selected Hunk linker before becoming mandatory.
 
 Debug builds should initially use `-O1 -g`. Release builds should compare `-Os` with `-O2`; hot paths such as C2P conversion should be selected using measurements rather than a single project-wide optimization assumption.
 
@@ -246,15 +258,15 @@ Debug builds should initially use `-O1 -g`. Release builds should compare `-Os` 
 
 ### 7.1 General policy
 
-MIGA-80 is allowed and encouraged to use any appropriate documented system API provided by the target machine. Calls such as `malloc()`, `free()`, `fopen()`, and `fread()` are examples of this policy, not a boundary around it.
+MAGI-80 is allowed and encouraged to use any appropriate documented system API provided by the target machine. Calls such as `malloc()`, `free()`, `fopen()`, and `fread()` are examples of this policy, not a boundary around it.
 
-The default engineering decision is to reuse proven AmigaOS facilities whenever they satisfy the product's compatibility, memory, performance, and runtime-mode constraints. MIGA-80 should not reimplement a general-purpose operating-system service merely to appear more like a standalone kernel.
+The default engineering decision is to reuse proven AmigaOS facilities whenever they satisfy the product's compatibility, memory, performance, and runtime-mode constraints. MAGI-80 should not reimplement a general-purpose operating-system service merely to appear more like a standalone kernel.
 
 Candidate facilities include, but are not limited to:
 
 - Exec memory allocation, lists, tasks, signals, messages, ports, semaphores, interrupts, and cache-control functions;
 - DOS file handles, locks, directories, volume enumeration, notifications, processes, and filesystem handlers;
-- Intuition, GadTools, graphics, layers, and related display services while MIGA-80 is in hosted editing mode;
+- Intuition, GadTools, graphics, layers, and related display services while MAGI-80 is in hosted editing mode;
 - timer, input, keyboard, gameport, audio, console, clipboard, and trackdisk devices where they provide the required semantics;
 - system resources such as CIA and misc resources when lower-level ownership is necessary and can be acquired safely;
 - datatypes, locale, IFF, and other installed libraries when their availability and footprint match the minimum target;
@@ -262,7 +274,7 @@ Candidate facilities include, but are not limited to:
 
 The [Amiga Developer CD 2.1 documentation](http://amigadev.elowar.com/read/ADCD_2.1/) is the primary online programming reference for this work. It includes the ROM Kernel Reference Manuals, Devices manual, Hardware Reference Manual, Includes and Autodocs, IFF material, and Amiga Mail technical articles.
 
-The documentation collection also contains material for releases newer than the minimum MIGA-80 target. Every selected function must therefore be checked against the exact library or device version present on Kickstart/Workbench 3.0 and 3.1. Compilation against an NDK header is not proof that the function exists on both target systems.
+The documentation collection also contains material for releases newer than the minimum MAGI-80 target. Every selected function must therefore be checked against the exact library or device version present on Kickstart/Workbench 3.0 and 3.1. Compilation against an NDK header is not proof that the function exists on both target systems.
 
 ### 7.2 API-use constraints
 
@@ -271,14 +283,14 @@ System API reuse remains subject to the following rules:
 - use public, documented interfaces rather than private structures or undocumented ROM entry points;
 - open each library or device with a minimum version consistent with the exact functions used, and handle failure cleanly;
 - preserve the stock A1200 path: no API may silently introduce a Fast RAM, FPU, accelerator, or later-OS dependency;
-- use AmigaDOS filesystem APIs for mounted OFS and FFS volumes rather than parsing their raw structures in MIGA-80;
+- use AmigaDOS filesystem APIs for mounted OFS and FFS volumes rather than parsing their raw structures in MAGI-80;
 - allocate DMA-visible graphics and audio data in Chip RAM with the appropriate Exec flags;
 - keep blocking, allocating, filesystem, and other scheduler-dependent calls out of exclusive runtime sections where AmigaOS scheduling is forbidden;
 - acquire and release devices, resources, interrupts, display ownership, and audio channels symmetrically;
 - prefer the hosted OS service for editing and project management, but permit measured direct-hardware code for the game runtime, C2P, Copper, blitter, input, and Paula paths;
 - verify restoration and error paths under both supported OS versions.
 
-This is the practical meaning of MIGA-80 “replacing AmigaOS” for the user without pointlessly replacing the mature services already present in the machine.
+This is the practical meaning of MAGI-80 “replacing AmigaOS” for the user without pointlessly replacing the mature services already present in the machine.
 
 ### 7.3 Select and lock the C runtime
 
@@ -354,7 +366,7 @@ FS-UAE requires legally obtained Kickstart ROM images. A local ROM collection al
 /Users/fra/Documents/Amiga/amiga-roms
 ```
 
-MIGA-80 also needs legally obtained Workbench/AmigaOS files for its hosted development and boot workflows.
+MAGI-80 also needs legally obtained Workbench/AmigaOS files for its hosted development and boot workflows.
 
 The resulting local layout is:
 
@@ -409,8 +421,8 @@ Four primary configurations should be maintained as templates:
 |---|---|---|---|
 | `a1200-pal-ks30-hd` | 3.0 | Local system drive plus mounted build directory | Fast development |
 | `a1200-pal-ks31-hd` | 3.1 | Local system drive plus mounted build directory | Fast compatibility testing |
-| `a1200-pal-ks30-adf` | 3.0 | Generated MIGA-80 ADF | Floppy boot validation |
-| `a1200-pal-ks31-adf` | 3.1 | Generated MIGA-80 ADF | Floppy boot validation |
+| `a1200-pal-ks30-adf` | 3.0 | Generated MAGI-80 ADF | Floppy boot validation |
+| `a1200-pal-ks31-adf` | 3.1 | Generated MAGI-80 ADF | Floppy boot validation |
 
 An optional Fast RAM profile may be added later, but it must never replace the zero-Fast-RAM test profiles.
 
@@ -608,12 +620,12 @@ Before publishing a bootable ADF or distributing the toolchain, the project must
 
 1. whether the selected NDK material can be redistributed as part of a binary toolchain archive;
 2. whether any VASM, VLink, or VBCC distribution restriction affects the proposed toolchain package;
-3. which AmigaDOS boot files, if any, are required on the MIGA-80 floppy;
+3. which AmigaDOS boot files, if any, are required on the MAGI-80 floppy;
 4. whether those boot files may be redistributed;
 5. whether the public release must instead provide an installer that copies licensed files from the user's Workbench media;
 6. whether a compatible redistributable replacement can legally and technically satisfy the boot requirements.
 
-Compiler output and the MIGA-80 program are separate from permission to redistribute compiler components or AmigaOS system files. No public ADF should be produced until this gate is closed.
+Compiler output and the MAGI-80 program are separate from permission to redistribute compiler components or AmigaOS system files. No public ADF should be produced until this gate is closed.
 
 ## 14. Main Setup Risks
 
@@ -622,7 +634,7 @@ Compiler output and the MIGA-80 program are separate from permission to redistri
 | Homebrew GNU tools are not first in `PATH` | Toolchain build fails in confusing ways | Use a checked project environment script and print resolved tool paths |
 | Latest AmigaPorts branches change | Previously working builds become irreproducible | Record all commits and archive a validated prefix |
 | Python 3.14 is too new for `machine68k` | `vamos` cannot be installed | Use an isolated Python 3.13 `pipx` environment |
-| A comfortable emulator profile hides stock-machine failures | MIGA-80 works only with Fast RAM or faster CPU settings | Certify only explicit A1200, 2 MiB Chip, zero Fast RAM profiles |
+| A comfortable emulator profile hides stock-machine failures | MAGI-80 works only with Fast RAM or faster CPU settings | Certify only explicit A1200, 2 MiB Chip, zero Fast RAM profiles |
 | Selected libc pulls large dependencies | Executable exceeds the floppy or memory budget | Compare runtimes immediately and inspect every link map |
 | NDK headers allow calls newer than OS 3.0/3.1 | Runtime failure on a stock system | Audit library versions and test every smoke program on both OS versions |
 | Emulator success is treated as hardware proof | Timing and cache bugs escape | Keep real-A1200 gates for graphics, DMA, audio, takeover, and generated code |
