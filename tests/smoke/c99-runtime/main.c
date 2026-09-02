@@ -18,7 +18,7 @@ static uint32_t checksum(const uint8_t *data, size_t length)
 int main(void)
 {
     static const uint8_t test_vector[] = {1, 2, 3, 4};
-    static const char message[] = "MIGA-80 C99/68020 smoke test passed.\n";
+    static const char message[] = "MAGI-80 C99/68020 smoke test passed.\n";
     BPTR output = Output();
 
     if (output == (BPTR)0 || checksum(test_vector, sizeof(test_vector)) != 10) {

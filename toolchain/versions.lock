@@ -1,4 +1,4 @@
-# MIGA-80 validated macOS cross-toolchain
+# MAGI-80 validated macOS cross-toolchain
 # Generated after a successful full build and C99/68020 smoke test.
 
 manifest_format=1
