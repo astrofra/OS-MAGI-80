@@ -2,8 +2,8 @@
 
 set -euo pipefail
 
-MIGA80_TOOLCHAIN_PREFIX="${MIGA80_TOOLCHAIN_PREFIX:-/Users/fra/.local/m68k-amigaos}"
-MIGA80_PIPX_BIN="${MIGA80_PIPX_BIN:-/Users/fra/.local/bin}"
+MIGA80_TOOLCHAIN_PREFIX="${MIGA80_TOOLCHAIN_PREFIX:-$HOME/.local/m68k-amigaos}"
+MIGA80_PIPX_BIN="${MIGA80_PIPX_BIN:-$HOME/.local/bin}"
 MIGA80_PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MIGA80_TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/miga80-amiga-tools-smoke.XXXXXX")"
 

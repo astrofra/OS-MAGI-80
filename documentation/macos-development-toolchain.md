@@ -117,14 +117,16 @@ The stock PAL A1200 FS-UAE profile has also been generated and launched with the
 The compiler source and installed compiler should remain outside the project repository:
 
 ```text
-/Users/fra/dev/toolchains/m68k-amigaos-gcc/   Toolchain source and build tree
-/Users/fra/.local/m68k-amigaos/               Installed cross-toolchain
-/Users/fra/.local/bin/                         pipx commands such as xdftool
-/Users/fra/Documents/Amiga/amiga-roms/         Existing local Kickstart ROM collection
-/Users/fra/Documents/FS-UAE/Hard Drives/       Locally supplied AmigaOS installations
+$HOME/dev/toolchains/m68k-amigaos-gcc/   Toolchain source and build tree
+$HOME/.local/m68k-amigaos/               Installed cross-toolchain
+$HOME/.local/bin/                         pipx commands such as xdftool
+$HOME/Documents/Amiga/amiga-roms/         Existing local Kickstart ROM collection
+$HOME/Documents/FS-UAE/Hard Drives/       Locally supplied AmigaOS installations
 ```
 
 The project repository should contain only scripts, configuration templates, version manifests, and generated-file rules. It must not contain Kickstart ROMs, Workbench files, private filesystem images, or absolute-path FS-UAE configurations.
+
+All versioned paths MUST use `$HOME`, project-relative locations, or documented configuration variables. Developer usernames and machine-specific home-directory paths MUST remain confined to ignored local configuration and generated build files.
 
 Using a user-writable compiler prefix avoids `sudo`, prevents accidental changes to system directories, and makes it possible to archive the finished toolchain.
 
@@ -214,8 +216,8 @@ The versioned build script performs the fetch, selects the required Homebrew too
 Its defaults are:
 
 ```text
-source: /Users/fra/dev/toolchains/m68k-amigaos-gcc
-prefix: /Users/fra/.local/m68k-amigaos
+source: $HOME/dev/toolchains/m68k-amigaos-gcc
+prefix: $HOME/.local/m68k-amigaos
 NDK:    3.2
 target: all
 host:   gcc-12 / g++-12
@@ -227,9 +229,9 @@ The source fetch performed by the script is equivalent to:
 
 ```sh
 git clone https://github.com/AmigaPorts/m68k-amigaos-gcc \
-  /Users/fra/dev/toolchains/m68k-amigaos-gcc
+  "$HOME/dev/toolchains/m68k-amigaos-gcc"
 
-cd /Users/fra/dev/toolchains/m68k-amigaos-gcc
+cd "$HOME/dev/toolchains/m68k-amigaos-gcc"
 gmake update
 ```
 
@@ -247,7 +249,7 @@ gmake all \
   GDB_CC=gcc-12 \
   GDB_CXX=g++-12 \
   NDK=3.2 \
-  PREFIX=/Users/fra/.local/m68k-amigaos \
+  PREFIX="$HOME/.local/m68k-amigaos" \
   -j"$(sysctl -n hw.logicalcpu)"
 ```
 
@@ -269,7 +271,7 @@ The versioned script is preferred over the abbreviated manual command. In partic
 ### 6.3 Add the installed tools to the development environment
 
 ```sh
-export PATH="/Users/fra/.local/m68k-amigaos/bin:$PATH"
+export PATH="$HOME/.local/m68k-amigaos/bin:$PATH"
 ```
 
 This should initially be performed by a project environment script. It can be added permanently to the user's shell configuration after the installation is proven stable.
@@ -471,7 +473,7 @@ The automated test compiles the C99 smoke program, validates its loadseg structu
 FS-UAE requires legally obtained Kickstart ROM images. A local ROM collection already exists at:
 
 ```text
-/Users/fra/Documents/Amiga/amiga-roms
+$HOME/Documents/Amiga/amiga-roms
 ```
 
 MAGI-80 also needs legally obtained Workbench/AmigaOS files for its hosted development and boot workflows.
@@ -479,10 +481,10 @@ MAGI-80 also needs legally obtained Workbench/AmigaOS files for its hosted devel
 The resulting local layout is:
 
 ```text
-/Users/fra/Documents/Amiga/amiga-roms/
-/Users/fra/Documents/Amiga/Workbench V3.0 (1992)(Commodore).hdf
-/Users/fra/Documents/FS-UAE/Hard Drives/Workbench-3.0/
-/Users/fra/Documents/FS-UAE/Hard Drives/Workbench-3.1/
+$HOME/Documents/Amiga/amiga-roms/
+$HOME/Documents/Amiga/Workbench V3.0 (1992)(Commodore).hdf
+$HOME/Documents/FS-UAE/Hard Drives/Workbench-3.0/
+$HOME/Documents/FS-UAE/Hard Drives/Workbench-3.1/
 ```
 
 The standalone Workbench 3.0 HDF is the current convenience system. It has a valid OFS structure and a Workbench 3.0 startup sequence, but it is an old customized image with little free space, not the future clean reference installation. The two directories under `FS-UAE/Hard Drives` are the recommended eventual locations for clean 3.0 and 3.1 systems.
@@ -817,7 +819,7 @@ The first successful installation is recorded in `toolchain/versions.lock`. It c
 
 The manifest now records the selected C runtime, selector, target ABI, runtime-matrix outcomes, and current bootstrap sizes. It must still be extended after the remaining phases with checksums of the packaged cross-toolchain and generated release files.
 
-The installed `/Users/fra/.local/m68k-amigaos` tree should be packaged after validation. Keeping this private archive plus its checksum is more reliable than assuming that a future `make update` will reproduce the same upstream component revisions.
+The installed `$HOME/.local/m68k-amigaos` tree should be packaged after validation. Keeping this private archive plus its checksum is more reliable than assuming that a future `make update` will reproduce the same upstream component revisions.
 
 Kickstart and Workbench files should be identified in the local configuration by checksum, but the files and their checksums should not be required in public CI unless licensing permits it.
 

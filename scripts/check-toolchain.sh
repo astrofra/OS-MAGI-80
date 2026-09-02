@@ -8,7 +8,7 @@ export LC_ALL=C
 export LANG=C
 
 MIGA80_FAILURES=0
-MIGA80_TOOLCHAIN_PREFIX="${MIGA80_TOOLCHAIN_PREFIX:-/Users/fra/.local/m68k-amigaos}"
+MIGA80_TOOLCHAIN_PREFIX="${MIGA80_TOOLCHAIN_PREFIX:-$HOME/.local/m68k-amigaos}"
 
 find_brew() {
   if command -v brew >/dev/null 2>&1; then

@@ -10,8 +10,8 @@ macos_version=14.1
 macos_build=23B2073
 command_line_tools=15.0.0.0.1.1694021235
 homebrew_prefix=/opt/homebrew
-source_path=/Users/fra/dev/toolchains/m68k-amigaos-gcc
-install_prefix=/Users/fra/.local/m68k-amigaos
+source_path=$HOME/dev/toolchains/m68k-amigaos-gcc
+install_prefix=$HOME/.local/m68k-amigaos
 
 [build]
 target=m68k-amigaos

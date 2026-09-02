@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 
-MAGI80_TOOLCHAIN_PREFIX ?= /Users/fra/.local/m68k-amigaos
-MAGI80_PIPX_BIN ?= /Users/fra/.local/bin
+MAGI80_TOOLCHAIN_PREFIX ?= $(HOME)/.local/m68k-amigaos
+MAGI80_PIPX_BIN ?= $(HOME)/.local/bin
 
 TARGET_CC := $(MAGI80_TOOLCHAIN_PREFIX)/bin/m68k-amigaos-gcc
 TARGET_SIZE := $(MAGI80_TOOLCHAIN_PREFIX)/bin/m68k-amigaos-size
