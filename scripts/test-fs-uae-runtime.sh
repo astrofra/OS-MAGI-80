@@ -9,12 +9,19 @@ MAGI80_BASE_CONFIG="$MAGI80_PROJECT_ROOT/build/fs-uae/a1200-pal-ks30-hd.fs-uae"
 MAGI80_TEST_CONFIG="$MAGI80_BUILD_DIR/a1200-pal-ks30-runtime-smoke.fs-uae"
 MAGI80_TEST_ADF="$MAGI80_BUILD_DIR/runtime-smoke.adf"
 MAGI80_MARKER="$MAGI80_STAGING_DIR/fs-uae-smoke.out"
-MAGI80_EXPECTED="$MAGI80_PROJECT_ROOT/tests/smoke/hosted-bootstrap/expected.txt"
+MAGI80_STAGED_PROGRAM="$MAGI80_STAGING_DIR/magi80"
+MAGI80_SOURCE_PROGRAM="${1:-}"
+MAGI80_EXPECTED="${2:-$MAGI80_PROJECT_ROOT/tests/smoke/hosted-bootstrap/expected.txt}"
 MAGI80_TIMEOUT_SECONDS="${MAGI80_FS_UAE_TIMEOUT_SECONDS:-30}"
 MAGI80_PIPX_BIN="${MAGI80_PIPX_BIN:-/Users/fra/.local/bin}"
 MAGI80_EMULATOR_PID=""
 
 export PATH="$MAGI80_PIPX_BIN:$PATH"
+
+if [ "$#" -gt 2 ]; then
+  printf 'Usage: %s [amiga-program [expected-output]]\n' "$0" >&2
+  exit 1
+fi
 
 stop_emulator() {
   local attempt
@@ -66,7 +73,22 @@ if [ "$MAGI80_TIMEOUT_SECONDS" -eq 0 ]; then
   exit 1
 fi
 
-gmake -C "$MAGI80_PROJECT_ROOT" stage >/dev/null
+if [ -z "$MAGI80_SOURCE_PROGRAM" ]; then
+  gmake -C "$MAGI80_PROJECT_ROOT" stage >/dev/null
+elif [ ! -f "$MAGI80_SOURCE_PROGRAM" ]; then
+  printf 'Amiga program not found: %s\n' "$MAGI80_SOURCE_PROGRAM" >&2
+  exit 1
+else
+  /bin/mkdir -p "$MAGI80_STAGING_DIR"
+  /bin/cp "$MAGI80_SOURCE_PROGRAM" "$MAGI80_STAGED_PROGRAM"
+  /bin/chmod 755 "$MAGI80_STAGED_PROGRAM"
+fi
+
+if [ ! -f "$MAGI80_EXPECTED" ]; then
+  printf 'Expected-output file not found: %s\n' "$MAGI80_EXPECTED" >&2
+  exit 1
+fi
+
 "$MAGI80_PROJECT_ROOT/scripts/configure-fs-uae.sh" >/dev/null
 
 if [ ! -f "$MAGI80_BASE_CONFIG" ]; then

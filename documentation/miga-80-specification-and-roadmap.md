@@ -896,6 +896,7 @@ Initial MAGI-80 system compiler/linker policy:
 - C language mode: `-std=c99`;
 - CPU baseline: `-m68020` or the verified equivalent;
 - no hardware FPU assumption; target code MUST not introduce FPU instructions;
+- C runtime: libnix Kickstart 2+ startup selected with `-mcrt=nix20`, placed last on the link command;
 - optimize for size for cold/editor code and benchmarked speed for hot paths;
 - emit an AmigaOS Hunk executable compatible with the target Kickstart versions;
 - avoid ixemul and other non-stock runtime dependencies;
@@ -903,7 +904,7 @@ Initial MAGI-80 system compiler/linker policy:
 - treat warnings as errors in project code;
 - generate a size report by object and section for every release build.
 
-The final flags depend on the selected GCC fork and C runtime and must be locked after the Phase 0 hello-world and ABI tests.
+The initial system ABI and toolchain revisions are locked in `toolchain/versions.lock`. The runtime matrix selected libnix over clib2 on size after both passed the required allocation/filesystem tests under `vamos` and FS-UAE/Kickstart 3.0; newlib failed required semantics and introduced an external math-library startup dependency. Kickstart 3.1 and real-A1200 results remain mandatory revalidation gates, and any resulting ABI change MUST be recorded explicitly.
 
 ### 16.4 Build outputs
 

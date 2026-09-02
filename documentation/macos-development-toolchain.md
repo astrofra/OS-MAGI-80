@@ -1,6 +1,6 @@
 # MAGI-80 macOS Development Toolchain Plan
 
-**Document status:** Cross-toolchain and first hosted MAGI-80 executable validated through `vamos` and the Kickstart 3.0 FS-UAE mounted-directory loop; Kickstart 3.1 remains pending
+**Document status:** Cross-toolchain, initial `libnix` ABI, and first hosted MAGI-80 executable validated through `vamos` and the Kickstart 3.0 FS-UAE mounted-directory loop; Kickstart 3.1 and real-hardware validation remain pending
 
 **Host:** Apple Silicon Mac running macOS 14.1
 
@@ -351,32 +351,72 @@ System API reuse remains subject to the following rules:
 
 This is the practical meaning of MAGI-80 “replacing AmigaOS” for the user without pointlessly replacing the mature services already present in the machine.
 
-### 7.3 Select and lock the C runtime
+### 7.3 Selected C runtime and initial ABI lock
 
 The cross-toolchain offers multiple C runtime choices, including `libnix`, `clib2`, and `newlib`. The selected runtime is only one layer of the system API policy: code may freely mix suitable C library functions with direct AmigaOS library and device calls.
 
-The runtime must not be selected by reputation alone. A Phase 0 comparison program should exercise:
+The initial Phase 0 runtime is **libnix**, selected with `-mcrt=nix20`. AmigaPorts requires a runtime selector to occur exactly once and at the end of the compiler link command. This selection targets the Kickstart 2+ libnix startup and does not add a shared runtime dependency to the target system.
+
+The comparison program exercises:
 
 - process startup and clean exit;
 - `malloc()`, `realloc()`, and `free()`;
+- `calloc()` and the observed `malloc(0)` behavior;
 - file creation, reading, writing, seeking, renaming, and deletion;
 - AmigaDOS error propagation;
 - command-line arguments and current-directory behavior;
-- representative direct calls to Exec, DOS, graphics, utility, and device APIs;
+- representative direct calls to Exec and DOS;
 - allocation of ordinary memory versus DMA-visible Chip RAM;
-- Kickstart/Workbench 3.0 and 3.1 compatibility;
-- executable size, static data, stack use, and peak runtime memory.
+- API-level execution through `vamos`;
+- execution on the stock A1200 FS-UAE Kickstart 3.0 profile;
+- executable and static-data size.
 
-For each runtime, the build must retain:
+The comparison performed on 2026-09-02 produced the following minimal-bootstrap measurements:
+
+| Runtime | Selector | Hunk bytes | Stripped bytes | Text | Data | BSS | `vamos` |
+|---|---|---:|---:|---:|---:|---:|---|
+| newlib | default | 5,176 | 3,624 | 3,240 | 16 | 32 | pass |
+| **libnix** | `-mcrt=nix20` | **3,772** | **2,244** | **1,756** | **32** | **40** | pass |
+| clib2 | `-mcrt=clib2` | 20,108 | 15,856 | 13,252 | 108 | 1,024 | pass |
+
+The allocation and filesystem program produced:
+
+| Runtime | Required API | Hunk bytes | Text | BSS | `vamos` | FS-UAE KS3.0 |
+|---|---|---:|---:|---:|---|---|
+| newlib compatibility subset | fail | 79,888 | 68,580 | 780 | subset only | fail |
+| **libnix** | **pass** | **18,576** | **13,876** | **120** | **pass** | **pass** |
+| clib2 | pass | 31,884 | 24,264 | 1,024 | pass | pass |
+
+Newlib is not eligible for the initial runtime lock because the installed port has three concrete problems in this matrix:
+
+- ISO C `rename()` fails to link because its fallback references an undefined `_link` stub;
+- opening a missing file does not propagate a non-zero `errno` in the tested configuration;
+- command-line parsing has to be forced into the link, after which formatted output pulls in `mathieeedoubbas.library` and the minimal stock boot fixture stops because that library is unavailable, despite the soft-float target.
+
+Clib2 remains a valid fallback: it passed the required behaviors, but its minimal executable was 16,336 bytes larger than libnix and its functional executable was 13,308 bytes larger. Libnix therefore supplies the best validated combination of required semantics and floppy/Chip-RAM economy.
+
+The initial system build ABI is locked as one compatibility unit:
+
+- GCC and component revisions recorded in `toolchain/versions.lock`;
+- C99 source mode;
+- AmigaOS Hunk executable format;
+- 68020 CPU baseline;
+- software floating point, with floating-point use excluded from MAGI-80 code;
+- libnix Kickstart 2+ startup and runtime via `-mcrt=nix20`;
+- default non-base-relative data model and startup stack policy;
+- no ixemul, shared libc, FPU, Fast RAM, or later-OS dependency;
+- direct documented AmigaOS calls permitted alongside the C runtime.
+
+For each runtime, the comparison retains:
 
 - the unstripped executable;
 - the stripped executable;
 - a link map;
 - `nm` and `size` output;
 - `objdump` disassembly;
-- measured free memory before and after execution.
+- exact `vamos` and FS-UAE observations.
 
-`libnix` is the first size-oriented candidate, but no runtime should be frozen until this comparison passes. The final runtime, startup code, ABI, link flags, and compiler revision become one locked compatibility unit.
+Run `gmake runtime-compare` to regenerate `build/runtime-comparison/summary.md` and its detailed maps, disassembly, symbols, sizes, and logs. Kickstart 3.1, stack high-water, process memory deltas, later direct APIs, and a real stock A1200 remain compatibility gates. A failure at one of those gates requires an explicit decision-log revision rather than a silent runtime change.
 
 ## 8. Phase 4 — Install Amiga Disk and Hunk Tools
 
@@ -633,9 +673,12 @@ src/
   main.c
 
 scripts/
+  compare-c-runtimes.sh
   test-fs-uae-runtime.sh
 
 tests/smoke/
+  c-runtime-matrix/
+    main.c
   hosted-bootstrap/
     expected.txt
   fs-uae/
@@ -677,12 +720,13 @@ The top-level GNU Make interface now exposes:
 | `gmake vamos-test` | Execute it with `vamos -C 20` and compare its output |
 | `gmake run` | Stage it and launch the Workbench 3.0 HD profile interactively |
 | `gmake fs-uae-smoke` | Build, stage, boot the local harness, execute from `MAGI80:`, and check the result |
+| `gmake runtime-compare` | Build, inspect, and execute the newlib, libnix, and clib2 runtime matrix through `vamos` and FS-UAE |
 | `gmake check` | Run inspection, `vamos`, and the complete FS-UAE integration smoke test |
 | `gmake clean` | Remove only generated application, report, harness, and staging outputs |
 
 Future targets will add `check-tools`, native host tests, the release ADF, and packaging once those layers exist.
 
-The current bootstrap is compiled as C99 with `-m68020 -msoft-float -Os`, warnings as errors, and a link map. It is a 5,176-byte file with 3,240 bytes of text, 16 bytes of data, and 32 bytes of BSS. It calls `dos.library` directly for output and introduces no floating-point requirement.
+The current bootstrap is compiled as C99 with `-m68020 -msoft-float -Os`, warnings as errors, a link map, and the final runtime selector `-mcrt=nix20`. It is a 3,772-byte file with 1,756 bytes of text, 32 bytes of data, and 40 bytes of BSS. It calls `dos.library` directly for output and introduces no floating-point requirement.
 
 The build must fail clearly when a proprietary local input is absent. It must never silently download, copy, or package a Kickstart ROM or Workbench component.
 
@@ -764,7 +808,7 @@ The first successful installation is recorded in `toolchain/versions.lock`. It c
 - the Python, `amitools`, and `machine68k` versions;
 - the smoke-test architecture, floating-point, format, and size results.
 
-The manifest must be extended after the remaining phases with the selected C runtime and ABI, and checksums of the packaged cross-toolchain and generated release files.
+The manifest now records the selected C runtime, selector, target ABI, runtime-matrix outcomes, and current bootstrap sizes. It must still be extended after the remaining phases with checksums of the packaged cross-toolchain and generated release files.
 
 The installed `/Users/fra/.local/m68k-amigaos` tree should be packaged after validation. Keeping this private archive plus its checksum is more reliable than assuming that a future `make update` will reproduce the same upstream component revisions.
 
@@ -810,7 +854,7 @@ The installation should be performed in small, independently verifiable steps:
 8. [x] Add the Kickstart 3.1 ROM-only template and all four HD/ADF templates.
 9. [ ] Prepare clean reference Workbench systems: the existing 3.0 HDF/profile works read-only; 3.1 is pending.
 10. [x] Complete the mounted-directory loop by staging and running a target executable from `MAGI80:`.
-11. [ ] Compare C runtimes and freeze the target ABI.
+11. [x] Compare C runtimes and freeze the initial target ABI on libnix/`-mcrt=nix20`; Kickstart 3.1 and real-hardware revalidation remain gates.
 12. [x] Generate and verify OFS and FFS test ADFs.
 13. [ ] Generate a MAGI-80 ADF profile and boot it under both target Kickstart versions.
 14. [ ] Add the first AGA, input, and Paula smoke tests.

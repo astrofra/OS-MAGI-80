@@ -7,6 +7,7 @@ TARGET_CC := $(MAGI80_TOOLCHAIN_PREFIX)/bin/m68k-amigaos-gcc
 TARGET_SIZE := $(MAGI80_TOOLCHAIN_PREFIX)/bin/m68k-amigaos-size
 TARGET_NM := $(MAGI80_TOOLCHAIN_PREFIX)/bin/m68k-amigaos-nm
 TARGET_OBJDUMP := $(MAGI80_TOOLCHAIN_PREFIX)/bin/m68k-amigaos-objdump
+TARGET_RUNTIME := -mcrt=nix20
 
 AMIGA_BUILD_DIR := build/amiga
 REPORT_DIR := build/reports
@@ -29,15 +30,15 @@ TARGET_CFLAGS := \
 
 .DELETE_ON_ERROR:
 
-.PHONY: all amiga stage inspect vamos-test fs-uae-smoke check run clean
+.PHONY: all amiga stage inspect vamos-test fs-uae-smoke runtime-compare check run clean
 
 all: amiga
 
 amiga: $(AMIGA_PROGRAM)
 
-$(AMIGA_PROGRAM): src/main.c
+$(AMIGA_PROGRAM): src/main.c Makefile
 	@mkdir -p $(AMIGA_BUILD_DIR)
-	$(TARGET_CC) $(TARGET_CFLAGS) $< -Wl,-Map,$(AMIGA_MAP) -o $@
+	$(TARGET_CC) $(TARGET_CFLAGS) $< -Wl,-Map,$(AMIGA_MAP) -o $@ $(TARGET_RUNTIME)
 
 stage: $(STAGED_PROGRAM)
 
@@ -63,8 +64,11 @@ run: stage
 fs-uae-smoke: stage
 	./scripts/test-fs-uae-runtime.sh
 
+runtime-compare:
+	./scripts/compare-c-runtimes.sh
+
 check: inspect vamos-test fs-uae-smoke
 
 clean:
-	rm -rf $(AMIGA_BUILD_DIR) $(REPORT_DIR) build/fs-uae-smoke
+	rm -rf $(AMIGA_BUILD_DIR) $(REPORT_DIR) build/fs-uae-smoke build/runtime-comparison
 	rm -f $(STAGED_PROGRAM) $(STAGING_DIR)/fs-uae-smoke.out
