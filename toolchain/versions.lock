@@ -66,9 +66,16 @@ libmpc=1.4.1
 make=4.4.1
 mpfr=4.2.2
 pipx=1.17.1
+python_at_3_13=3.13.15
 texinfo=7.3_1
 wget=1.25.0
 xz=5.8.3
+
+[python_tools]
+python=3.13.15
+pip=26.2.1
+amitools=0.8.1
+machine68k=0.3.0
 
 [validation]
 c99_compile=pass
@@ -76,6 +83,11 @@ amiga_hunk_link=pass
 amigaos_dos_api_link=pass
 vasm_68020_hunk_object=pass
 gdb_amiga_hunk_load=pass
+hunktool_loadseg_validation=pass
+vamos_68020_execution=pass
+xdftool_ofs_image=pass
+xdftool_ffs_image=pass
+xdfscan_ofs_and_ffs=pass
 multilib=libm020
 floating_point=soft
 smoke_text_bytes=3524

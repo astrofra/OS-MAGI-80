@@ -1,6 +1,6 @@
 # MIGA-80 macOS Development Toolchain Plan
 
-**Document status:** Host bootstrap and AmigaPorts compiler phases validated; disk tooling and emulator profiles remain planned
+**Document status:** Host bootstrap, AmigaPorts compiler, `amitools`, and `vamos` validated; FS-UAE profiles remain planned
 **Host:** Apple Silicon Mac running macOS 14.1  
 **Target:** Stock PAL Amiga 1200, 68EC020, AGA, 2 MiB Chip RAM, no Fast RAM or FPU  
 **Related document:** [MIGA-80 Specification and Roadmap](./miga-80-specification-and-roadmap.md)
@@ -98,7 +98,14 @@ The full AmigaPorts build was completed and smoke-tested on 2026-09-02. The inst
 - NDK 3.2 headers and generated interfaces;
 - Newlib, libnix, Clib2, libpthread, libdebug, libstdc++, and `libnix4.library`.
 
-`amitools`, `vamos`, FS-UAE project profiles, and licensed Workbench installations remain pending for their respective setup phases.
+The isolated Python tooling was installed and smoke-tested on 2026-09-02:
+
+- `amitools` 0.8.1;
+- `machine68k` 0.3.0;
+- Python 3.13.15 inside the `pipx` environment;
+- working `xdftool`, `xdfscan`, `hunktool`, `rdbtool`, and `vamos` commands.
+
+FS-UAE project profiles and licensed Workbench installations remain pending for their respective setup phases.
 
 ## 4. Installation Layout
 
@@ -378,20 +385,24 @@ For each runtime, the build must retain:
 - `vamos` runs many CLI AmigaOS programs through an API-level emulator;
 - `rdbtool` handles hard-disk RDB structures when needed later.
 
-The preferred isolated installation is:
-
-```sh
-pipx install "amitools[vamos]"
-```
-
-The current host has Python 3.14. `amitools` itself requires Python 3.9 or newer, but the native `machine68k` dependency used by `vamos` must still be tested with Python 3.14. If that combination fails, use a dedicated Python 3.13 environment:
+The host default is Python 3.14, but the native `machine68k` dependency is deliberately isolated under Homebrew Python 3.13. Install that interpreter once:
 
 ```sh
 brew install python@3.13
+```
 
+Then create the isolated environment:
+
+```sh
 pipx install \
   --python "$(brew --prefix python@3.13)/bin/python3.13" \
   "amitools[vamos]"
+```
+
+This combination built a native arm64 wheel successfully and avoids making the development environment depend on unverified Python 3.14 extension compatibility. The installed package versions can be inspected with:
+
+```sh
+pipx runpip amitools show amitools machine68k
 ```
 
 Validation commands:
@@ -401,7 +412,10 @@ xdftool --help
 xdfscan --help
 hunktool --help
 vamos --help
+./scripts/test-amiga-tools.sh
 ```
+
+The automated test compiles the C99 smoke program, validates its loadseg structure with `hunktool`, executes it under `vamos -C 20`, creates 880 KiB OFS and FFS images, writes a file to each, and validates both filesystems with `xdfscan`.
 
 `vamos -C 20` should be used for fast tests of parsers, file operations, compiler stages, and other CLI-compatible code. It cannot validate AGA registers, Copper lists, blitter behavior, Paula audio, CIA timing, display DMA contention, or exclusive AmigaOS takeover.
 
@@ -536,6 +550,7 @@ toolchain/
 scripts/
   check-toolchain.sh
   build-toolchain.sh
+  test-amiga-tools.sh
   test-toolchain.sh
 
 tests/smoke/
@@ -669,9 +684,10 @@ The first successful installation is recorded in `toolchain/versions.lock`. It c
 - compiler target and configured prefix;
 - the NDK selection and source archive checksum;
 - FS-UAE version;
+- the Python, `amitools`, and `machine68k` versions;
 - the smoke-test architecture, floating-point, format, and size results.
 
-The manifest must be extended after the remaining phases with the selected C runtime and ABI, exact `amitools` and `machine68k` versions, and checksums of the packaged cross-toolchain and generated release files.
+The manifest must be extended after the remaining phases with the selected C runtime and ABI, and checksums of the packaged cross-toolchain and generated release files.
 
 The installed `/Users/fra/.local/m68k-amigaos` tree should be packaged after validation. Keeping this private archive plus its checksum is more reliable than assuming that a future `make update` will reproduce the same upstream component revisions.
 
@@ -696,7 +712,7 @@ Compiler output and the MIGA-80 program are separate from permission to redistri
 |---|---|---|
 | Homebrew GNU tools are not first in `PATH` | Toolchain build fails in confusing ways | Use a checked project environment script and print resolved tool paths |
 | Latest AmigaPorts branches change | Previously working builds become irreproducible | Record all commits and archive a validated prefix |
-| Python 3.14 is too new for `machine68k` | `vamos` cannot be installed | Use an isolated Python 3.13 `pipx` environment |
+| Python 3.14 is too new for `machine68k` | `vamos` cannot be installed | Keep the validated Python 3.13 `pipx` environment |
 | A comfortable emulator profile hides stock-machine failures | MIGA-80 works only with Fast RAM or faster CPU settings | Certify only explicit A1200, 2 MiB Chip, zero Fast RAM profiles |
 | Selected libc pulls large dependencies | Executable exceeds the floppy or memory budget | Compare runtimes immediately and inspect every link map |
 | NDK headers allow calls newer than OS 3.0/3.1 | Runtime failure on a stock system | Audit library versions and test every smoke program on both OS versions |
@@ -710,13 +726,13 @@ The installation should be performed in small, independently verifiable steps:
 1. [x] Install the missing Homebrew packages and FS-UAE.
 2. [x] Add a non-mutating `check-toolchain.sh` and verify paths and versions.
 3. [x] Build the complete AmigaPorts suite into the user-local prefix.
-4. [x] Compile and inspect a minimal 68020 soft-float C99 executable; retain on-target execution for the next phase.
-5. [ ] Install `amitools`; validate `xdftool`, `hunktool`, and `vamos`.
+4. [x] Compile and inspect a minimal 68020 soft-float C99 executable.
+5. [x] Install `amitools`; validate `xdftool`, `hunktool`, and `vamos`.
 6. [ ] Configure legal Kickstart 3.0 and 3.1 assets outside the repository.
 7. [ ] Create the four stock-A1200 FS-UAE profiles.
 8. [ ] Establish the mounted-directory development loop.
 9. [ ] Compare C runtimes and freeze the target ABI.
-10. [ ] Generate and verify OFS and FFS test ADFs.
+10. [x] Generate and verify OFS and FFS test ADFs.
 11. [ ] Boot the selected ADF under both target Kickstart versions.
 12. [ ] Add the first AGA, input, and Paula smoke tests.
 13. [ ] Package and checksum the validated compiler prefix.

@@ -22,5 +22,6 @@ brew "xz"
 brew "fs-uae"
 brew "lhasa"
 
-# Isolated installation of amitools and vamos in the next setup phase.
+# Isolated, validated Python environment for amitools and machine68k.
 brew "pipx"
+brew "python@3.13"
