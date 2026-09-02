@@ -1,0 +1,2 @@
+MAGI-80 Phase 0 hosted bootstrap.
+AmigaOS API and 68020 soft-float build are operational.

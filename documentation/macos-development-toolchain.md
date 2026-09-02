@@ -1,8 +1,11 @@
 # MAGI-80 macOS Development Toolchain Plan
 
-**Document status:** Host bootstrap, AmigaPorts compiler, `amitools`, `vamos`, and Kickstart 3.0 ROM/HD FS-UAE profiles validated; Kickstart 3.1 remains pending  
-**Host:** Apple Silicon Mac running macOS 14.1  
-**Target:** Stock PAL Amiga 1200, 68EC020, AGA, 2 MiB Chip RAM, no Fast RAM or FPU  
+**Document status:** Cross-toolchain and first hosted MAGI-80 executable validated through `vamos` and the Kickstart 3.0 FS-UAE mounted-directory loop; Kickstart 3.1 remains pending
+
+**Host:** Apple Silicon Mac running macOS 14.1
+
+**Target:** Stock PAL Amiga 1200, 68EC020, AGA, 2 MiB Chip RAM, no Fast RAM or FPU
+
 **Related document:** [MAGI-80 Specification and Roadmap](./miga-80-specification-and-roadmap.md)
 
 ## 1. Purpose
@@ -576,7 +579,9 @@ Launch the currently validated ROM-only profile with:
 
 The 2026-09-02 ROM launch was confirmed in the FS-UAE log as an A1200 in PAL mode at 50 Hz, with a 68020-class CPU, no FPU, no JIT, 2 MiB Chip RAM, no Fast RAM, and recognized Kickstart 3.0/39.106. The HD launch additionally confirmed a read-only `DH0:` hardfile and writable `DH1:MAGI80` host-directory mount, followed by the Workbench interlaced PAL display mode.
 
-This validates the emulator and mounted-directory baseline, but not execution of a MAGI-80 target binary, AGA application code, Paula output, or real-hardware timing. The current automated launch environment emitted OpenAL source errors; audio must therefore remain a separate pending smoke test.
+The full-system smoke harness then booted a generated OFS test ADF, ran the staged `MAGI80:magi80` Hunk executable, redirected its AmigaDOS output to `MAGI80:fs-uae-smoke.out`, and compared that host-visible file with a golden result. This validates the complete cross-compile-to-FS-UAE loop without modifying the Workbench HDF or adding proprietary data to the test disk.
+
+AGA application code, Paula output, and real-hardware timing remain unvalidated. The current automated launch environment emitted OpenAL source errors; audio must therefore remain a separate pending smoke test.
 
 ## 10. Phase 6 — Project Build Integration
 
@@ -619,6 +624,24 @@ config/fs-uae/
   a1200-pal-ks31-adf.fs-uae.in
 ```
 
+The first application-build slice adds:
+
+```text
+Makefile
+
+src/
+  main.c
+
+scripts/
+  test-fs-uae-runtime.sh
+
+tests/smoke/
+  hosted-bootstrap/
+    expected.txt
+  fs-uae/
+    Startup-Sequence
+```
+
 The remaining proposed integration files and directories are:
 
 ```text
@@ -644,19 +667,22 @@ build/
 
 `build/` and local generated FS-UAE configurations should be ignored by Git.
 
-The top-level GNU Make interface should eventually expose:
+The top-level GNU Make interface now exposes:
 
 | Target | Result |
 |---|---|
-| `make check-tools` | Check host and cross-tool versions |
-| `make host-test` | Run portable code on macOS with warnings and sanitizers |
-| `make amiga` | Build the AmigaOS Hunk executable |
-| `make inspect` | Generate size, symbol, disassembly, and link-map reports |
-| `make vamos-test` | Run compatible target smoke tests with `vamos` |
-| `make run` | Launch the hard-drive FS-UAE profile |
-| `make adf` | Build and verify the candidate ADF |
-| `make run-adf` | Boot the exact generated ADF in FS-UAE |
-| `make package` | Produce release artifacts and checksums |
+| `gmake amiga` | Build `build/amiga/magi80`, an AmigaOS Hunk executable |
+| `gmake stage` | Copy it into the host directory mounted as `MAGI80:` |
+| `gmake inspect` | Generate size, symbol, disassembly, and link-map reports |
+| `gmake vamos-test` | Execute it with `vamos -C 20` and compare its output |
+| `gmake run` | Stage it and launch the Workbench 3.0 HD profile interactively |
+| `gmake fs-uae-smoke` | Build, stage, boot the local harness, execute from `MAGI80:`, and check the result |
+| `gmake check` | Run inspection, `vamos`, and the complete FS-UAE integration smoke test |
+| `gmake clean` | Remove only generated application, report, harness, and staging outputs |
+
+Future targets will add `check-tools`, native host tests, the release ADF, and packaging once those layers exist.
+
+The current bootstrap is compiled as C99 with `-m68020 -msoft-float -Os`, warnings as errors, and a link map. It is a 5,176-byte file with 3,240 bytes of text, 16 bytes of data, and 32 bytes of BSS. It calls `dos.library` directly for output and introduces no floating-point requirement.
 
 The build must fail clearly when a proprietary local input is absent. It must never silently download, copy, or package a Kickstart ROM or Workbench component.
 
@@ -783,7 +809,7 @@ The installation should be performed in small, independently verifiable steps:
 7. [x] Add, generate, inspect, and launch the stock-A1200 Kickstart 3.0 ROM-only profile.
 8. [x] Add the Kickstart 3.1 ROM-only template and all four HD/ADF templates.
 9. [ ] Prepare clean reference Workbench systems: the existing 3.0 HDF/profile works read-only; 3.1 is pending.
-10. [ ] Complete the mounted-directory loop by staging and running a target executable from `MAGI80:`.
+10. [x] Complete the mounted-directory loop by staging and running a target executable from `MAGI80:`.
 11. [ ] Compare C runtimes and freeze the target ABI.
 12. [x] Generate and verify OFS and FFS test ADFs.
 13. [ ] Generate a MAGI-80 ADF profile and boot it under both target Kickstart versions.
