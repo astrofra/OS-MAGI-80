@@ -8,6 +8,9 @@ TARGET_SIZE := $(MAGI80_TOOLCHAIN_PREFIX)/bin/m68k-amigaos-size
 TARGET_NM := $(MAGI80_TOOLCHAIN_PREFIX)/bin/m68k-amigaos-nm
 TARGET_OBJDUMP := $(MAGI80_TOOLCHAIN_PREFIX)/bin/m68k-amigaos-objdump
 TARGET_RUNTIME := -mcrt=nix20
+HOST_CC ?= cc
+
+PROJECT_CPPFLAGS := -Isrc
 
 AMIGA_BUILD_DIR := build/amiga
 REPORT_DIR := build/reports
@@ -21,6 +24,14 @@ AGA_SCREEN_SOURCE := tests/smoke/aga-screen/main.c
 AGA_SCREEN_PROGRAM := $(AGA_SCREEN_BUILD_DIR)/program
 AGA_SCREEN_MAP := $(AGA_SCREEN_BUILD_DIR)/program.map
 AGA_SCREEN_EXPECTED := tests/smoke/aga-screen/expected.txt
+C2P_REFERENCE_SOURCE := src/graphics/c2p_reference.c
+C2P_REFERENCE_HEADER := src/graphics/c2p_reference.h
+HOST_BUILD_DIR := build/host
+C2P_HOST_BUILD_DIR := $(HOST_BUILD_DIR)/c2p-reference
+C2P_HOST_TEST_SOURCE := tests/host/c2p-reference/main.c
+C2P_HOST_TEST_PROGRAM := $(C2P_HOST_BUILD_DIR)/test
+C2P_HOST_TEST_EXPECTED := tests/host/c2p-reference/expected.txt
+C2P_HOST_TEST_REPORT := $(REPORT_DIR)/c2p-reference-host.txt
 
 TARGET_CFLAGS := \
 	-std=c99 \
@@ -34,10 +45,18 @@ TARGET_CFLAGS := \
 	-ffunction-sections \
 	-fdata-sections
 
+HOST_CFLAGS := \
+	-std=c99 \
+	-O2 \
+	-Wall \
+	-Wextra \
+	-Werror \
+	-pedantic
+
 .DELETE_ON_ERROR:
 
-.PHONY: all amiga stage inspect vamos-test fs-uae-smoke aga-screen \
-	aga-screen-inspect aga-screen-smoke runtime-compare check run clean
+.PHONY: all amiga stage inspect vamos-test fs-uae-smoke c2p-test \
+	aga-screen aga-screen-inspect aga-screen-smoke runtime-compare check run clean
 
 all: amiga
 
@@ -45,7 +64,7 @@ amiga: $(AMIGA_PROGRAM)
 
 $(AMIGA_PROGRAM): src/main.c Makefile
 	@mkdir -p $(AMIGA_BUILD_DIR)
-	$(TARGET_CC) $(TARGET_CFLAGS) $< -Wl,-Map,$(AMIGA_MAP) -o $@ $(TARGET_RUNTIME)
+	$(TARGET_CC) $(PROJECT_CPPFLAGS) $(TARGET_CFLAGS) $< -Wl,-Map,$(AMIGA_MAP) -o $@ $(TARGET_RUNTIME)
 
 stage: $(STAGED_PROGRAM)
 
@@ -71,11 +90,25 @@ run: stage
 fs-uae-smoke: stage
 	./scripts/test-fs-uae-runtime.sh
 
+c2p-test: $(C2P_HOST_TEST_PROGRAM)
+	@mkdir -p $(REPORT_DIR)
+	$(C2P_HOST_TEST_PROGRAM) >$(C2P_HOST_TEST_REPORT)
+	diff -u $(C2P_HOST_TEST_EXPECTED) $(C2P_HOST_TEST_REPORT)
+
+$(C2P_HOST_TEST_PROGRAM): $(C2P_HOST_TEST_SOURCE) $(C2P_REFERENCE_SOURCE) \
+		$(C2P_REFERENCE_HEADER) Makefile
+	@mkdir -p $(C2P_HOST_BUILD_DIR)
+	$(HOST_CC) $(PROJECT_CPPFLAGS) $(HOST_CFLAGS) \
+		$(C2P_REFERENCE_SOURCE) $(C2P_HOST_TEST_SOURCE) -o $@
+
 aga-screen: $(AGA_SCREEN_PROGRAM)
 
-$(AGA_SCREEN_PROGRAM): $(AGA_SCREEN_SOURCE) Makefile
+$(AGA_SCREEN_PROGRAM): $(AGA_SCREEN_SOURCE) $(C2P_REFERENCE_SOURCE) \
+		$(C2P_REFERENCE_HEADER) Makefile
 	@mkdir -p $(AGA_SCREEN_BUILD_DIR)
-	$(TARGET_CC) $(TARGET_CFLAGS) $< -Wl,-Map,$(AGA_SCREEN_MAP) -o $@ $(TARGET_RUNTIME)
+	$(TARGET_CC) $(PROJECT_CPPFLAGS) $(TARGET_CFLAGS) \
+		$(AGA_SCREEN_SOURCE) $(C2P_REFERENCE_SOURCE) \
+		-Wl,-Map,$(AGA_SCREEN_MAP) -o $@ $(TARGET_RUNTIME)
 
 aga-screen-inspect: $(AGA_SCREEN_PROGRAM)
 	@mkdir -p $(REPORT_DIR)
@@ -89,8 +122,8 @@ aga-screen-smoke: fs-uae-smoke aga-screen-inspect
 runtime-compare:
 	./scripts/compare-c-runtimes.sh
 
-check: inspect vamos-test aga-screen-smoke
+check: c2p-test inspect vamos-test aga-screen-smoke
 
 clean:
-	rm -rf $(AMIGA_BUILD_DIR) $(REPORT_DIR) $(SMOKE_BUILD_DIR) build/fs-uae-smoke build/runtime-comparison
+	rm -rf $(AMIGA_BUILD_DIR) $(HOST_BUILD_DIR) $(REPORT_DIR) $(SMOKE_BUILD_DIR) build/fs-uae-smoke build/runtime-comparison
 	rm -f $(STAGED_PROGRAM) $(STAGING_DIR)/fs-uae-smoke.out

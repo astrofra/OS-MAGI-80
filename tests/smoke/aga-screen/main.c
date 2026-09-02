@@ -1,4 +1,5 @@
 #include <stddef.h>
+#include <stdint.h>
 
 #include <dos/dos.h>
 #include <exec/libraries.h>
@@ -19,13 +20,14 @@
 #include <proto/intuition.h>
 #include <utility/tagitem.h>
 
+#include "graphics/c2p_reference.h"
+
 #define MAGI80_SCREEN_WIDTH 256U
 #define MAGI80_SCREEN_HEIGHT 256U
 #define MAGI80_SCREEN_DEPTH 8U
 #define MAGI80_DISPLAY_ID (PAL_MONITOR_ID | LORESDPF_KEY)
-#define MAGI80_FRONT_PLANE_MASK 0x55U
-#define MAGI80_ALL_PLANE_MASK 0xffU
 #define MAGI80_PALETTE_COLORS 32U
+#define MAGI80_CHUNKY_BYTES (MAGI80_SCREEN_WIDTH * MAGI80_SCREEN_HEIGHT)
 #define MAGI80_MIN_PLANE_BYTES \
     ((MAGI80_SCREEN_WIDTH * MAGI80_SCREEN_HEIGHT * MAGI80_SCREEN_DEPTH) / 8U)
 #define MAGI80_VISIBLE_FRAMES 50U
@@ -107,6 +109,7 @@ static int report_success(void)
         "dual_playfield_4x4=pass\n"
         "palette_banks_0_16=pass\n"
         "displayable_chip_planes=pass\n"
+        "reference_c2p=pass\n"
         "raster_pattern=pass\n"
         "screen_restoration=pass\n"
         "result=pass\n";
@@ -173,30 +176,40 @@ static UBYTE background_at(ULONG x, ULONG y)
     return (UBYTE)(((x >> 4) ^ (y >> 4)) & 0x0fU);
 }
 
-static void draw_pattern(struct RastPort *rast_port)
+static void prepare_chunky_pattern(uint8_t *chunky)
 {
-    ULONG tile_x;
-    ULONG tile_y;
+    ULONG x;
+    ULONG y;
 
-    (void)SetWriteMask(rast_port, MAGI80_ALL_PLANE_MASK);
-    for (tile_y = 0U; tile_y < 16U; ++tile_y) {
-        for (tile_x = 0U; tile_x < 16U; ++tile_x) {
-            SetAPen(rast_port,
-                    (ULONG)encode_playfields(
-                        0U, (UBYTE)((tile_x ^ tile_y) & 0x0fU)));
-            RectFill(rast_port, (LONG)(tile_x * 16U), (LONG)(tile_y * 16U),
-                     (LONG)((tile_x * 16U) + 15U),
-                     (LONG)((tile_y * 16U) + 15U));
+    for (y = 0U; y < MAGI80_SCREEN_HEIGHT; ++y) {
+        for (x = 0U; x < MAGI80_SCREEN_WIDTH; ++x) {
+            UBYTE front = 0U;
+
+            if (x >= 48U && x <= 207U && y >= 48U && y <= 79U) {
+                front = 1U;
+            }
+            if (x >= 96U && x <= 159U && y >= 96U && y <= 159U) {
+                front = 15U;
+            }
+            chunky[(y * MAGI80_SCREEN_WIDTH) + x] =
+                (uint8_t)((front << 4) | background_at(x, y));
         }
     }
+}
 
-    (void)SetWriteMask(rast_port, MAGI80_FRONT_PLANE_MASK);
-    SetAPen(rast_port, (ULONG)encode_playfields(1U, 0U));
-    RectFill(rast_port, 48L, 48L, 207L, 79L);
-    SetAPen(rast_port, (ULONG)encode_playfields(15U, 0U));
-    RectFill(rast_port, 96L, 96L, 159L, 159L);
-    (void)SetWriteMask(rast_port, MAGI80_ALL_PLANE_MASK);
-    WaitBlit();
+static int convert_pattern(struct Screen *screen, const uint8_t *chunky)
+{
+    struct BitMap *bitmap = screen->RastPort.BitMap;
+    uint8_t *planes[MAGI80_C2P_PLANE_COUNT];
+    size_t plane;
+
+    for (plane = 0U; plane < MAGI80_C2P_PLANE_COUNT; ++plane) {
+        planes[plane] = (uint8_t *)bitmap->Planes[plane];
+    }
+    return magi80_c2p_reference(chunky, MAGI80_SCREEN_WIDTH,
+                                MAGI80_SCREEN_HEIGHT, MAGI80_SCREEN_WIDTH,
+                                planes, (size_t)bitmap->BytesPerRow) ==
+           MAGI80_C2P_OK;
 }
 
 static int verify_pixel(struct RastPort *rast_port, ULONG x, ULONG y,
@@ -285,6 +298,7 @@ int main(void)
     struct DisplayInfo display_info = {0};
     DisplayInfoHandle display_handle;
     struct Screen *screen = NULL;
+    uint8_t *chunky = NULL;
     const char *failure = NULL;
     ULONG chip_before = 0U;
     ULONG chip_during = 0U;
@@ -376,7 +390,16 @@ int main(void)
         failure = "palette_roundtrip";
         goto cleanup;
     }
-    draw_pattern(&screen->RastPort);
+    chunky = (uint8_t *)AllocMem((ULONG)MAGI80_CHUNKY_BYTES, MEMF_PUBLIC);
+    if (chunky == NULL) {
+        failure = "alloc_chunky_buffer";
+        goto cleanup;
+    }
+    prepare_chunky_pattern(chunky);
+    if (!convert_pattern(screen, chunky)) {
+        failure = "reference_c2p";
+        goto cleanup;
+    }
     if (!verify_pattern(&screen->RastPort)) {
         failure = "raster_pattern";
         goto cleanup;
@@ -387,6 +410,10 @@ int main(void)
     completed = TRUE;
 
 cleanup:
+    if (chunky != NULL) {
+        FreeMem(chunky, (ULONG)MAGI80_CHUNKY_BYTES);
+        chunky = NULL;
+    }
     if (screen != NULL) {
         if (!CloseScreen(screen)) {
             if (failure == NULL) {

@@ -5,6 +5,7 @@ logical_size=256x256
 dual_playfield_4x4=pass
 palette_banks_0_16=pass
 displayable_chip_planes=pass
+reference_c2p=pass
 raster_pattern=pass
 screen_restoration=pass
 result=pass

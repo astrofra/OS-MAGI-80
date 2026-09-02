@@ -639,7 +639,7 @@ The display uses eight low-resolution AGA bitplanes in dual-playfield mode:
 
 The exact PF1/PF2 assignment, palette-register mapping, priority bits, fetch mode, modulo, and plane-pointer ordering MUST be captured in a hardware test and then frozen in a register-level design note.
 
-The first hosted Phase 0 smoke test provisionally maps `FRONT` to PF1 (BPL1/3/5/7, palette base 0) and `BACK` to PF2 (BPL2/4/6/8, palette base 16). An Intuition-managed PAL 256 × 256 × 8 dual-playfield screen passes mode, palette, Chip-RAM, raster-pattern, and repeated restoration checks under FS-UAE/Kickstart 3.0. This is not yet the hardware freeze: the direct register/Copper mapping, C2P output, Kickstart 3.1, and real-A1200 timing gates remain open. See [Hosted AGA Screen Smoke Test](./aga-screen-smoke.md).
+The first hosted Phase 0 smoke test provisionally maps `FRONT` to PF1 (BPL1/3/5/7, palette base 0) and `BACK` to PF2 (BPL2/4/6/8, palette base 16). An Intuition-managed PAL 256 × 256 × 8 dual-playfield screen passes mode, palette, Chip-RAM, reference-C2P output, raster-pattern, and repeated restoration checks under FS-UAE/Kickstart 3.0. The C99 converter also passes byte-exact golden vectors natively on macOS. This is not yet the hardware freeze: direct register/Copper mapping, optimized C2P timing, Kickstart 3.1, and real-A1200 gates remain open. See [Hosted AGA Screen Smoke Test](./aga-screen-smoke.md) and [Reference Chunky-to-Planar Converter](./c2p-reference.md).
 
 Although AGA palette entries accept more precision, MAGI-80 expands each virtual 4-bit component to an 8-bit hardware component by nibble replication. Copper palette changes are not part of the base cartridge API; this keeps the 31-color limit stable.
 
@@ -653,6 +653,8 @@ Although AGA palette entries accept more precision, MAGI-80 expands each virtual
 - Plane pointers MUST swap only at a safe display boundary.
 - The converter MAY process dirty tiles, but a correct full-frame path is mandatory.
 - A missed conversion deadline MUST repeat the prior frame rather than expose partially converted planes.
+
+The allocation-free C99 reference implementation is now executable both as a native macOS correctness test and as target code writing the eight real planes of the hosted AGA screen. It defines the authoritative plane and bit ordering for optimized implementations; it does not yet satisfy a performance target.
 
 ### 11.5 Video timing and performance targets
 

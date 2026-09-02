@@ -8,7 +8,13 @@ The first hosted AmigaOS bootstrap can be built and tested from macOS with:
 gmake check
 ```
 
-This compiles and inspects the Hunk executables, runs the hosted bootstrap through `vamos` and FS-UAE, then executes the 256 × 256 AGA screen regression under FS-UAE.
+This runs the native chunky-to-planar golden vectors, compiles and inspects the Hunk executables, runs the hosted bootstrap through `vamos` and FS-UAE, then executes the 256 × 256 AGA screen regression under FS-UAE.
+
+Run only the portable C99 converter tests natively on macOS with:
+
+```sh
+gmake c2p-test
+```
 
 Run the hosted 256×256 AGA dual-playfield smoke test separately with:
 
@@ -30,4 +36,4 @@ Launch it interactively under the configured Workbench 3.0 FS-UAE profile with:
 gmake run
 ```
 
-See the [macOS development toolchain guide](documentation/macos-development-toolchain.md) for local ROM/HDF configuration and validated versions, and the [AGA screen smoke-test note](documentation/aga-screen-smoke.md) for the provisional playfield mapping and current validation boundary.
+See the [macOS development toolchain guide](documentation/macos-development-toolchain.md) for local ROM/HDF configuration and validated versions, the [C2P reference note](documentation/c2p-reference.md) for the golden-vector contract, and the [AGA screen smoke-test note](documentation/aga-screen-smoke.md) for the provisional playfield mapping and current validation boundary.

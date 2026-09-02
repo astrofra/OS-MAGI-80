@@ -1,0 +1,5 @@
+PASS single-byte golden vector
+PASS strided multi-row golden vector
+PASS full-frame golden vector
+PASS argument contract
+result=pass

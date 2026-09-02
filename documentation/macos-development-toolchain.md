@@ -1,6 +1,6 @@
 # MAGI-80 macOS Development Toolchain Plan
 
-**Document status:** Cross-toolchain, initial `libnix` ABI, hosted bootstrap, and 256 × 256 AGA dual-playfield screen validated through `vamos` and FS-UAE/Kickstart 3.0; Kickstart 3.1 and real-hardware validation remain pending
+**Document status:** Cross-toolchain, initial `libnix` ABI, native C2P golden vectors, hosted bootstrap, and 256 × 256 AGA dual-playfield conversion validated through native execution, `vamos`, and FS-UAE/Kickstart 3.0; Kickstart 3.1 and real-hardware validation remain pending
 
 **Host:** Apple Silicon Mac running macOS 14.1
 
@@ -9,6 +9,8 @@
 **Related document:** [MAGI-80 Specification and Roadmap](./miga-80-specification-and-roadmap.md)
 
 **Graphics test note:** [Hosted AGA Screen Smoke Test](./aga-screen-smoke.md)
+
+**C2P correctness note:** [Reference Chunky-to-Planar Converter](./c2p-reference.md)
 
 ## 1. Purpose
 
@@ -625,7 +627,7 @@ The 2026-09-02 ROM launch was confirmed in the FS-UAE log as an A1200 in PAL mod
 
 The full-system smoke harness then booted a generated OFS test ADF, ran the staged `MAGI80:magi80` Hunk executable, redirected its AmigaDOS output to `MAGI80:fs-uae-smoke.out`, and compared that host-visible file with a golden result. This validates the complete cross-compile-to-FS-UAE loop without modifying the Workbench HDF or adding proprietary data to the test disk.
 
-AGA application code, Paula output, and real-hardware timing remain unvalidated. The current automated launch environment emitted OpenAL source errors; audio must therefore remain a separate pending smoke test.
+The hosted AGA display and reference chunky-to-planar path are now validated. Exclusive takeover, Paula output, optimized-converter timing, and real-hardware behavior remain unvalidated. The current automated launch environment emitted OpenAL source errors; audio must therefore remain a separate pending smoke test.
 
 ## 10. Phase 6 — Project Build Integration
 
@@ -674,6 +676,9 @@ The first application-build slice adds:
 Makefile
 
 src/
+  graphics/
+    c2p_reference.c
+    c2p_reference.h
   main.c
 
 scripts/
@@ -690,6 +695,11 @@ tests/smoke/
     expected.txt
   fs-uae/
     Startup-Sequence
+
+tests/host/
+  c2p-reference/
+    main.c
+    expected.txt
 ```
 
 The remaining proposed integration files and directories are:
@@ -707,7 +717,6 @@ tests/smoke/
   paula-audio/
 
 build/
-  host/
   amiga/
   staging/
   disks/
@@ -726,12 +735,13 @@ The top-level GNU Make interface now exposes:
 | `gmake vamos-test` | Execute it with `vamos -C 20` and compare its output |
 | `gmake run` | Stage it and launch the Workbench 3.0 HD profile interactively |
 | `gmake fs-uae-smoke` | Build, stage, boot the local harness, execute from `MAGI80:`, and check the result |
-| `gmake aga-screen-smoke` | Open, validate, draw to, close, and repeat a hosted PAL 256 × 256 AGA dual-playfield screen under FS-UAE |
+| `gmake c2p-test` | Compile the portable C99 converter natively and compare its output with byte-exact golden vectors |
+| `gmake aga-screen-smoke` | Convert a chunky framebuffer into a hosted PAL 256 × 256 AGA dual-playfield screen, validate it, close it, and repeat under FS-UAE |
 | `gmake runtime-compare` | Build, inspect, and execute the newlib, libnix, and clib2 runtime matrix through `vamos` and FS-UAE |
-| `gmake check` | Run inspection, `vamos`, and the complete FS-UAE integration smoke test |
+| `gmake check` | Run the native C2P vectors, inspection, `vamos`, and the complete FS-UAE integration smoke tests |
 | `gmake clean` | Remove only generated application, report, harness, and staging outputs |
 
-Future targets will add `check-tools`, native host tests, the release ADF, and packaging once those layers exist.
+Future targets will add `check-tools`, further native host tests, the release ADF, and packaging once those layers exist.
 
 The current bootstrap is compiled as C99 with `-m68020 -msoft-float -Os`, warnings as errors, a link map, and the final runtime selector `-mcrt=nix20`. It is a 3,772-byte file with 1,756 bytes of text, 32 bytes of data, and 40 bytes of BSS. It calls `dos.library` directly for output and introduces no floating-point requirement.
 
@@ -741,7 +751,9 @@ The build must fail clearly when a proprietary local input is absent. It must ne
 
 ### 11.1 Native host tests
 
-The following portable components should also compile natively with Apple Clang:
+The C99 reference C2P converter now compiles natively with Apple Clang and passes explicit byte-level vectors for bit ordering, playfield assignment, strides, padding preservation, full-frame output, and invalid arguments. The target-compiled copy also writes the real planes used by the FS-UAE AGA smoke test. See [Reference Chunky-to-Planar Converter](./c2p-reference.md).
+
+The following additional portable components should also compile natively with Apple Clang:
 
 - MAGI Lua lexer, parser, and type checker;
 - typed intermediate representation;
@@ -749,7 +761,7 @@ The following portable components should also compile natively with Apple Clang:
 - cartridge parser and serializer;
 - MOD parser and reference tick engine;
 - fixed-point math;
-- reference renderer and C2P test vectors;
+- reference renderer;
 - compression and dictionary data structures.
 
 Host debug tests should use AddressSanitizer and UndefinedBehaviorSanitizer where possible. Host execution is the fastest place for fuzzing and differential tests, but it cannot validate big-endian mistakes unless the tests use explicit byte-level golden data.
@@ -787,7 +799,7 @@ FS-UAE is required for:
 - hosted-to-exclusive-mode transitions;
 - repeated restoration of AmigaOS state.
 
-The first hardware-facing regression is now `gmake aga-screen-smoke`. It validates the AGA-capable PAL dual-playfield display database entry, an exact 256 × 256 × 8 Intuition screen, eight displayable Chip-RAM planes, PF1/PF2 palette bases 0/16, a deterministic two-layer raster pattern, and a stable repeated close/reopen/close cycle. It remains an OS-managed hosted test and does not validate exclusive takeover or performance.
+The first hardware-facing regression is now `gmake aga-screen-smoke`. It validates the AGA-capable PAL dual-playfield display database entry, an exact 256 × 256 × 8 Intuition screen, eight displayable Chip-RAM planes, PF1/PF2 palette bases 0/16, conversion of a 65,536-byte two-layer chunky buffer into those planes, representative pixel readback, and a stable repeated close/reopen/close cycle. It remains an OS-managed hosted test and does not validate exclusive takeover or performance.
 
 ### 11.5 Real hardware
 
@@ -866,7 +878,7 @@ The installation should be performed in small, independently verifiable steps:
 11. [x] Compare C runtimes and freeze the initial target ABI on libnix/`-mcrt=nix20`; Kickstart 3.1 and real-hardware revalidation remain gates.
 12. [x] Generate and verify OFS and FFS test ADFs.
 13. [ ] Generate a MAGI-80 ADF profile and boot it under both target Kickstart versions.
-14. [ ] Add the first AGA, input, and Paula smoke tests: the hosted AGA screen test passes on FS-UAE/Kickstart 3.0; input, Paula, exclusive display ownership, Kickstart 3.1, and hardware remain pending.
+14. [ ] Add the first AGA, input, and Paula smoke tests: the hosted AGA screen and reference C2P tests pass on FS-UAE/Kickstart 3.0; input, Paula, optimized C2P timing, exclusive display ownership, Kickstart 3.1, and hardware remain pending.
 15. [ ] Package and checksum the validated compiler prefix.
 16. [ ] Complete the version manifest with later-phase versions and archive checksums.
 17. [ ] Re-run the smoke-test sequence on a real stock A1200.
