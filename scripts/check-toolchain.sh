@@ -8,6 +8,7 @@ export LC_ALL=C
 export LANG=C
 
 MIGA80_FAILURES=0
+MIGA80_TOOLCHAIN_PREFIX="${MIGA80_TOOLCHAIN_PREFIX:-/Users/fra/.local/m68k-amigaos}"
 
 find_brew() {
   if command -v brew >/dev/null 2>&1; then
@@ -64,7 +65,7 @@ check_future_command() {
   if [ -n "$resolved" ]; then
     printf 'READY    %-18s %s\n' "$label" "$resolved"
   else
-    printf 'PENDING  %-18s installed in the AmigaPorts phase\n' "$label"
+    printf 'PENDING  %-18s not installed yet\n' "$label"
   fi
 }
 
@@ -77,7 +78,7 @@ fi
 MIGA80_BREW_PREFIX="$($MIGA80_BREW_BIN --prefix)"
 export PATH="$MIGA80_BREW_PREFIX/bin:$MIGA80_BREW_PREFIX/sbin:$PATH"
 
-for formula in bison flex gettext; do
+for formula in bison flex gettext texinfo; do
   MIGA80_FORMULA_PREFIX="$($MIGA80_BREW_BIN --prefix "$formula" 2>/dev/null || true)"
   if [ -n "$MIGA80_FORMULA_PREFIX" ]; then
     export PATH="$MIGA80_FORMULA_PREFIX/bin:$PATH"
@@ -91,7 +92,18 @@ for formula in coreutils gnu-sed gnu-tar grep make; do
   fi
 done
 
-MIGA80_GCC_RELEASE="$($MIGA80_BREW_BIN list --versions gcc 2>/dev/null | /usr/bin/awk '{print $NF}')"
+if $MIGA80_BREW_BIN list --versions gcc@12 >/dev/null 2>&1; then
+  MIGA80_GCC_FORMULA="gcc@12"
+else
+  MIGA80_GCC_FORMULA="gcc"
+fi
+
+MIGA80_GCC_PREFIX="$($MIGA80_BREW_BIN --prefix "$MIGA80_GCC_FORMULA" 2>/dev/null || true)"
+if [ -n "$MIGA80_GCC_PREFIX" ]; then
+  export PATH="$MIGA80_GCC_PREFIX/bin:$PATH"
+fi
+
+MIGA80_GCC_RELEASE="$($MIGA80_BREW_BIN list --versions "$MIGA80_GCC_FORMULA" 2>/dev/null | /usr/bin/awk '{print $NF}')"
 MIGA80_GCC_MAJOR="${MIGA80_GCC_RELEASE%%.*}"
 if [ -n "$MIGA80_GCC_MAJOR" ]; then
   MIGA80_GCC_COMMAND="gcc-$MIGA80_GCC_MAJOR"
@@ -128,8 +140,14 @@ check_required_command "Python" python3
 check_required_command "pipx" pipx
 check_required_command "FS-UAE" fs-uae
 
-printf '\nAmigaPorts tools (expected to be pending during host bootstrap)\n'
+if [ -d "$MIGA80_TOOLCHAIN_PREFIX/bin" ]; then
+  export PATH="$MIGA80_TOOLCHAIN_PREFIX/bin:$PATH"
+fi
+
+printf '\nAmiga target and disk tools\n'
 check_future_command "Target GCC" m68k-amigaos-gcc
+check_future_command "Target GDB" m68k-amigaos-gdb
+check_future_command "Target linker" m68k-amigaos-ld
 check_future_command "Target objdump" m68k-amigaos-objdump
 check_future_command "VASM" vasmm68k_mot
 check_future_command "ADF tools" xdftool
@@ -142,4 +160,4 @@ if [ "$MIGA80_FAILURES" -ne 0 ]; then
   exit 1
 fi
 
-printf 'Host environment is ready for the AmigaPorts build phase.\n'
+printf 'Required host environment is ready.\n'
