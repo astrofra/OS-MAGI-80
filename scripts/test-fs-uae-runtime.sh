@@ -10,11 +10,14 @@ MAGI80_TEST_CONFIG="$MAGI80_BUILD_DIR/a1200-pal-ks30-runtime-smoke.fs-uae"
 MAGI80_TEST_ADF="$MAGI80_BUILD_DIR/runtime-smoke.adf"
 MAGI80_MARKER="$MAGI80_STAGING_DIR/fs-uae-smoke.out"
 MAGI80_STAGED_PROGRAM="$MAGI80_STAGING_DIR/magi80"
+MAGI80_STAGED_BACKUP="$MAGI80_BUILD_DIR/staged-program.backup"
 MAGI80_SOURCE_PROGRAM="${1:-}"
 MAGI80_EXPECTED="${2:-$MAGI80_PROJECT_ROOT/tests/smoke/hosted-bootstrap/expected.txt}"
 MAGI80_TIMEOUT_SECONDS="${MAGI80_FS_UAE_TIMEOUT_SECONDS:-30}"
 MAGI80_PIPX_BIN="${MAGI80_PIPX_BIN:-/Users/fra/.local/bin}"
 MAGI80_EMULATOR_PID=""
+MAGI80_RESTORE_STAGED_PROGRAM=0
+MAGI80_REMOVE_STAGED_PROGRAM=0
 
 export PATH="$MAGI80_PIPX_BIN:$PATH"
 
@@ -51,7 +54,22 @@ stop_emulator() {
   wait "$MAGI80_EMULATOR_PID" 2>/dev/null || true
 }
 
-trap stop_emulator EXIT
+restore_staged_program() {
+  if [ "$MAGI80_RESTORE_STAGED_PROGRAM" = "1" ] && [ -f "$MAGI80_STAGED_BACKUP" ]; then
+    /bin/cp "$MAGI80_STAGED_BACKUP" "$MAGI80_STAGED_PROGRAM"
+    /bin/chmod 755 "$MAGI80_STAGED_PROGRAM"
+    /bin/rm -f "$MAGI80_STAGED_BACKUP"
+  elif [ "$MAGI80_REMOVE_STAGED_PROGRAM" = "1" ]; then
+    /bin/rm -f "$MAGI80_STAGED_PROGRAM"
+  fi
+}
+
+cleanup() {
+  stop_emulator
+  restore_staged_program
+}
+
+trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
@@ -73,13 +91,21 @@ if [ "$MAGI80_TIMEOUT_SECONDS" -eq 0 ]; then
   exit 1
 fi
 
+/bin/mkdir -p "$MAGI80_BUILD_DIR" "$MAGI80_STAGING_DIR"
+
 if [ -z "$MAGI80_SOURCE_PROGRAM" ]; then
   gmake -C "$MAGI80_PROJECT_ROOT" stage >/dev/null
 elif [ ! -f "$MAGI80_SOURCE_PROGRAM" ]; then
   printf 'Amiga program not found: %s\n' "$MAGI80_SOURCE_PROGRAM" >&2
   exit 1
 else
-  /bin/mkdir -p "$MAGI80_STAGING_DIR"
+  /bin/rm -f "$MAGI80_STAGED_BACKUP"
+  if [ -f "$MAGI80_STAGED_PROGRAM" ]; then
+    /bin/cp "$MAGI80_STAGED_PROGRAM" "$MAGI80_STAGED_BACKUP"
+    MAGI80_RESTORE_STAGED_PROGRAM=1
+  else
+    MAGI80_REMOVE_STAGED_PROGRAM=1
+  fi
   /bin/cp "$MAGI80_SOURCE_PROGRAM" "$MAGI80_STAGED_PROGRAM"
   /bin/chmod 755 "$MAGI80_STAGED_PROGRAM"
 fi
@@ -96,7 +122,6 @@ if [ ! -f "$MAGI80_BASE_CONFIG" ]; then
   exit 1
 fi
 
-/bin/mkdir -p "$MAGI80_BUILD_DIR" "$MAGI80_STAGING_DIR"
 /bin/rm -f "$MAGI80_MARKER"
 
 xdftool -f "$MAGI80_TEST_ADF" \

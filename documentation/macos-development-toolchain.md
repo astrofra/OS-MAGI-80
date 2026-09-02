@@ -1,12 +1,14 @@
 # MAGI-80 macOS Development Toolchain Plan
 
-**Document status:** Cross-toolchain, initial `libnix` ABI, and first hosted MAGI-80 executable validated through `vamos` and the Kickstart 3.0 FS-UAE mounted-directory loop; Kickstart 3.1 and real-hardware validation remain pending
+**Document status:** Cross-toolchain, initial `libnix` ABI, hosted bootstrap, and 256 × 256 AGA dual-playfield screen validated through `vamos` and FS-UAE/Kickstart 3.0; Kickstart 3.1 and real-hardware validation remain pending
 
 **Host:** Apple Silicon Mac running macOS 14.1
 
 **Target:** Stock PAL Amiga 1200, 68EC020, AGA, 2 MiB Chip RAM, no Fast RAM or FPU
 
 **Related document:** [MAGI-80 Specification and Roadmap](./miga-80-specification-and-roadmap.md)
+
+**Graphics test note:** [Hosted AGA Screen Smoke Test](./aga-screen-smoke.md)
 
 ## 1. Purpose
 
@@ -677,6 +679,9 @@ scripts/
   test-fs-uae-runtime.sh
 
 tests/smoke/
+  aga-screen/
+    main.c
+    expected.txt
   c-runtime-matrix/
     main.c
   hosted-bootstrap/
@@ -697,7 +702,6 @@ scripts/
 
 tests/smoke/
   amiga-libraries/
-  aga-screen/
   paula-audio/
 
 build/
@@ -720,6 +724,7 @@ The top-level GNU Make interface now exposes:
 | `gmake vamos-test` | Execute it with `vamos -C 20` and compare its output |
 | `gmake run` | Stage it and launch the Workbench 3.0 HD profile interactively |
 | `gmake fs-uae-smoke` | Build, stage, boot the local harness, execute from `MAGI80:`, and check the result |
+| `gmake aga-screen-smoke` | Open, validate, draw to, close, and repeat a hosted PAL 256 × 256 AGA dual-playfield screen under FS-UAE |
 | `gmake runtime-compare` | Build, inspect, and execute the newlib, libnix, and clib2 runtime matrix through `vamos` and FS-UAE |
 | `gmake check` | Run inspection, `vamos`, and the complete FS-UAE integration smoke test |
 | `gmake clean` | Remove only generated application, report, harness, and staging outputs |
@@ -779,6 +784,8 @@ FS-UAE is required for:
 - hard-disk and floppy workflows;
 - hosted-to-exclusive-mode transitions;
 - repeated restoration of AmigaOS state.
+
+The first hardware-facing regression is now `gmake aga-screen-smoke`. It validates the AGA-capable PAL dual-playfield display database entry, an exact 256 × 256 × 8 Intuition screen, eight displayable Chip-RAM planes, PF1/PF2 palette bases 0/16, a deterministic two-layer raster pattern, and a stable repeated close/reopen/close cycle. It remains an OS-managed hosted test and does not validate exclusive takeover or performance.
 
 ### 11.5 Real hardware
 
@@ -857,7 +864,7 @@ The installation should be performed in small, independently verifiable steps:
 11. [x] Compare C runtimes and freeze the initial target ABI on libnix/`-mcrt=nix20`; Kickstart 3.1 and real-hardware revalidation remain gates.
 12. [x] Generate and verify OFS and FFS test ADFs.
 13. [ ] Generate a MAGI-80 ADF profile and boot it under both target Kickstart versions.
-14. [ ] Add the first AGA, input, and Paula smoke tests.
+14. [ ] Add the first AGA, input, and Paula smoke tests: the hosted AGA screen test passes on FS-UAE/Kickstart 3.0; input, Paula, exclusive display ownership, Kickstart 3.1, and hardware remain pending.
 15. [ ] Package and checksum the validated compiler prefix.
 16. [ ] Complete the version manifest with later-phase versions and archive checksums.
 17. [ ] Re-run the smoke-test sequence on a real stock A1200.
