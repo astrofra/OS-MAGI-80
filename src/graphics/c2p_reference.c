@@ -1,19 +1,20 @@
 #include "graphics/c2p_reference.h"
 
-enum Magi80C2PStatus magi80_c2p_reference(
-    const uint8_t *chunky,
+#if defined(__GNUC__)
+#define MAGI80_ALWAYS_INLINE static inline __attribute__((always_inline))
+#else
+#define MAGI80_ALWAYS_INLINE static
+#endif
+
+static enum Magi80C2PStatus validate_destination(
     size_t width,
     size_t height,
-    size_t chunky_stride,
     uint8_t *planes[MAGI80_C2P_PLANE_COUNT],
     size_t plane_stride)
 {
     size_t plane;
-    size_t y;
-    size_t byte_x;
-    size_t bytes_per_row;
 
-    if (chunky == NULL || planes == NULL) {
+    if (planes == NULL) {
         return MAGI80_C2P_INVALID_ARGUMENT;
     }
     for (plane = 0U; plane < MAGI80_C2P_PLANE_COUNT; ++plane) {
@@ -24,12 +25,57 @@ enum Magi80C2PStatus magi80_c2p_reference(
     if (width == 0U || height == 0U || (width & 7U) != 0U) {
         return MAGI80_C2P_INVALID_DIMENSIONS;
     }
+    if (plane_stride < (width >> 3)) {
+        return MAGI80_C2P_INVALID_STRIDE;
+    }
+    return MAGI80_C2P_OK;
+}
 
-    bytes_per_row = width >> 3;
-    if (chunky_stride < width || plane_stride < bytes_per_row) {
+MAGI80_ALWAYS_INLINE void pack_pixel(
+    uint8_t packed[MAGI80_C2P_PLANE_COUNT], uint8_t front, uint8_t back,
+    size_t pixel)
+{
+    uint8_t output_bit = (uint8_t)(0x80U >> pixel);
+    size_t logical_bit;
+
+    for (logical_bit = 0U; logical_bit < 4U; ++logical_bit) {
+        if ((front & (uint8_t)(1U << logical_bit)) != 0U) {
+            packed[logical_bit << 1] |= output_bit;
+        }
+        if ((back & (uint8_t)(1U << logical_bit)) != 0U) {
+            packed[(logical_bit << 1) + 1U] |= output_bit;
+        }
+    }
+}
+
+#undef MAGI80_ALWAYS_INLINE
+
+enum Magi80C2PStatus magi80_c2p_reference(
+    const uint8_t *chunky,
+    size_t width,
+    size_t height,
+    size_t chunky_stride,
+    uint8_t *planes[MAGI80_C2P_PLANE_COUNT],
+    size_t plane_stride)
+{
+    enum Magi80C2PStatus status;
+    size_t y;
+    size_t byte_x;
+    size_t bytes_per_row;
+    size_t plane;
+
+    if (chunky == NULL) {
+        return MAGI80_C2P_INVALID_ARGUMENT;
+    }
+    status = validate_destination(width, height, planes, plane_stride);
+    if (status != MAGI80_C2P_OK) {
+        return status;
+    }
+    if (chunky_stride < width) {
         return MAGI80_C2P_INVALID_STRIDE;
     }
 
+    bytes_per_row = width >> 3;
     for (y = 0U; y < height; ++y) {
         const uint8_t *source_row = chunky + (y * chunky_stride);
 
@@ -39,20 +85,10 @@ enum Magi80C2PStatus magi80_c2p_reference(
 
             for (pixel = 0U; pixel < 8U; ++pixel) {
                 uint8_t value = source_row[(byte_x << 3) + pixel];
-                uint8_t output_bit = (uint8_t)(0x80U >> pixel);
-                size_t logical_bit;
 
-                for (logical_bit = 0U; logical_bit < 4U; ++logical_bit) {
-                    if ((value & (uint8_t)(1U << (logical_bit + 4U))) !=
-                        0U) {
-                        packed[logical_bit << 1] |= output_bit;
-                    }
-                    if ((value & (uint8_t)(1U << logical_bit)) != 0U) {
-                        packed[(logical_bit << 1) + 1U] |= output_bit;
-                    }
-                }
+                pack_pixel(packed, (uint8_t)(value >> 4),
+                           (uint8_t)(value & 0x0fU), pixel);
             }
-
             for (plane = 0U; plane < MAGI80_C2P_PLANE_COUNT; ++plane) {
                 planes[plane][(y * plane_stride) + byte_x] = packed[plane];
             }

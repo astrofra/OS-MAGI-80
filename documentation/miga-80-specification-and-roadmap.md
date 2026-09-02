@@ -615,15 +615,26 @@ APIs MUST use logical coordinates and typed handles. They must not expose Chip R
 - Coordinates: integer, origin at top left.
 - Out-of-bounds drawing: clipped, never wrapped unless an individual API explicitly requests wrapping.
 
-### 11.2 Chunky representation
+### 11.2 Candidate runtime representations
 
-The initial representation uses one chunky byte per screen pixel:
+The first implemented representation uses one combined byte per screen coordinate:
 
 - low nibble: `BACK` index;
 - high nibble: `FRONT` index;
 - total logical framebuffer: 65,536 bytes.
 
-This preserves two logical 4-bit layers in a compact buffer and permits a single 8-bit chunky-to-planar pass. Drawing into one layer uses a masked byte update. Phase 0 MUST compare this design with two separate packed 4-bit buffers and may change the internal layout without changing the public API.
+This preserves two logical 4-bit layers in a compact buffer and permits a single 8-bit chunky-to-planar pass. Drawing into one layer uses a masked byte update.
+
+Phase 0 now compares four internal candidates:
+
+| Candidate | Source storage | Purpose |
+|---|---:|---|
+| Combined `fb8` | 64 KiB | Compact conventional eight-plane C2P input |
+| Two packed 4-bit layers | 64 KiB | Compact storage with independent playfield conversion |
+| Two byte-per-pixel 4-bit layers | 128 KiB | Direct per-layer byte stores at the cost of extra read bandwidth |
+| Byte FRONT plus packed BACK | 96 KiB | Fast dynamic-foreground writes with a compact background |
+
+The representation is not part of the cartridge or language ABI and MUST NOT be exposed as a raw address. Packed cartridge assets, runtime drawing surfaces, planar sprite caches, and display buffers MAY use different representations. The runtime layout remains open until the optimized real-A1200 benchmark gate described in [Chunky Layout and C2P Benchmark](./c2p-layout-benchmark.md).
 
 ### 11.3 AGA mapping
 
@@ -649,12 +660,14 @@ Although AGA palette entries accept more precision, MAGI-80 expands each virtual
 - The reference C converter MUST produce bit-exact output for every pixel and plane.
 - An optimized 68020 assembly converter is expected and must be tested against the C reference.
 - Display memory MUST be in Chip RAM and aligned for the selected AGA fetch mode.
-- The initial target is two 64 KiB planar frame sets for display double-buffering plus the 64 KiB chunky source, for 192 KiB total.
+- Two 64 KiB planar frame sets require 128 KiB. Depending on the source layout, framebuffer storage totals 192, 224, or 256 KiB before converter scratch space.
 - Plane pointers MUST swap only at a safe display boundary.
 - The converter MAY process dirty tiles, but a correct full-frame path is mandatory.
 - A missed conversion deadline MUST repeat the prior frame rather than expose partially converted planes.
 
-The allocation-free C99 reference implementation is now executable both as a native macOS correctness test and as target code writing the eight real planes of the hosted AGA screen. It defines the authoritative plane and bit ordering for optimized implementations; it does not yet satisfy a performance target.
+The allocation-free C99 reference implementations are now executable both as native macOS correctness tests and as target code writing the eight real planes of the hosted AGA screen. All four source layouts produce byte-identical plane checksums. They define authoritative semantics and plane ordering; they do not satisfy a performance target.
+
+Performance decisions MUST use the combined cost of source construction, representative pixel and primitive rendering, C2P, safe display publication, and audio coexistence. They MUST compare CPU-only assembly, a CPU/blitter hybrid, and planar-native high-level primitives. Isolated scalar-C timings MUST NOT freeze the source layout.
 
 ### 11.5 Video timing and performance targets
 

@@ -16,6 +16,14 @@ Run only the portable C99 converter tests natively on macOS with:
 gmake c2p-test
 ```
 
+Run the four-layout C2P measurement protocol under FS-UAE with:
+
+```sh
+gmake c2p-benchmark-fs-uae
+```
+
+Its scalar-C timings validate the benchmark infrastructure; the runtime layout remains open until optimized candidates are measured on a real stock A1200.
+
 Run the hosted 256×256 AGA dual-playfield smoke test separately with:
 
 ```sh
@@ -36,4 +44,4 @@ Launch it interactively under the configured Workbench 3.0 FS-UAE profile with:
 gmake run
 ```
 
-See the [macOS development toolchain guide](documentation/macos-development-toolchain.md) for local ROM/HDF configuration and validated versions, the [C2P reference note](documentation/c2p-reference.md) for the golden-vector contract, and the [AGA screen smoke-test note](documentation/aga-screen-smoke.md) for the provisional playfield mapping and current validation boundary.
+See the [macOS development toolchain guide](documentation/macos-development-toolchain.md) for local ROM/HDF configuration and validated versions, the [C2P reference note](documentation/c2p-reference.md) for the golden-vector contract, the [layout benchmark](documentation/c2p-layout-benchmark.md) for the open representation decision, and the [AGA screen smoke-test note](documentation/aga-screen-smoke.md) for the provisional playfield mapping and current validation boundary.

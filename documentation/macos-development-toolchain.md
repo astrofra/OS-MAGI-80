@@ -1,6 +1,6 @@
 # MAGI-80 macOS Development Toolchain Plan
 
-**Document status:** Cross-toolchain, initial `libnix` ABI, native C2P golden vectors, hosted bootstrap, and 256 × 256 AGA dual-playfield conversion validated through native execution, `vamos`, and FS-UAE/Kickstart 3.0; Kickstart 3.1 and real-hardware validation remain pending
+**Document status:** Cross-toolchain, initial `libnix` ABI, four-layout native C2P golden vectors and E-Clock protocol, hosted bootstrap, and 256 × 256 AGA dual-playfield conversion validated through native execution, `vamos`, and FS-UAE/Kickstart 3.0; optimized C2P, Kickstart 3.1, and real-hardware validation remain pending
 
 **Host:** Apple Silicon Mac running macOS 14.1
 
@@ -11,6 +11,8 @@
 **Graphics test note:** [Hosted AGA Screen Smoke Test](./aga-screen-smoke.md)
 
 **C2P correctness note:** [Reference Chunky-to-Planar Converter](./c2p-reference.md)
+
+**C2P benchmark note:** [Chunky Layout and C2P Benchmark](./c2p-layout-benchmark.md)
 
 ## 1. Purpose
 
@@ -678,12 +680,14 @@ Makefile
 src/
   graphics/
     c2p_reference.c
+    c2p_reference_layouts.c
     c2p_reference.h
   main.c
 
 scripts/
   compare-c-runtimes.sh
   test-fs-uae-runtime.sh
+  validate-c2p-benchmark-report.sh
 
 tests/smoke/
   aga-screen/
@@ -700,6 +704,10 @@ tests/host/
   c2p-reference/
     main.c
     expected.txt
+
+tests/benchmark/
+  c2p-layouts/
+    main.c
 ```
 
 The remaining proposed integration files and directories are:
@@ -737,6 +745,8 @@ The top-level GNU Make interface now exposes:
 | `gmake fs-uae-smoke` | Build, stage, boot the local harness, execute from `MAGI80:`, and check the result |
 | `gmake c2p-test` | Compile the portable C99 converter natively and compare its output with byte-exact golden vectors |
 | `gmake aga-screen-smoke` | Convert a chunky framebuffer into a hosted PAL 256 × 256 AGA dual-playfield screen, validate it, close it, and repeat under FS-UAE |
+| `gmake c2p-benchmark` | Build the 68020 reference layout benchmark without launching an emulator |
+| `gmake c2p-benchmark-fs-uae` | Measure all four reference layouts with E-Clock timing and display DMA active, then validate and retain the report |
 | `gmake runtime-compare` | Build, inspect, and execute the newlib, libnix, and clib2 runtime matrix through `vamos` and FS-UAE |
 | `gmake check` | Run the native C2P vectors, inspection, `vamos`, and the complete FS-UAE integration smoke tests |
 | `gmake clean` | Remove only generated application, report, harness, and staging outputs |
@@ -751,7 +761,7 @@ The build must fail clearly when a proprietary local input is absent. It must ne
 
 ### 11.1 Native host tests
 
-The C99 reference C2P converter now compiles natively with Apple Clang and passes explicit byte-level vectors for bit ordering, playfield assignment, strides, padding preservation, full-frame output, and invalid arguments. The target-compiled copy also writes the real planes used by the FS-UAE AGA smoke test. See [Reference Chunky-to-Planar Converter](./c2p-reference.md).
+The C99 reference C2P converters now compile natively with Apple Clang and pass explicit byte-level vectors for bit ordering, playfield assignment, source-layout equivalence, strides, padding preservation, full-frame output, and invalid arguments. The target-compiled baseline also writes the real planes used by the FS-UAE AGA smoke test. See [Reference Chunky-to-Planar Converter](./c2p-reference.md).
 
 The following additional portable components should also compile natively with Apple Clang:
 
@@ -800,6 +810,8 @@ FS-UAE is required for:
 - repeated restoration of AmigaOS state.
 
 The first hardware-facing regression is now `gmake aga-screen-smoke`. It validates the AGA-capable PAL dual-playfield display database entry, an exact 256 × 256 × 8 Intuition screen, eight displayable Chip-RAM planes, PF1/PF2 palette bases 0/16, conversion of a 65,536-byte two-layer chunky buffer into those planes, representative pixel readback, and a stable repeated close/reopen/close cycle. It remains an OS-managed hosted test and does not validate exclusive takeover or performance.
+
+`gmake c2p-benchmark-fs-uae` adds a machine-readable E-Clock protocol for four source layouts. It forces source storage into Chip RAM, writes the active screen planes, and verifies identical checksums. Its scalar reference results validate the harness only; FS-UAE timing is not release evidence and cannot select the runtime layout. See [Chunky Layout and C2P Benchmark](./c2p-layout-benchmark.md).
 
 ### 11.5 Real hardware
 
@@ -878,7 +890,7 @@ The installation should be performed in small, independently verifiable steps:
 11. [x] Compare C runtimes and freeze the initial target ABI on libnix/`-mcrt=nix20`; Kickstart 3.1 and real-hardware revalidation remain gates.
 12. [x] Generate and verify OFS and FFS test ADFs.
 13. [ ] Generate a MAGI-80 ADF profile and boot it under both target Kickstart versions.
-14. [ ] Add the first AGA, input, and Paula smoke tests: the hosted AGA screen and reference C2P tests pass on FS-UAE/Kickstart 3.0; input, Paula, optimized C2P timing, exclusive display ownership, Kickstart 3.1, and hardware remain pending.
+14. [ ] Add the first AGA, input, and Paula smoke tests: the hosted AGA screen, four-layout reference C2P equivalence, and E-Clock reporting protocol pass on FS-UAE/Kickstart 3.0; input, Paula, optimized C2P timing, exclusive display ownership, Kickstart 3.1, and hardware remain pending.
 15. [ ] Package and checksum the validated compiler prefix.
 16. [ ] Complete the version manifest with later-phase versions and archive checksums.
 17. [ ] Re-run the smoke-test sequence on a real stock A1200.

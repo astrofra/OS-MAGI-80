@@ -15,6 +15,13 @@ enum Magi80C2PStatus {
     MAGI80_C2P_INVALID_STRIDE
 };
 
+enum Magi80C2PLayout {
+    MAGI80_C2P_LAYOUT_FB8 = 0,
+    MAGI80_C2P_LAYOUT_PACKED4_X2,
+    MAGI80_C2P_LAYOUT_BYTE4_X2,
+    MAGI80_C2P_LAYOUT_FRONT_BYTE4_BACK_PACKED4
+};
+
 /*
  * Convert combined MAGI-80 pixels to an Amiga dual-playfield bitmap.
  *
@@ -35,6 +42,50 @@ enum Magi80C2PStatus magi80_c2p_reference(
     size_t width,
     size_t height,
     size_t chunky_stride,
+    uint8_t *planes[MAGI80_C2P_PLANE_COUNT],
+    size_t plane_stride);
+
+/*
+ * Convert two independently packed four-bit layers.  Even x coordinates use
+ * the high nibble and odd x coordinates use the low nibble of each source
+ * byte.  Each source row therefore contains width / 2 meaningful bytes.
+ */
+enum Magi80C2PStatus magi80_c2p_reference_packed4_x2(
+    const uint8_t *front,
+    const uint8_t *back,
+    size_t width,
+    size_t height,
+    size_t front_stride,
+    size_t back_stride,
+    uint8_t *planes[MAGI80_C2P_PLANE_COUNT],
+    size_t plane_stride);
+
+/*
+ * Convert two byte-per-pixel layers.  Only the low nibble of each source byte
+ * is significant.  Each source row contains width meaningful bytes.
+ */
+enum Magi80C2PStatus magi80_c2p_reference_byte4_x2(
+    const uint8_t *front,
+    const uint8_t *back,
+    size_t width,
+    size_t height,
+    size_t front_stride,
+    size_t back_stride,
+    uint8_t *planes[MAGI80_C2P_PLANE_COUNT],
+    size_t plane_stride);
+
+/*
+ * Convert an asymmetric layout: FRONT is byte-per-pixel and BACK is packed
+ * four-bit.  This candidate favors direct writes to a dynamic foreground
+ * while retaining a compact background.
+ */
+enum Magi80C2PStatus magi80_c2p_reference_front_byte4_back_packed4(
+    const uint8_t *front,
+    const uint8_t *back,
+    size_t width,
+    size_t height,
+    size_t front_stride,
+    size_t back_stride,
     uint8_t *planes[MAGI80_C2P_PLANE_COUNT],
     size_t plane_stride);
 

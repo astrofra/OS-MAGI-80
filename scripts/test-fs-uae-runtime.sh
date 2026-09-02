@@ -22,7 +22,7 @@ MAGI80_REMOVE_STAGED_PROGRAM=0
 export PATH="$MAGI80_PIPX_BIN:$PATH"
 
 if [ "$#" -gt 2 ]; then
-  printf 'Usage: %s [amiga-program [expected-output]]\n' "$0" >&2
+  printf 'Usage: %s [amiga-program [expected-output|-]]\n' "$0" >&2
   exit 1
 fi
 
@@ -110,7 +110,7 @@ else
   /bin/chmod 755 "$MAGI80_STAGED_PROGRAM"
 fi
 
-if [ ! -f "$MAGI80_EXPECTED" ]; then
+if [ "$MAGI80_EXPECTED" != "-" ] && [ ! -f "$MAGI80_EXPECTED" ]; then
   printf 'Expected-output file not found: %s\n' "$MAGI80_EXPECTED" >&2
   exit 1
 fi
@@ -140,7 +140,14 @@ MAGI80_EMULATOR_PID="$!"
 
 for ((second = 0; second < MAGI80_TIMEOUT_SECONDS; ++second)); do
   if [ -f "$MAGI80_MARKER" ]; then
-    break
+    if [ "$MAGI80_EXPECTED" = "-" ]; then
+      if /usr/bin/grep -Eq '^result=(pass|fail)$' "$MAGI80_MARKER" 2>/dev/null; then
+        break
+      fi
+    elif /usr/bin/grep -qx 'result=fail' "$MAGI80_MARKER" 2>/dev/null ||
+         /usr/bin/cmp -s "$MAGI80_EXPECTED" "$MAGI80_MARKER"; then
+      break
+    fi
   fi
   if ! /bin/kill -0 "$MAGI80_EMULATOR_PID" 2>/dev/null; then
     break
@@ -157,9 +164,17 @@ if [ ! -f "$MAGI80_MARKER" ]; then
   exit 1
 fi
 
-if ! /usr/bin/diff -u "$MAGI80_EXPECTED" "$MAGI80_MARKER"; then
-  printf 'The full-system runtime output did not match the expected result.\n' >&2
-  exit 1
+if [ "$MAGI80_EXPECTED" = "-" ]; then
+  if ! /usr/bin/tail -n 1 "$MAGI80_MARKER" |
+       /usr/bin/grep -qx 'result=pass'; then
+    printf 'The full-system runtime output did not report success.\n' >&2
+    exit 1
+  fi
+else
+  if ! /usr/bin/diff -u "$MAGI80_EXPECTED" "$MAGI80_MARKER"; then
+    printf 'The full-system runtime output did not match the expected result.\n' >&2
+    exit 1
+  fi
 fi
 
 printf 'PASS  staged MAGI-80 Hunk executable launched from MAGI80: in FS-UAE\n'

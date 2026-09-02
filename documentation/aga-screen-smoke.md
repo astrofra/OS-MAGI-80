@@ -80,7 +80,7 @@ build/reports/aga-screen-symbols.txt
 build/reports/aga-screen-disassembly.txt
 ```
 
-The validated executable is a 7,812-byte Hunk file containing 5,160 bytes of text, 208 bytes of data, and 824 bytes of BSS. It introduces no `stdio`, C allocator, or floating-point dependency; the framebuffer is explicitly managed through Exec `AllocMem()` and `FreeMem()`.
+The validated executable is a 7,816-byte Hunk file containing 5,164 bytes of text, 208 bytes of data, and 824 bytes of BSS. It introduces no `stdio`, C allocator, or floating-point dependency; the framebuffer is explicitly managed through Exec `AllocMem()` and `FreeMem()`.
 
 The generic FS-UAE runner temporarily stages this executable, compares its redirected AmigaDOS output with `tests/smoke/aga-screen/expected.txt`, and restores the previously staged MAGI-80 executable even on failure or interruption.
 
@@ -96,7 +96,7 @@ This result does not yet validate:
 - Kickstart 3.1 behavior;
 - timing, Chip-RAM contention, or restoration on a physical A1200.
 
-The converter contract and native golden vectors are documented in [Reference Chunky-to-Planar Converter](./c2p-reference.md). The next graphics step is to establish an optimized path and frame-cost measurements while preserving byte identity with this reference, before attempting double buffering or direct-hardware takeover.
+The converter contract and native golden vectors are documented in [Reference Chunky-to-Planar Converter](./c2p-reference.md). Source-layout hypotheses and the first measurement protocol are documented in [Chunky Layout and C2P Benchmark](./c2p-layout-benchmark.md). The next graphics step is to add optimized CPU-only and CPU/blitter paths while preserving byte identity with the reference, before attempting double buffering or direct-hardware takeover.
 
 ## 7. System References
 
