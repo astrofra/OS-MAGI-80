@@ -2,12 +2,12 @@
 
 | Field | Value |
 | --- | --- |
-| Document status | Working specification, revision 0.2 |
+| Document status | Working specification, revision 0.3 |
 | Date | 2026-09-03 |
 | Target release | MAGI-80 1.0 |
 | Primary hardware | Stock PAL Amiga 1200, 68EC020, AGA, 2 MiB Chip RAM |
 | Implementation | C99 with narrowly scoped 68020 assembly |
-| Build model | Cross-compiled on a modern host, preferably with GCC |
+| Build model | Cross-compiled with GCC plus native host tests and an embedded 68EC020 generated-code runner |
 
 ## 1. Purpose
 
@@ -145,6 +145,7 @@ The adopted graphics direction is defined in [MAGI-80 Graphics Architecture — 
 | A-13 | Hosted code uses the C runtime and AmigaOS services instead of duplicating them. | The purpose is to exploit the A1200, not to write another general-purpose OS. | Validate the chosen libc's size, ABI, DOS error behavior, and Kickstart 3.0/3.1 compatibility. Replace only individual facilities whose measured cost or semantics fail the product constraints. |
 | A-14 | “Fits on one floppy” is initially interpreted as a self-starting AmigaDOS distribution, not merely a file small enough to copy to floppy. | It provides the most console-like experience and a clean low-memory boot. | If only file-size fit is required, SYS-002 becomes optional and the boot-component licensing gate can be removed; all other disk-size limits remain. |
 | A-15 | The 1.0 graphics model is a three-layer virtual GPU rather than two full-screen chunky buffers. | A native planar base, a smaller optional chunky viewport, and virtual hardware-assisted objects map more directly to AGA and avoid unnecessary C2P. | Phase 0 MUST benchmark the complete pipeline on real hardware. The public semantics remain provisional until the graphics freeze gate; the project MUST revise limits rather than silently emulate an unaffordable model. |
+| A-16 | Generated 68020 code is exercised locally through a pinned Musashi 68EC020 runner before UAE or hardware integration. | Most compiler and ABI failures can then be reproduced in a sub-second native test without building or launching an Amiga image. | Musashi results establish functional confidence only. A curated corpus SHOULD later run under Moira as an independent oracle, while UAE and real A1200 tests remain mandatory for OS, chipset, cache, and performance behavior. |
 
 ## 6. Target platform and compatibility contract
 
@@ -412,7 +413,17 @@ MIGA Lua source
       -> bounded native execution
 ```
 
-The compiler MUST run on the stock A1200 and in host-side tests. It writes 68020 instruction words directly into a preallocated code arena; it does not invoke GCC, an assembler, or a linker on the Amiga. It SHOULD use bounded passes, reusable arenas, and simple predictable optimizations. A failed compilation MUST leave no executable partial result.
+This is the shipping on-Amiga pipeline. The compiler MUST run on the stock A1200 and in host-side tests. On the Amiga it writes 68020 instruction words directly into a preallocated code arena; it does not invoke GCC, an assembler, or a linker. It SHOULD use bounded passes, reusable arenas, and simple predictable optimizations. A failed compilation MUST leave no executable partial result.
+
+Backend bring-up on the development host MAY use a second, non-shipping output path:
+
+```text
+typed IR -> shared low-level m68k instruction model
+         -> textual assembly -> pinned assembler/linker -> ELF + flat image
+         -> embedded 68EC020 runner -> register, memory, call, and trace assertions
+```
+
+Textual assembly makes early instruction selection, relocations, symbols, and disassembly easy to inspect. It MUST remain a development oracle rather than a product dependency. The direct encoder and assembly renderer SHOULD consume the same low-level instruction model so their outputs can be compared and do not become independent compiler backends.
 
 ### 10.2 Proposed source style
 
@@ -572,7 +583,30 @@ The native ABI MUST define:
 
 Generated code MUST NOT address AmigaOS libraries, custom-chip registers, the Copper list, unrelated MAGI-80 state, or arbitrary absolute memory. Hardware access remains inside reviewed C/assembly runtime functions reached through the native ABI.
 
-### 10.9 Native-code safety, interruption, and determinism
+ABI preservation is executable behavior, not documentation alone. Before invoking a generated function, the host runner MUST initialize callee-saved registers, the stack, and guard memory with recognizable values, then verify them after return. The provisional convention uses `D0` for the primary scalar result, data and pointer arguments in a small caller-saved register set, `D3-D7` and `A2-A5` as callee-saved, `A6` as an optional frame pointer, and `A7` as the stack pointer. Exact argument registers, the runtime-context register, multiple returns, Boolean representation, stack alignment, traps, and fixed-point rules remain ABI-freeze decisions.
+
+### 10.9 Host-side generated-code execution
+
+The primary local runner, provisionally named `miga68k-test`, embeds a pinned Musashi core configured as `M68K_CPU_TYPE_68EC020`. It is a compiler test appliance, not an Amiga emulator.
+
+Its first version MUST provide:
+
+- a bounds-checked 24-bit virtual address space with explicit big-endian 8-, 16-, and 32-bit memory callbacks;
+- separate bounded regions for vectors/control data, code/constants, globals/test fixtures, a guarded stack, and synthetic host-call controls;
+- ELF symbol or generated-manifest lookup plus a flat load image at deterministic test addresses;
+- direct initialization and inspection of CPU registers, PC, SR, stack, and memory;
+- a runner-owned return sentinel or reserved trap and a separate instruction ceiling, so normal return, controlled fault, and infinite execution cannot be confused;
+- rejection and diagnostics for out-of-map access, execution outside code, forbidden instructions, stack damage, and the selected odd-address policy;
+- deterministic runtime-service mocks implemented as reserved traps or synthetic control-page accesses that validate arguments, record calls, and return defined values;
+- a circular disassembly trace, normally retained silently and printed with registers and nearby memory only on failure.
+
+The proposed local memory addresses in [MAGI-80 Local 68020 Tooling](./MAGI-80-local-68020-tooling.md) are runner configuration, not cartridge or native ABI. Tests MUST cover big-endian layout, 24-bit address handling, sign/zero extension, stack alignment, branch limits, arithmetic flags, function calls, guards, runtime traps, illegal operations, and timeout behavior.
+
+Most generated-code tests SHOULD be semantic: compile a function, execute it, and compare its result and side effects with the host typed-IR oracle. A small reviewed set MAY use normalized-disassembly goldens for prologues, epilogues, branches, addressing, fixed-point kernels, and guard sequences. Deterministic randomized programs and inputs SHOULD compare the typed-IR oracle with Musashi; a later curated edge corpus SHOULD also compare Musashi with Moira before hardware sign-off.
+
+The runner SHOULD record code bytes, executed instructions, approximate core cycles, maximum stack use, runtime-call counts, and memory-operation widths. These are stable regression signals for CPU-bound generated code, not predictions of stock-A1200 wall time. The runner MUST NOT be extended to simulate Copper, bitplane, blitter, sprite, audio, interrupt, or Chip-RAM contention behavior; those remain UAE and real-hardware responsibilities.
+
+### 10.10 Native-code safety, interruption, and determinism
 
 Native generation removes interpreter overhead but also removes the structural safety of a bytecode dispatch loop. A stock 68EC020 provides no process isolation suitable for this design, so the compiler, emitter, guards, and ABI become part of the trusted computing base.
 
@@ -594,7 +628,7 @@ The following controls are mandatory:
 
 A compiler or native runtime defect can still corrupt the process and prevent restoration because there is no hardware sandbox. This residual risk MUST be documented, minimized through differential tests and fuzzing, and treated as more severe than an ordinary cartridge error.
 
-### 10.10 Minimum fantasy API
+### 10.11 Minimum fantasy API
 
 The 1.0 API MUST cover:
 
@@ -928,8 +962,10 @@ The runtime SHOULD expose an optional raster-bar or numeric profiler. A represen
 | `editor_code` | Text buffer, rendering, commands, undo, and diagnostic navigation. |
 | `editor_sprite` | Tile/object pixel tools, palettes, hardware-eligibility diagnostics, reference previews, and undo. |
 | `compiler_frontend` | Lua-like lexer/parser, type inference, semantics, typed AST/IR, and source maps. |
-| `codegen_68020` | Layout, instruction selection, register/stack allocation, machine-code emission, relocation, validation metadata, and cache synchronization. |
+| `codegen_68020` | Layout, instruction selection, shared low-level m68k model, direct encoding, development assembly rendering, relocation, validation metadata, and cache synchronization. |
 | `native_runtime` | Versioned jump table, guarded callback invocation, execution budgets, stop/error trampolines, and fantasy API dispatch. |
+| `miga68k_test` | Host-only Musashi 68EC020 runner, bounded memory, runtime traps, assertions, traces, and CPU regression metrics. |
+| `runtime_test_stubs` | Deterministic host-call stubs that validate the generated native ABI without pretending to emulate Amiga hardware. |
 | `cartridge` | Container validation, packing/unpacking, versioning, and size accounting. |
 | `storage` | Hosted C stream and AmigaDOS volume, directory, error, and safe-save operations. |
 | `video_core` | Three-layer virtual-GPU semantics, command routing, dirty tracking, palettes, clipping, and portable reference composition. |
@@ -946,7 +982,7 @@ The runtime SHOULD expose an optional raster-bar or numeric profiler. A represen
 | `platform_amigaos` | C runtime integration plus AmigaOS libraries, memory classes, timing, startup, shutdown, and resource ownership. |
 | `takeover` | Transactional state machine for exclusive entry and restoration. |
 
-The compiler frontend, typed IR, 68020 emitter, cartridge parser, MOD state machine, and reference renderer SHOULD also compile natively on the host for fast tests. A host-only typed-IR interpreter or simulator SHOULD provide a differential oracle for generated 68020 execution. Platform dependencies MUST sit behind narrow interfaces.
+The compiler frontend, typed IR, 68020 emitter, cartridge parser, MOD state machine, and reference renderer SHOULD also compile natively on the host for fast tests. A host-only typed-IR interpreter SHOULD provide the semantic oracle for generated 68020 execution; `miga68k_test` executes the actual emitted instructions. Platform dependencies MUST sit behind narrow interfaces.
 
 ### 16.2 C99 and assembly policy
 
@@ -977,18 +1013,47 @@ Initial MAGI-80 system compiler/linker policy:
 
 The initial system ABI and toolchain revisions are locked in `toolchain/versions.lock`. The runtime matrix selected libnix over clib2 on size after both passed the required allocation/filesystem tests under `vamos` and FS-UAE/Kickstart 3.0; newlib failed required semantics and introduced an external math-library startup dependency. Kickstart 3.1 and real-A1200 results remain mandatory revalidation gates, and any resulting ABI change MUST be recorded explicitly.
 
-### 16.4 Build outputs
+### 16.4 Host compiler-validation toolchain
+
+The compiler-development loop defined in [MAGI-80 Local 68020 Tooling](./MAGI-80-local-68020-tooling.md) is separate from the Amiga Hunk build:
+
+| Role | Initial choice | Policy |
+| --- | --- | --- |
+| Primary CPU execution | Musashi in 68EC020 mode | Required for fast generated-code tests; source revision and license MUST be pinned |
+| Secondary CPU oracle | Moira | Optional until a curated differential corpus justifies its C++20 integration cost |
+| Development assembler/linker | GNU `m68k-elf` binutils or vasm/vlink | Select and pin one syntax/toolchain before substantial backend work |
+| Binary inspection | ELF symbols plus `objdump`/disassembler output | Preserve deterministic failure artifacts and normalized disassembly |
+| Test driver | Existing project build/test system | One ordinary host command MUST run native and generated-code tests |
+
+The recommended bring-up route renders textual assembly, creates a linked ELF image at deterministic addresses, extracts a flat image for the runner, and retains symbols for diagnostics. Once the ABI and instruction selection stabilize, the shipping direct encoder becomes authoritative. Differential tests MUST compare its bytes/behavior with the reviewed assembly route until the bootstrap route can safely become optional.
+
+Third-party sources MUST be reproducibly fetched or vendored with notices and checksums. No developer-specific absolute path may be embedded in build scripts, manifests, test reports, or documentation. Adopted Musashi, Moira, assembler, linker, and binary-tool versions MUST be added to `toolchain/versions.lock`.
+
+The initial source boundary SHOULD be recognizable without constraining later directory refactors:
+
+```text
+compiler/{frontend,ir,backend_m68k}
+runtime/{abi,stubs,amiga}
+tools/miga68k-test
+tests/{compile,diagnostics,execute,differential,performance}
+```
+
+Musashi integration belongs behind the runner interface; compiler and runtime code MUST NOT include emulator-specific APIs.
+
+### 16.5 Build outputs
 
 One command SHOULD produce:
 
 - host unit-test binaries;
+- host `miga68k-test` runner and generated-code semantic/ABI suite;
+- retained ELF, flat image, symbol manifest, and short trace for failed compiler tests;
 - debug Amiga Hunk executable and map;
 - stripped release executable;
 - hard-disk installation directory;
 - legal bootable ADF when required licensed inputs are supplied;
 - image manifest with hashes and byte/block usage;
 - example `.m80` cartridge;
-- test report for compiler, 68020 code generation/native runtime, graphics, MOD parsing, and packaging.
+- test report separating native semantics, local 68EC020 execution, UAE integration, real-hardware validation, graphics, MOD parsing, and packaging.
 
 ## 17. Error handling and data safety
 
@@ -1025,14 +1090,17 @@ Cartridges and modules are untrusted input. Host builds MUST run their parsers u
 
 ### 18.1 Test layers
 
-1. **Host unit tests:** lexer, Lua-like grammar, type inference/rules, typed IR, record/array/dictionary layouts, 68020 instruction encoding and relocation, native ABI guards, fixed-point math, cartridge parser, compression, MOD effect state, and the three-layer graphics reference model.
-2. **Property and fuzz tests:** cartridge/MOD parsing, decompression, source lexer/parser, typed IR, relocation inputs, dictionary operations, and checked arithmetic.
-3. **Golden and differential tests:** three-layer composite hashes, planar operation output, four-plane C2P bytes, palette mapping, object-scheduler/fallback traces, emitted 68020 words/disassembly, generated-code behavior versus a host typed-IR oracle, source error locations, runtime traces, and MOD tick traces.
-4. **Emulator integration:** PAL A1200, 68020, AGA, exactly 2 MiB Chip RAM, no Fast RAM; floppy boot, HD launch, disk swaps, and error paths.
-5. **Real-hardware tests:** at least two stock A1200 units if available, original or representative floppy drive/media, CRT and modern display adapter where relevant.
-6. **Soak tests:** editor idle, music preview, runtime, repeated run/stop, repeated save/load, and low-memory behavior.
+1. **Native host unit tests:** lexer, Lua-like grammar, type inference/rules, typed IR, record/array/dictionary layouts, instruction encoding and relocation, fixed-point math, cartridge parser, compression, MOD effect state, and the three-layer graphics reference model.
+2. **Property and fuzz tests:** cartridge/MOD parsing, decompression, source lexer/parser, typed IR, relocation inputs, dictionary operations, checked arithmetic, and malformed or nonterminating generated programs.
+3. **Local 68EC020 execution:** run generated functions under Musashi; assert results, side effects, ABI preservation, stack balance, guards, runtime calls, controlled traps, and instruction limits. A curated edge corpus SHOULD later run under Moira as an independent CPU oracle.
+4. **Golden and differential tests:** three-layer composite hashes, planar operation output, four-plane C2P bytes, palette mapping, object-scheduler/fallback traces, selected normalized 68020 disassembly, direct-encoder behavior versus the host typed-IR oracle and assembly route, source error locations, runtime traces, and MOD tick traces.
+5. **UAE integration:** PAL A1200, 68EC020, AGA, exactly 2 MiB Chip RAM, no Fast RAM; generated-code cache synchronization, native ABI integration, floppy boot, HD launch, disk swaps, and error paths.
+6. **Real-hardware tests:** at least two stock A1200 units if available, original or representative floppy drive/media, CRT and modern display adapter where relevant.
+7. **Soak tests:** editor idle, music preview, generated-code replacement, runtime, repeated run/stop, repeated save/load, and low-memory behavior.
 
-Emulators are essential for automation but cannot sign off custom-chip timing, Chip-RAM contention, CIA behavior, floppy reliability, or restoration.
+The local CPU runner is essential for fast compiler diagnosis but validates neither AmigaOS integration nor hardware timing. UAE is essential for system automation but cannot sign off custom-chip timing, Chip-RAM contention, CIA behavior, floppy reliability, restoration, or stock-machine frame budgets.
+
+Every commit SHOULD run native frontend/IR tests, Musashi generated-code semantics and ABI checks, malformed-code/time-limit cases, deterministic differential tests with recorded seeds, and the small approved code-size/instruction regression set. UAE integration MAY run on a slower schedule; stock-A1200 execution and timing remain milestone and release gates. A failed generated-code case MUST retain enough deterministic input, image, symbols, and short trace to reproduce it locally.
 
 ### 18.2 Required compatibility matrix
 
@@ -1053,7 +1121,8 @@ MAGI-80 1.0 is complete only when all of the following are true:
 - A user can create a project, edit source, draw sprites, import a supported MOD, save, reload, compile, run, stop, and continue editing on a stock A1200.
 - The included example cartridge demonstrates input, the native planar layer, a chunky viewport, virtual objects, transparency, scrolling, object fallback, text, music, and a controlled runtime error screen.
 - The frozen Standard hybrid-graphics workload sustains 25 Hz without tearing or starving music; each optional larger-viewport or Turbo profile meets its separately documented envelope.
-- Compiler, generated native code, and runtime behavior are deterministic across host reference tests, emulator, and hardware.
+- Compiler, generated native code, and runtime behavior are deterministic across the host typed-IR oracle, Musashi runner, UAE, and hardware, plus selected independent CPU-oracle cases when that optional runner is adopted.
+- The generated-code suite covers ABI preservation, memory guards, controlled runtime traps, invalid accesses, forbidden instructions, and instruction-budget exhaustion with reproducible failure traces.
 - Malformed corpus and fuzz regressions do not crash or corrupt memory.
 - The 1,000-cycle takeover/restoration test passes.
 - A 30-minute representative runtime and a two-hour hosted editing/music-preview soak pass.
@@ -1062,13 +1131,13 @@ MAGI-80 1.0 is complete only when all of the following are true:
 
 ## 19. Development roadmap
 
-The estimates below are engineering effort for one experienced developer, not calendar promises. They include implementation and ordinary testing but not large hardware-procurement or licensing delays. The critical path is the hybrid graphics freeze on real hardware first, then safe on-target native compilation and the content workflow, then hardening.
+The estimates below are engineering effort for one experienced developer, not calendar promises. They include implementation and ordinary testing but not large hardware-procurement or licensing delays. The critical path is the hybrid graphics freeze on real hardware first, then safe on-target native compilation and the content workflow, then hardening. The local CPU-runner workstream is independent of AGA work and does not block the next graphics benchmarks.
 
-Current Phase 0 evidence includes the reproducible cross-toolchain, native golden-vector tests, an Amiga Hunk benchmark harness, and an Intuition-managed 4+4 dual-playfield smoke test under FS-UAE. The existing scalar C2P runs validate report plumbing, plane ordering, and layout equivalence only. They are not performance evidence and do not freeze the superseded two-full-chunky-layer design.
+Current Phase 0 evidence includes the reproducible cross-toolchain, native golden-vector tests, an Amiga Hunk benchmark harness, and an Intuition-managed 4+4 dual-playfield smoke test under FS-UAE. The existing scalar C2P runs validate report plumbing, plane ordering, and layout equivalence only. They are not performance evidence and do not freeze the superseded two-full-chunky-layer design. The Musashi-based runner is an accepted development direction but is not yet counted as implemented evidence.
 
 ### Phase 0 — Feasibility and irreversible decisions
 
-**Estimate:** 6–9 engineer-weeks
+**Estimate:** 7–10 engineer-weeks
 
 Deliverables:
 
@@ -1082,6 +1151,9 @@ Deliverables:
 - native planar tile/primitive rendering, pointer/fine scrolling, incremental row/column refill, and no-margin/±16/±32-margin measurements;
 - direct, attached, and vertically multiplexed AGA sprite prototypes plus measured deterministic fallback;
 - combined scenes with bitplane, sprite, blitter, and Paula DMA active at the same time;
+- pinned Musashi integration configured for 68EC020, with license/notice handling and a bounds-checked big-endian 24-bit test memory model;
+- `miga68k-test` execution of a hand-written function with controlled return, instruction limit, register/stack guards, and failure trace;
+- minimal host compiler path from one typed function through textual assembly, linked ELF/flat image, symbols, and local semantic assertions;
 - minimal strongly typed expression/function compiler that emits and safely invokes native 68020 code on the A1200;
 - generated-code instruction-cache synchronization and stop-at-loop-backedge proof;
 - prototype hosted-to-exclusive takeover and restoration loop;
@@ -1096,6 +1168,8 @@ Exit gate:
 - A frozen Standard profile sustains 25 Hz on a stock A1200 with audio enabled and at least 20% measured CPU headroom in representative planar, pixel-viewport, object-heavy, and combined scenes.
 - Small, Medium, and Full chunky profiles have measured packed-versus-byte source results; Full may remain explicitly expensive, but its correct behavior and budget are documented.
 - The project has selected its four-plane C2P path, scroll margin, object/palette/priority contract, direct/attached/multiplex limits, and deterministic fallback policy from real-hardware evidence.
+- The local runner executes hand-written and compiler-generated arithmetic/control-flow functions, detects nonreturn and invalid memory, and verifies the provisional ABI without UAE.
+- At least one generated function produces matching observable results under the typed-IR oracle, Musashi, UAE, and the on-target direct emitter; target cache synchronization and guards remain part of that proof.
 - The native compiler can emit, relocate, validate, cache-synchronize, run, budget-stop, and discard a small guarded 68020 program without destabilizing AmigaOS.
 - Run/restore succeeds 100 consecutive times without a leak or broken OS state.
 - A credible path exists to stay below 1,388 KiB peak MAGI-80 memory and 800 KiB disk payload.
@@ -1116,6 +1190,20 @@ The next graphics work MUST proceed in this order so each result has an oracle a
 7. Repeat decisive cases on real stock hardware, publish distributions rather than a single sample, and freeze the smallest contract that meets the headroom gate.
 
 Every case MUST report source construction/drawing, CPU conversion work, blitter work or wait, publication, total frame time, memory footprint, dirty bytes/regions, object allocation/fallback counts, EClock frequency, and output checksum. FS-UAE remains useful for correctness and automation but cannot choose a performance winner.
+
+#### Compiler-tooling workstream
+
+This workstream follows [MAGI-80 Local 68020 Tooling](./MAGI-80-local-68020-tooling.md) and is staged to avoid turning the local runner into another Amiga emulator:
+
+1. **Runner foundation — Phase 0:** embed Musashi, select 68EC020 mode, implement bounded big-endian memory, execute a reviewed `mul_add` function, stop through a return sentinel/trap, and report a short failure trace.
+2. **Compiler connection — Phase 0/early Phase 3:** render integer arithmetic and return through textual assembly, assemble/link automatically, retain ELF symbols, load a flat image, and execute several inputs from the ordinary host test command.
+3. **ABI freeze — early Phase 3:** finalize register roles, runtime-context access, stack alignment, calls, locals, multiple returns, error traps, saved-register checks, and a versioned ABI document.
+4. **Semantic expansion — Phase 3:** add branches, loops, fixed point, globals, arrays, records, dictionaries, strings/symbols, guards, runtime mocks, negative tests, and deterministic randomized differential tests.
+5. **Direct-encoder convergence — Phase 3:** compare the shipping encoder with the assembly route and typed-IR oracle until encoding, relocation, source maps, and behavior agree; retain only selective normalized-disassembly goldens.
+6. **Performance regression — Phase 3 onward:** record code size, instruction count, approximate core cycles, stack depth, calls, and memory operations for representative CPU kernels. Threshold only a small reviewed corpus and never translate these values into A1200 frame claims.
+7. **Independent CPU validation — late Phase 3 or hardening:** add Moira only when the edge-case corpus is large enough to justify the adapter; investigate every divergent final state and keep real hardware authoritative.
+
+The runner mocks graphics/audio/input calls only at the native ABI boundary. Copper lists, blits, sprite DMA, audio DMA, raster interrupts, Chip-RAM contention, C2P/display interaction, and 25/50 Hz deadlines remain exclusively in the UAE/real-hardware workstream.
 
 ### Phase 1 — Platform foundation and hosted shell
 
@@ -1158,24 +1246,25 @@ Exit gate:
 
 ### Phase 3 — MIGA Lua compiler and native 68020 backend
 
-**Estimate:** 9–14 engineer-weeks
+**Estimate:** 10–16 engineer-weeks
 
 Deliverables:
 
 - versioned MIGA Lua reference, Lua 5.1 compatibility matrix, and grammar;
 - lexer, parser, strong type inference/checking, fixed-point semantics, AST, and typed IR;
 - fixed-layout records, arrays, optionals, and deterministic fixed-capacity dictionaries;
-- 68020 data/stack layout, instruction selector, register/stack allocation, binary emitter, relocation, and generated-code validator;
+- shared low-level m68k representation, development assembly renderer, 68020 data/stack layout, instruction selector, register/stack allocation, direct binary encoder, relocation, and generated-code validator;
 - versioned native ABI, immutable runtime jump table, typed planar/pixel/object/input/audio bindings, and stop/error trampolines;
 - bounds/division/shift/stack guards plus execution-budget and stop checks at every backward control-flow edge;
 - generated-code arena ownership and Exec instruction-cache synchronization;
 - deterministic random, lifecycle, source line maps, and runtime diagnostic capture;
-- host typed-IR oracle, emitter/disassembly golden tests, differential execution tests, and relocation/IR fuzz targets;
-- native-host compiler test build and on-target compile-time/code-size reports.
+- host typed-IR oracle, Musashi semantic/ABI/negative suites, selective emitter/disassembly goldens, deterministic differential execution, and relocation/IR fuzz targets;
+- optional Moira adapter and curated cross-core edge corpus when justified;
+- native-host compiler test build, retained failure artifacts, code-size/instruction/stack regression reports, and on-target compile-time/code-size reports.
 
 Exit gate:
 
-- A nontrivial MIGA Lua game compiles to native 68020 code on the stock A1200, runs deterministically, detects an infinite loop and representative guarded faults, and returns source-level errors after restoring AmigaOS.
+- A nontrivial MIGA Lua game agrees with the typed-IR oracle and local 68EC020 runner, compiles to native 68020 code on the stock A1200, runs deterministically, detects an infinite loop and representative guarded faults, and returns source-level errors after restoring AmigaOS.
 
 ### Phase 4 — Cartridge, code editor, and sprite editor
 
@@ -1227,7 +1316,8 @@ Deliverables:
 - compatibility matrix and real-hardware sign-off;
 - performance tuning driven by profiler evidence;
 - release candidate soak, recovery, and regression runs;
-- reproducible build manifest and source release packaging.
+- reproducible build manifest and source release packaging;
+- pinned third-party CPU-runner/tool licenses, notices, source revisions, and reproducible host-test bootstrap instructions.
 
 Exit gate:
 
@@ -1237,25 +1327,26 @@ Exit gate:
 
 | Milestone | Cumulative estimate | Outcome |
 | --- | ---: | --- |
-| Feasibility gate | 6–9 weeks | Hybrid GPU, core hardware, memory, disk, legal model, and minimal native compiler path proven. |
-| Runtime prototype | 17–25 weeks | Native C three-layer scenes with safe takeover, graphics, input, and audio foundations. |
-| Creator alpha | 33–49 weeks | On-machine MIGA Lua-to-68020 compiler, code editor, tile/object editor, cartridges, and integrated run loop. |
-| Version 1.0 | 43–64 weeks | Floppy/HD packaging, MOD compatibility, native-code hardening, docs, and real-hardware certification. |
+| Feasibility gate | 7–10 weeks | Hybrid GPU, local 68EC020 runner, core hardware, memory, disk, legal model, and minimal native compiler path proven. |
+| Runtime prototype | 18–26 weeks | Native C three-layer scenes with safe takeover, graphics, input, audio, and generated-code test foundations. |
+| Creator alpha | 35–52 weeks | Locally validated on-machine MIGA Lua-to-68020 compiler, code editor, tile/object editor, cartridges, and integrated run loop. |
+| Version 1.0 | 45–67 weeks | Floppy/HD packaging, MOD compatibility, native-code hardening, docs, and real-hardware certification. |
 
-A solo part-time project should translate these into milestones rather than fixed dates. Schedule contingency belongs mainly to takeover/restoration, object scheduling/fallback, Chip-RAM contention, four-plane C2P performance, CIA/keyboard behavior, floppy packaging, and editor usability.
+A solo part-time project should translate these into milestones rather than fixed dates. Schedule contingency belongs mainly to takeover/restoration, object scheduling/fallback, Chip-RAM contention, four-plane C2P performance, native ABI/direct-encoder convergence, CIA/keyboard behavior, floppy packaging, and editor usability.
 
 ## 20. Prioritization and scope cuts
 
 If measured constraints force reductions, cut in this order:
 
-1. syntax coloring and advanced editor commands;
-2. optional MIGA Lua conveniences such as non-capturing function values, method-call sugar, and generic dictionary iteration;
-3. 50 Hz simulation mode;
-4. optional ProTracker effects and hosted live preview;
-5. extended map tooling and formats beyond the minimal native planar tile path;
-6. sprite transform conveniences beyond flip;
-7. multiple example cartridges and expanded on-disk help;
-8. compression sophistication.
+1. Moira integration and cross-core coverage beyond a small curated edge corpus;
+2. syntax coloring and advanced editor commands;
+3. optional MIGA Lua conveniences such as non-capturing function values, method-call sugar, and generic dictionary iteration;
+4. 50 Hz simulation mode;
+5. optional ProTracker effects and hosted live preview;
+6. extended map tooling and formats beyond the minimal native planar tile path;
+7. sprite transform conveniences beyond flip;
+8. multiple example cartridges and expanded on-disk help;
+9. compression sophistication.
 
 Do not cut:
 
@@ -1263,6 +1354,7 @@ Do not cut:
 - stock 2 MiB support;
 - on-Amiga MIGA Lua compilation to native 68020 code;
 - strong types, fixed data layouts, generated-code guards, stop safe points, and the closed native ABI;
+- fast local semantic execution of generated 68EC020 code with bounds, ABI, guard, and timeout checks;
 - the code and sprite editors;
 - the 256 × 256 three-layer virtual graphics contract, independent dirty state, and transparent backend selection;
 - a native planar path and a bounded chunky viewport path;
@@ -1302,6 +1394,12 @@ Do not cut:
 | R-24 | A blitter-assisted path is slower because CPU, display, sprite, audio, and blitter DMA contend for Chip RAM. | High | High | Measure CPU-only, blitter-only stages, and hybrids with all representative DMA active; record CPU work, blitter busy/wait, and total frame time; select by real-hardware total rather than isolated throughput. |
 | R-25 | Scroll margins save steady-state work but create visible rebase spikes or consume too much Chip RAM. | Medium | Medium | Compare no margin, ±16, and ±32; measure worst-case refill/rebase separately from averages; cap work per frame or select a smaller guarantee. |
 | R-26 | The three-layer abstraction grows into an unpredictable general compositor. | Medium | High | Freeze one baseline composition order, bounded viewport presets, fixed object capabilities, and explicit fallback rules; reject per-pixel alpha, arbitrary layer graphs, and undocumented adaptive behavior. |
+| R-27 | The textual-assembly bootstrap and shipping direct encoder diverge into two subtly different backends. | Medium | Critical | Share one low-level m68k instruction model, run behavioral and relocation comparisons, retain selective disassembly goldens, and retire bootstrap-only paths once direct encoding is independently trusted. |
+| R-28 | A Musashi-specific behavior masks a generated-code defect or rejects valid target behavior. | Medium | High | Use the typed-IR oracle, UAE, and real hardware as independent levels; add a curated Moira cross-check when useful; investigate disagreements instead of voting by majority. |
+| R-29 | The CPU runner grows into a partial Amiga emulator and consumes effort without improving compiler diagnosis. | Medium | Medium | Freeze its scope at CPU, bounded memory, traps, assertions, and traces. Mock runtime calls and keep all chipset, DMA, interrupt, and frame-budget work in UAE/hardware tests. |
+| R-30 | Approximate emulator cycle counts are mistaken for stock-A1200 performance. | High | High | Label them regression-only, never convert them directly to milliseconds, and permit performance claims only from EClock/raster measurements on real stock hardware with representative DMA. |
+| R-31 | Host assembler, linker, CPU core, or binary tools vary across machines or introduce an unresolved license/reproducibility issue. | Medium | High | Pin revisions and checksums, archive notices, provide a scripted bootstrap, preserve ELF/flat artifacts, and keep developer-specific absolute paths out of all tracked configuration. |
+| R-32 | The local runner's synthetic memory addresses or trap protocol accidentally become cartridge ABI. | Low | High | Keep runner maps in test-only configuration, expose services through the versioned native ABI, and require an explicit decision record before any test address or trap number can become normative. |
 
 ## 22. Decision log required before implementation freeze
 
@@ -1319,13 +1417,17 @@ The following decisions must be recorded with measurements or prototypes:
 10. Virtual object count and dimensions, palette/priority contract, direct/attached/multiplex limits, scheduler order, and fallback representation/cost.
 11. Runtime keyboard acquisition and emergency-stop mechanism.
 12. CIA-timed versus fractional-VBlank ProTracker scheduler.
-13. Selected GCC fork, commit, NDK, C runtime, ABI, and release flags.
+13. Selected GCC fork, commit, NDK, C runtime, target ABI, release flags, and host bootstrap procedure.
 14. Frozen MIGA Lua grammar, Lua 5.1 compatibility matrix, type inference rules, numeric semantics, and restricted feature set.
 15. Record/array/dictionary layouts, supported key types, hash/probing algorithm, capacities, load factor, and deterministic iteration order.
-16. Native 68020 ABI, runtime-context convention, jump table, relocation model, code arena, stack rules, guards, loop budgets, stop safe points, and cache-clear sequence.
+16. Native 68020 ABI, exact register convention, Boolean/fixed-point representation, runtime-context convention, jump table, relocation model, code arena, stack rules, guards, traps, loop budgets, stop safe points, and cache-clear sequence.
 17. Final source, generated-code, packed-cartridge, resident-cartridge, undo, and module limits.
 18. Cartridge checksum and compression algorithms.
 19. Safe-save behavior when a floppy cannot hold old and temporary copies.
+20. Pinned Musashi revision/license/integration method and the trigger for adding a pinned Moira oracle.
+21. Local runner memory map, 24-bit/endianness/alignment policy, return/exit protocol, instruction ceiling, runtime-call mocks, trace format, and failure artifacts.
+22. Development assembler/linker and syntax, ELF layout, symbol manifest, flat-image extraction, disassembly normalization, and direct-encoder convergence criteria.
+23. CPU regression metrics, reviewed kernels, comparison policy, and thresholds that cannot be presented as hardware timing.
 
 ## 23. Recommended first vertical slice
 
@@ -1350,6 +1452,10 @@ This slice exercises every architectural boundary before richer editor tools or 
 
 These sources inform the assumptions above; they are not runtime dependencies:
 
+- [MAGI-80 Local 68020 Tooling](./MAGI-80-local-68020-tooling.md), defining the fast generated-code test loop and its boundary with UAE and real hardware.
+- [Musashi — Motorola 680x0 emulator](https://github.com/kstenerud/Musashi), the proposed primary embedded 68EC020 core for host compiler tests.
+- [Moira — Motorola 68000/68010/68EC020/68020 emulator](https://dirkwhoffmann.github.io/Moira/), the proposed optional independent CPU oracle.
+- [GNU Binutils](https://sourceware.org/binutils/) and [vasm](https://sun.hasenbraten.de/vasm/), candidate development assembly, link, extraction, and inspection tools.
 - [AmigaOS Documentation Wiki — Exec Tasks](https://wiki.amigaos.net/wiki/Exec_Tasks), especially the behavior of `Forbid()`, `Permit()`, `Disable()`, `Enable()`, and the warning against long disabled sections.
 - [AmigaOS Documentation Wiki — Exec processor and cache control](https://wiki.amigaos.net/wiki/Exec_Tasks#Processor_and_Cache_Control), for `CacheClearE()`, `CacheClearU()`, the 68020 instruction cache, and generated/self-modifying code synchronization.
 - [AmigaOS Documentation Wiki — Classic Graphics Primitives](https://wiki.amigaos.net/wiki/Classic_Graphics_Primitives), covering `View`, dual playfields, double buffering, direct blitter coordination, and display construction.
