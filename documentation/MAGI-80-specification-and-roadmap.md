@@ -684,7 +684,7 @@ The API MAY permit a primitive on either drawable playfield, but its visible res
 
 A portable C reference compositor is authoritative. It models the three logical layers and object priority without depending on AGA channel allocation. Every optimized planar, C2P, blitter, sprite, multiplex, and fallback path MUST match reference golden images for supported inputs.
 
-The initial C99 compositor now produces canonical palette identities for a planar view, positioned transparent pixel view, and priority-ordered object list. Native goldens cover clipping, source origins, camera translation, object tie-breaking, and hardware-sprite/fallback hint equivalence. It is integrated into `gmake check`; AGA-output decoding and backend differential checks remain open. See [Three-Layer Graphics Reference Compositor](./graphics-reference-compositor.md).
+The initial C99 compositor now produces canonical palette identities for a planar view, positioned transparent pixel view, and priority-ordered object list. Native goldens cover clipping, source origins, camera translation, object tie-breaking, and hardware-sprite/fallback hint equivalence. An inverse AGA reference decoder reconstructs the canonical image from BPL1–BPL8 and proves a complete compositor → C2P → dual-playfield round trip. Both are integrated into `gmake check`; the hardware-sprite output adapter remains open until the object benchmark tranche. See [Three-Layer Graphics Reference Compositor](./graphics-reference-compositor.md) and [AGA Dual-Playfield Reference Decoder](./aga-reference-decoder.md).
 
 ### 11.3 Chunky viewport profiles and source layouts
 
@@ -1135,7 +1135,7 @@ MAGI-80 1.0 is complete only when all of the following are true:
 
 The estimates below are engineering effort for one experienced developer, not calendar promises. They include implementation and ordinary testing but not large hardware-procurement or licensing delays. The critical path is the hybrid graphics freeze on real hardware first, then safe on-target native compilation and the content workflow, then hardening. The local CPU-runner workstream is independent of AGA work and does not block the next graphics benchmarks.
 
-Current Phase 0 evidence includes the reproducible cross-toolchain, native C2P golden vectors, the initial three-layer C99 reference compositor and goldens, an Amiga Hunk benchmark harness, and an Intuition-managed 4+4 dual-playfield smoke test under FS-UAE. The existing scalar C2P runs validate report plumbing, plane ordering, and layout equivalence only. They are not performance evidence and do not freeze the superseded two-full-chunky-layer design. The Musashi-based runner is an accepted development direction but is not yet counted as implemented evidence.
+Current Phase 0 evidence includes the reproducible cross-toolchain, native C2P golden vectors, the initial three-layer C99 reference compositor and goldens, an inverse dual-playfield decoder with a full-frame differential test, a validated common graphics-report schema, an Amiga Hunk benchmark harness, and an Intuition-managed 4+4 dual-playfield smoke test under FS-UAE. The existing scalar C2P runs validate legacy report plumbing, plane ordering, and layout equivalence only. They are not performance evidence and do not freeze the superseded two-full-chunky-layer design. The Musashi-based runner is an accepted development direction but is not yet counted as implemented evidence.
 
 ### Phase 0 — Feasibility and irreversible decisions
 
@@ -1183,9 +1183,9 @@ If this gate fails, do not build editors. Reduce the default viewport, object gu
 
 The next graphics work MUST proceed in this order so each result has an oracle and a clear decision consequence:
 
-The logical compositor portion of step 1 is complete. Its AGA-output decoder and common backend-report schema are the remaining prerequisites for comparative timing.
+Step 1 is complete for dual-playfield output. The later object tranche must extend canonical decoding with a hardware-sprite adapter, without changing the playfield contract.
 
-1. Complete the oracle infrastructure by adding an AGA-output decoder and common benchmark report schema around the portable compositor. Use identical logical scenes and hashes across every backend.
+1. **Completed:** establish the portable compositor, inverse AGA dual-playfield decoder, exact differential path, and common benchmark report schema. Use identical logical scenes and canonical hashes across every backend.
 2. Benchmark four-plane C2P at 160 × 128, 192 × 160, and 256 × 256 for packed and byte-per-pixel sources. For each size, compare optimized CPU-only, blitter-assisted, and hybrid implementations with display DMA active.
 3. Benchmark native planar clears, fills, tiles, text, cached planar sprites, whole-screen pointer scroll, fine scroll, and incremental exposed-row/column updates.
 4. Compare no scroll margin, ±16 pixels, and ±32 pixels, including Chip-RAM footprint, rebase spikes, and worst-case refill cost.
@@ -1193,7 +1193,7 @@ The logical compositor portion of step 1 is complete. Its AGA-output decoder and
 6. Run representative planar-only, medium-viewport, object-heavy, and combined scenes with bitplane, blitter, sprite, and Paula DMA contention. Measure Standard and Turbo deadlines and the cost of safe publication.
 7. Repeat decisive cases on real stock hardware, publish distributions rather than a single sample, and freeze the smallest contract that meets the headroom gate.
 
-Every case MUST report source construction/drawing, CPU conversion work, blitter work or wait, publication, total frame time, memory footprint, dirty bytes/regions, object allocation/fallback counts, EClock frequency, and output checksum. FS-UAE remains useful for correctness and automation but cannot choose a performance winner.
+Every case MUST follow the [Graphics Benchmark Report Format](./graphics-benchmark-report-format.md): source construction/drawing, CPU conversion work, blitter work or wait, publication, total frame distribution, memory footprint, dirty bytes/regions, object allocation/fallback counts, E-Clock frequency, DMA state, and matching oracle/output checksums. FS-UAE remains useful for correctness and automation but cannot choose a performance winner.
 
 #### Compiler-tooling workstream
 

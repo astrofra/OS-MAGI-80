@@ -1,0 +1,5 @@
+PASS dual-playfield single-byte golden
+PASS compositor to C2P to decoder differential
+PASS source strides and output padding
+PASS decoder argument contract
+result=pass

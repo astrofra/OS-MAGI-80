@@ -1,0 +1,5 @@
+PASS graphics report accepts the version 1 contract
+PASS graphics report rejects wrong case counts
+PASS graphics report rejects unordered timings
+PASS graphics report rejects oracle mismatches
+result=pass

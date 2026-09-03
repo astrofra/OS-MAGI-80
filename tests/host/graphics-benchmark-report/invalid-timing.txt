@@ -1,0 +1,15 @@
+graphics_benchmark_format=1
+benchmark=c2p4
+environment=amiga_1200_pal
+timing_authority=real_hardware
+timing_source=eclock
+eclock_hz=709379
+timer_overhead_ticks=11
+canonical_format=palette_identity_u8
+checksum_algorithm=fnv1a32
+display_dma=active
+sprite_dma=inactive
+audio_dma=inactive
+case_count=1
+case=byte4_160x128 backend=scalar_c99 workload=full_frame width=160 height=128 samples=9 memory_bytes=30720 dirty_bytes=20480 dirty_regions=1 objects=0 fallback_objects=0 frame_budget_ticks=14187 source_median_ticks=120 draw_median_ticks=900 cpu_conversion_median_ticks=3000 blitter_median_ticks=0 blitter_wait_median_ticks=0 publication_median_ticks=40 total_min_ticks=4210 total_median_ticks=4200 total_max_ticks=4301 oracle_checksum=305419896 canonical_checksum=305419896 deadline_misses=0 result=pass
+result=pass
