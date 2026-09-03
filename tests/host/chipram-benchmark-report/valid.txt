@@ -1,0 +1,23 @@
+chipram_benchmark_format=1
+environment=fs_uae_a1200_pal
+timing_authority=protocol_only
+timing_scope=exclusive_kernel_batch
+timing_source=eclock
+eclock_hz=709379
+timer_overhead_ticks=40
+display_dma=active
+sprite_dma=active
+audio_dma=inactive
+interrupt_mode=custom_intena_masked
+buffer_bytes=8192
+batch_iterations=4
+samples=7
+dedicated_stack_bytes=16384
+stack_boundary_reserve_bytes=256
+stack_guard_bytes=256
+stack_high_water_bytes=1024
+initial_stack_bytes=4096
+interrupt_restore=pass
+case_count=1
+case=write_long4 operation=write access_width=long_unrolled4 bytes_per_batch=32768 minimum_chip_traffic_bytes=32768 frame_budget_ticks=28375 minimum_ticks=1000 median_ticks=1010 maximum_ticks=1020 expected_checksum=123456 actual_checksum=123456 deadline_misses=0 kernel_return_checksum=324508636 result=pass
+result=pass

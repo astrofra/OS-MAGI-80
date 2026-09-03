@@ -1,19 +1,37 @@
 # MAGI-80 Exclusive Graphics Benchmark Plan
 
-**Status:** Design contract; implementation pending
+**Status:** Raw Chip-RAM kernel-batch foundation implemented and validated in FS-UAE; graphics integration and physical-hardware authority pending
 
 **Decision authority:** Only distributions produced by this harness on a physical stock PAL A1200 may select a graphics backend or certify a frame budget
 
 ## 1. Purpose
 
-The existing hosted FS-UAE benchmark proves byte-exact output, target ABI execution, Chip-RAM allocation, report generation, and clean OS-managed teardown. It deliberately does not provide fine timing. AmigaOS remains scheduled, system interrupt handlers remain active, and every sample is preceded by `WaitTOF()` outside the measured bracket.
+The hosted FS-UAE graphics benchmark proves byte-exact output, target ABI execution, Chip-RAM allocation, report generation, and clean OS-managed teardown. It deliberately does not provide fine timing. AmigaOS remains scheduled, system interrupt handlers remain active, and every sample is preceded by `WaitTOF()` outside the measured bracket.
+
+The first `exclusive_kernel_batch` foundation now exists for raw Chip-RAM kernels. It validates the takeover shape, a dedicated stack, interrupt masking, E-Clock batching, restoration, result checksums, and machine-readable failure output. It does not yet own the display or install the MAGI-80 runtime interrupt path.
 
 The exclusive harness separates two questions:
 
 1. how fast a bounded kernel moves and transforms Chip-RAM data under a precisely declared DMA state;
 2. whether the complete MAGI-80 runtime frame meets its deadline with the interrupt and DMA load it will actually own.
 
-Both modes reuse the same canonical source data, destination decoder, checksums, case identifiers, and report schema as the hosted benchmark.
+Graphics cases reuse the same canonical source data, destination decoder, checksums, case identifiers, and graphics report schema as the hosted benchmark. The raw-memory calibration uses a smaller dedicated report because it has no logical scene, draw stage, or planar output.
+
+### 1.1 Implemented raw-memory smoke test
+
+`tests/benchmark/chipram/` currently provides six reviewed 68020 kernels: sequential byte, word, longword, and four-way-unrolled longword writes; a four-way-unrolled longword copy; and a dependency-preserving four-way-unrolled read. Each sample processes four consecutive 8 KiB buffers inside one E-Clock bracket after an untimed warm-up. Source and destination allocations must be confirmed as Chip RAM.
+
+The harness performs all allocation, initialization, device opening, output formatting, and cleanup in hosted mode. It then switches to a 16 KiB measured stack, calls `Forbid()`, and uses short matched `Disable()`/`Enable()` windows to save, mask, and restore Paula `INTENA` around each timed batch. The CPU interrupt mask is not held during the batch; no custom-chip source is enabled to reach an AmigaOS handler. `ReadEClock()` is the only called timing primitive, and there is no `WaitTOF()` or DOS operation in the exclusive section.
+
+The stack allocation has 256-byte external canaries plus 256-byte declared reserves at both boundaries. The reserves are intentional: FS-UAE testing showed that Exec/GCC stack switching may touch boundary bookkeeping outside the downward-growing payload range even when the stack is healthy. The passing smoke report measured 78 bytes of payload-stack high water, preserved both external canaries, restored `INTENA` exactly, matched every checksum, and returned through normal cleanup.
+
+Run and validate it with:
+
+```sh
+gmake chipram-benchmark-fs-uae
+```
+
+The report is written to `build/reports/chipram-fs-uae.txt`; kernel sizes and generated instructions are recorded in the adjacent size, symbol, and disassembly reports. It deliberately declares `timing_authority=protocol_only`. In particular, the initial headless FS-UAE smoke run captured display, sprite, and audio DMA as inactive. Its tick values cannot reproduce or refute the informal physical-machine figure near 6 MB/s.
 
 ## 2. Why `Forbid()` and `Disable()` Are Not Run Modes
 
@@ -85,10 +103,10 @@ Restoration is reverse-order and idempotent where practical. A failure before en
 
 The first 24-case hosted matrix exposed why timeouts are ambiguous: a temporary 2,976-byte local result matrix was compatible with exhausting the small default AmigaDOS process stack. Streaming one 124-byte result made the full matrix and teardown complete, but no exception was captured.
 
-The exclusive harness MUST therefore:
+The complete exclusive harness MUST therefore:
 
 - switch to or otherwise guarantee a dedicated stack sized from measured high-water use;
-- place canaries at both guard boundaries and verify them before entry, after each batch, before restoration, and after restoration;
+- place canaries outside declared boundary reserves and verify them before entry, after each batch, before restoration, and after restoration;
 - keep large report/result arrays out of automatic storage;
 - record the last entered and completed phase in preallocated memory;
 - expose a raster/background-color phase marker for diagnosis on hardware and emulator;
@@ -112,7 +130,7 @@ Minimum kernels:
 | Display state | blanked, eight-plane 256 × 256 active |
 | DMA state | display only; display + Copper/sprites; display + blitter; representative display + sprites + Paula |
 
-Every result reports bytes per iteration, iteration count, raw E-Clock ticks, bracket overhead, minimum/median/maximum, decimal MB/s, binary MiB/s, alignment, generated disassembly, display state, enabled DMA, and interrupt mode. Reads whose values do not affect an observable checksum are invalid because an optimizer may remove them.
+Every physical-hardware result reports bytes per iteration, iteration count, raw E-Clock ticks, bracket overhead, minimum/median/maximum, decimal MB/s, binary MiB/s, alignment, generated disassembly, display state, enabled DMA, and interrupt mode. Reads whose values do not affect an observable checksum are invalid because an optimizer may remove them. The implemented protocol smoke already records the raw fields and observable checksums; rate formatting, alignment variants, active-display cases, and the full DMA matrix remain open before physical runs.
 
 ## 7. Graphics Case Requirements
 
@@ -128,7 +146,7 @@ The report retains `timing_authority=real_hardware` only for a validated stock-m
 
 ```text
 timing_scope=exclusive_kernel_batch|exclusive_runtime_frame
-interrupt_mode=masked_polled|magi80_level3
+interrupt_mode=custom_intena_masked|masked_polled|magi80_level3
 display_state=blanked|active
 minimum_chip_traffic_bytes=<unsigned-decimal>
 display_plane_fetch_bytes_per_video_frame=<unsigned-decimal>
@@ -154,11 +172,20 @@ The exclusive harness is ready to inform architecture only when:
 
 Until this gate passes, the hosted C2P4 matrix remains correctness and protocol evidence only.
 
+The immediate implementation sequence is:
+
+1. wrap the raw harness in blanked and owned active-display fixtures and add the alignment/read/mixed matrix;
+2. reuse its stack, phase, interrupt-handover, checksum, and restoration machinery around the existing C2P4 oracle cases;
+3. add the reviewed minimal Level-3 path for `exclusive_runtime_frame`, then stress transitions and forced failures;
+4. run the resulting distributions on a physical stock PAL A1200 before selecting a source layout or backend.
+
 ## 9. Primary References
 
 - [exec.library/Forbid autodoc](https://amigadev.elowar.com/read/ADCD_2.1/Includes_and_Autodocs_2._guide/node0353.html)
 - [exec.library/Disable autodoc](https://amigadev.elowar.com/read/ADCD_2.1/Includes_and_Autodocs_2._guide/node034A.html)
 - [exec.library/SetIntVector autodoc](https://amigadev.elowar.com/read/ADCD_2.1/Includes_and_Autodocs_3._guide/node0239.html)
+- [exec.library/ReadEClock autodoc](https://amigadev.elowar.com/read/ADCD_2.1/Includes_and_Autodocs_2._guide/node04FB.html)
+- [exec.library/StackSwap autodoc](https://amigadev.elowar.com/read/ADCD_2.1/Includes_and_Autodocs_2._guide/node0382.html)
 - [Amiga ROM Kernel Reference Manual — Interrupt Servers](https://amigadev.elowar.com/read/ADCD_2.1/Libraries_Manual_guide/node030B.html)
 - [Amiga Hardware Reference Manual — Interrupt Control Registers](https://amigadev.elowar.com/read/ADCD_2.1/Hardware_Manual_guide/node0164.html)
 - [Amiga Hardware Reference Manual — Beam Position Detection](https://amigadev.elowar.com/read/ADCD_2.1/Hardware_Manual_guide/node015E.html)

@@ -78,6 +78,17 @@ C2P4_BENCHMARK_SOURCE := tests/benchmark/c2p4/main.c
 C2P4_BENCHMARK_PROGRAM := $(C2P4_BENCHMARK_BUILD_DIR)/program
 C2P4_BENCHMARK_MAP := $(C2P4_BENCHMARK_BUILD_DIR)/program.map
 C2P4_BENCHMARK_REPORT := $(REPORT_DIR)/c2p4-fs-uae.txt
+CHIPRAM_BENCHMARK_BUILD_DIR := $(BENCHMARK_BUILD_DIR)/chipram
+CHIPRAM_BENCHMARK_SOURCE := tests/benchmark/chipram/main.c
+CHIPRAM_BENCHMARK_ASM_SOURCE := tests/benchmark/chipram/kernels.S
+CHIPRAM_BENCHMARK_HEADER := tests/benchmark/chipram/kernels.h
+CHIPRAM_BENCHMARK_PROGRAM := $(CHIPRAM_BENCHMARK_BUILD_DIR)/program
+CHIPRAM_BENCHMARK_MAP := $(CHIPRAM_BENCHMARK_BUILD_DIR)/program.map
+CHIPRAM_BENCHMARK_REPORT := $(REPORT_DIR)/chipram-fs-uae.txt
+CHIPRAM_REPORT_VALIDATOR := scripts/validate-chipram-benchmark-report.sh
+CHIPRAM_REPORT_TEST_SOURCE := tests/host/chipram-benchmark-report/test.sh
+CHIPRAM_REPORT_TEST_EXPECTED := tests/host/chipram-benchmark-report/expected.txt
+CHIPRAM_REPORT_TEST_REPORT := $(REPORT_DIR)/chipram-benchmark-report-host.txt
 
 TARGET_CFLAGS := \
 	-std=c99 \
@@ -105,10 +116,12 @@ C2P_BENCHMARK_CFLAGS = $(filter-out -Os,$(TARGET_CFLAGS)) -O2
 
 .PHONY: all amiga stage inspect vamos-test fs-uae-smoke c2p-test \
 	c2p4-test graphics-reference-test aga-reference-test \
-	graphics-report-test \
+	graphics-report-test chipram-report-test \
 	aga-screen aga-screen-inspect aga-screen-smoke c2p-benchmark \
 	c2p-benchmark-inspect c2p-benchmark-fs-uae c2p4-benchmark \
-	c2p4-benchmark-inspect c2p4-benchmark-fs-uae runtime-compare check run clean
+	c2p4-benchmark-inspect c2p4-benchmark-fs-uae chipram-benchmark \
+	chipram-benchmark-inspect chipram-benchmark-fs-uae runtime-compare \
+	check run clean
 
 all: amiga
 
@@ -200,6 +213,14 @@ graphics-report-test: $(GRAPHICS_REPORT_TEST_SOURCE) \
 	diff -u $(GRAPHICS_REPORT_TEST_EXPECTED) \
 		$(GRAPHICS_REPORT_TEST_REPORT)
 
+chipram-report-test: $(CHIPRAM_REPORT_TEST_SOURCE) \
+		$(CHIPRAM_REPORT_TEST_EXPECTED) $(CHIPRAM_REPORT_VALIDATOR)
+	@mkdir -p $(REPORT_DIR)
+	LC_ALL=C LANG=C $(CHIPRAM_REPORT_TEST_SOURCE) \
+		>$(CHIPRAM_REPORT_TEST_REPORT)
+	diff -u $(CHIPRAM_REPORT_TEST_EXPECTED) \
+		$(CHIPRAM_REPORT_TEST_REPORT)
+
 aga-screen: $(AGA_SCREEN_PROGRAM)
 
 $(AGA_SCREEN_PROGRAM): $(AGA_SCREEN_SOURCE) $(C2P_REFERENCE_SOURCE) \
@@ -267,11 +288,38 @@ c2p4-benchmark-fs-uae: stage c2p4-benchmark-inspect
 	cp $(STAGING_DIR)/fs-uae-smoke.out $(C2P4_BENCHMARK_REPORT)
 	$(GRAPHICS_REPORT_VALIDATOR) $(C2P4_BENCHMARK_REPORT)
 
+chipram-benchmark: $(CHIPRAM_BENCHMARK_PROGRAM)
+
+$(CHIPRAM_BENCHMARK_PROGRAM): $(CHIPRAM_BENCHMARK_SOURCE) \
+		$(CHIPRAM_BENCHMARK_ASM_SOURCE) $(CHIPRAM_BENCHMARK_HEADER) \
+		Makefile
+	@mkdir -p $(CHIPRAM_BENCHMARK_BUILD_DIR)
+	$(TARGET_CC) $(PROJECT_CPPFLAGS) $(C2P_BENCHMARK_CFLAGS) \
+		$(CHIPRAM_BENCHMARK_SOURCE) $(CHIPRAM_BENCHMARK_ASM_SOURCE) \
+		-Wl,-Map,$(CHIPRAM_BENCHMARK_MAP) -o $@ $(TARGET_RUNTIME)
+
+chipram-benchmark-inspect: $(CHIPRAM_BENCHMARK_PROGRAM)
+	@mkdir -p $(REPORT_DIR)
+	$(TARGET_SIZE) $(CHIPRAM_BENCHMARK_PROGRAM) | \
+		tee $(REPORT_DIR)/chipram-size.txt
+	$(TARGET_NM) --print-size --size-sort $(CHIPRAM_BENCHMARK_PROGRAM) \
+		>$(REPORT_DIR)/chipram-symbols.txt
+	$(TARGET_OBJDUMP) -dr $(CHIPRAM_BENCHMARK_PROGRAM) \
+		>$(REPORT_DIR)/chipram-disassembly.txt
+
+chipram-benchmark-fs-uae: stage chipram-benchmark-inspect
+	MAGI80_FS_UAE_TIMEOUT_SECONDS=60 \
+		./scripts/test-fs-uae-runtime.sh $(CHIPRAM_BENCHMARK_PROGRAM) -
+	@mkdir -p $(REPORT_DIR)
+	cp $(STAGING_DIR)/fs-uae-smoke.out $(CHIPRAM_BENCHMARK_REPORT)
+	$(CHIPRAM_REPORT_VALIDATOR) $(CHIPRAM_BENCHMARK_REPORT)
+
 runtime-compare:
 	./scripts/compare-c-runtimes.sh
 
 check: c2p-test c2p4-test graphics-reference-test aga-reference-test \
-	graphics-report-test inspect vamos-test aga-screen-smoke
+	graphics-report-test chipram-report-test chipram-benchmark inspect \
+	vamos-test aga-screen-smoke
 
 clean:
 	rm -rf $(AMIGA_BUILD_DIR) $(HOST_BUILD_DIR) $(REPORT_DIR) $(SMOKE_BUILD_DIR) $(BENCHMARK_BUILD_DIR) build/fs-uae-smoke build/runtime-comparison

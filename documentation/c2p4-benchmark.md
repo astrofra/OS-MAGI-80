@@ -161,9 +161,9 @@ Phase 0 must reproduce a raw Chip-RAM calibration on a physical stock A1200. It 
 
 This tranche does not yet select packed4, byte4, or any backend. The next C2P4 work is:
 
-1. build a separate exclusive-runtime timing harness that saves and owns the required chipset/interrupt state, freezes AmigaOS scheduling, installs a minimal MAGI-80 VBlank/raster timing path, batches iterations without per-sample `WaitTOF()`, and restores the machine symmetrically;
-2. add stack canaries, exception/crash diagnostics where practical, and persistent progress markers so automation distinguishes slow execution, deadlock, stack corruption, and teardown failure;
-3. run the raw Chip-RAM calibration above on a physical stock machine before interpreting C2P rates;
+1. extend the implemented raw `exclusive_kernel_batch` foundation to owned blanked/active display states, the full DMA/alignment matrix, and the existing C2P4 oracle cases;
+2. add the minimal MAGI-80 Level-3 VBlank/raster path, exception capture and visible persistent phase marker needed for `exclusive_runtime_frame`; the current raw foundation already provides a dedicated measured stack, external canaries, progress phases, explicit failure output, batched E-Clock timing, and exact custom-interrupt restoration;
+3. stress hosted-to-exclusive restoration and forced failures, then run the raw Chip-RAM calibration on a physical stock machine before interpreting C2P rates;
 4. shorten or restructure the byte4 compaction core so its repeated instruction footprint can be compared with the current approximately 468-byte loop;
 5. implement a genuine CPU/blitter merge split such as a C2P4 adaptation of CPU3BLIT1, with explicit intermediate layout and direct-register ownership documented;
 6. add aligned dirty-rectangle and no-change workloads;

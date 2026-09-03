@@ -1,0 +1,4 @@
+PASS Chip-RAM report accepts the version 1 contract
+PASS Chip-RAM report rejects exhausted dedicated stacks
+PASS Chip-RAM report rejects checksum mismatches
+result=pass
