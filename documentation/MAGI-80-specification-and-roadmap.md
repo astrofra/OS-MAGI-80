@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Document status | Working specification, revision 0.1 |
-| Date | 2026-09-02 |
+| Document status | Working specification, revision 0.2 |
+| Date | 2026-09-03 |
 | Target release | MAGI-80 1.0 |
 | Primary hardware | Stock PAL Amiga 1200, 68EC020, AGA, 2 MiB Chip RAM |
 | Implementation | C99 with narrowly scoped 68020 assembly |
@@ -19,7 +19,7 @@ MAGI-80 provides:
 - an integrated sprite editor;
 - ProTracker module import and playback;
 - a strongly typed, Lua-like game language compiled on the Amiga directly to native 68020 code;
-- a 256 × 256, two-layer chunky graphics API transparently converted to AGA planar graphics;
+- a 256 × 256 hybrid virtual GPU with a native planar layer, a configurable 4-bit chunky viewport, and a virtual object layer transparently mapped onto AGA;
 - project and cartridge storage through AmigaDOS;
 - a reversible exclusive runtime mode that freezes AmigaOS task scheduling while a game runs;
 - both bootable-floppy and hard-disk launch paths.
@@ -80,14 +80,17 @@ When requirements compete, decisions SHOULD favor, in order:
 MAGI-80 SHOULD use the machine's existing strengths instead of simulating in software what the A1200 already does well. The intended split is:
 
 - Exec, AmigaDOS, the C runtime, Intuition/graphics services, device APIs, and resource arbitration while editing;
-- the 68020's 32-bit operations for generated game logic, drawing, fixed-point math, and C2P staging;
-- AGA bitplane DMA, 4+4 dual playfields, palette banks, fetch modes, and the Copper for final display;
-- the blitter for clears, copies, masks, or planar work only where measurement shows a gain;
+- the 68020's 32-bit operations for generated game logic, flexible pixel drawing, fixed-point math, and the parts of C2P it performs best;
+- AGA bitplane DMA and 4+4 dual playfields for a native planar base and a transparent pixel overlay, with palette banks, fetch modes, and the Copper for composition;
+- the blitter for native planar tiles, fills, copies, masks, incremental scroll updates, object fallback, or C2P stages where measurement shows a gain;
+- AGA hardware sprites, attached pairs, and measured Copper-assisted multiplexing behind a virtual object scheduler;
 - Paula DMA for the four ProTracker channels;
 - CIA and standard ports for precise timing and input when safely owned;
-- optional hardware sprites for the MAGI-80 pointer or diagnostic overlay, without changing cartridge sprite semantics.
+- per-layer dirty tracking and pointer/scroll changes so unchanged pixels are neither redrawn nor reconverted.
 
 The fantasy-machine API remains stable even when a backend optimization changes. A feature is not considered “hardware-accelerated” until it is faster on a real stock A1200 with active display DMA.
+
+The adopted graphics direction is defined in [MAGI-80 Graphics Architecture — Performance-Oriented Design Notes](./MAGI-80-graphics-architecture-notes.md): do not regenerate pixels when AGA can move, compose, or display their existing representation. Exact viewport sizes, scroll margins, object limits, and CPU/blitter division remain Phase 0 measurement decisions.
 
 ## 4. Goals and non-goals
 
@@ -99,8 +102,9 @@ The fantasy-machine API remains stable even when a backend optimization changes.
 - Keep AmigaOS alive and schedulable throughout editing.
 - Enter and leave exclusive runtime mode repeatedly without rebooting or damaging the prior display, audio, input, or filesystem state.
 - Compile strongly typed MIGA Lua source directly to bounded native 68020 code on the Amiga itself.
-- Render two logical 4-bit chunky layers as an AGA 4+4-bitplane dual-playfield display.
-- Provide 16 opaque background colors and 15 opaque foreground colors selected from a deliberately restricted 12-bit RGB space of 4,096 colors.
+- Render a 256 × 256 three-layer virtual display: a full-screen native planar layer, a configurable 4-bit chunky viewport, and a virtual object layer.
+- Map the planar and pixel layers onto AGA's 4+4-bitplane dual playfields, using 16 opaque base colors and 15 opaque overlay colors selected from a deliberately restricted 12-bit RGB space of 4,096 colors.
+- Schedule virtual objects onto AGA sprites when possible and use a deterministic, budgeted fallback when hardware sprite capacity is exceeded.
 - Import and play conventional four-channel, 31-sample ProTracker modules.
 - Read projects and assets from mounted OFS and FFS volumes through AmigaDOS.
 - Offer a usable code editor and sprite editor at the virtual resolution.
@@ -133,13 +137,14 @@ The fantasy-machine API remains stable even when a backend optimization changes.
 | A-05 | The safe filesystem payload budget is initially 800 KiB. | OFS overhead, boot metadata, and future headroom make the raw ADF size an unsafe payload target. | Generate both OFS and FFS candidate images in Phase 0, select one boot format, and replace this estimate with measured free-block budgets. |
 | A-06 | The virtual palette remains 12-bit RGB even though AGA can display 24-bit palette values. | The requested 4,096-color source space is a meaningful fantasy-machine constraint and gives compact assets and simple editing. | Expand each 4-bit component to AGA's 8-bit component when programming the hardware palette. |
 | A-07 | MIGA Lua compiles ahead of time directly to native 68020 machine code in RAM. | Strong static types, fixed layouts, direct API calls, and removal of interpreter dispatch maximize the limited stock CPU. | Phase 0 must prove a minimal on-target emitter, cache synchronization, bounded-loop instrumentation, compile time, code size, and safe abort. A bytecode VM would be a fallback redesign, not a parallel 1.0 runtime. |
-| A-08 | Baseline simulation is 25 updates per second with 50 Hz video synchronization; 50 updates per second is an optional cartridge mode. | Full dual-layer chunky-to-planar conversion, compiled game logic, and audio must share a stock 68EC020 and Chip RAM. | Phase 0 benchmarks determine whether 50 Hz full-frame games can be promoted to a 1.0 guarantee. Frame rate MUST never change adaptively without the cartridge knowing. |
+| A-08 | Baseline simulation is 25 updates per second with 50 Hz video synchronization; 50 updates per second is an optional cartridge mode. | Native planar work, viewport C2P, object scheduling, compiled game logic, and audio must share a stock 68EC020 and Chip RAM. | Phase 0 benchmarks determine the certified workload for each rate. Frame rate MUST never change adaptively without the cartridge knowing. |
 | A-09 | Runtime file I/O is prohibited. | DOS file calls may wait, which breaks the scheduling freeze and conflicts with direct hardware ownership. | Preload the compiled cartridge and all assets before takeover. Save only after restoration. |
-| A-10 | Sprite assets are software-rendered into a logical playfield. | This gives a predictable fantasy API and avoids exposing AGA hardware-sprite limits in the first version. | Hardware sprites MAY later be reserved for the pointer or exposed as an advanced, non-portable API. |
+| A-10 | Cartridge sprites are virtual objects rather than physical AGA sprite channels. | A stable object API can exploit direct sprites, attached pairs, vertical multiplexing, and planar fallback without making cartridges depend on channel allocation. | Phase 0 MUST freeze object count, dimensions, palettes, priority rules, multiplex limits, and fallback cost. If multiplexing is not reliable, direct sprites plus deterministic fallback remain valid. |
 | A-11 | A cartridge is capped initially at 384 KiB uncompressed residency and 256 KiB packed on disk. | This leaves room for the environment, buffers, AmigaOS, and a useful example on one floppy. | Phase 0 and the first vertical-slice game set final caps. The UI MUST display the measured packed and resident sizes. |
 | A-12 | One process contains the shell, editors, native compiler, and runtime. | It simplifies boot, disk swapping, generated-code ownership, and restoration. | Split into overlays only if disk or resident-code measurements fail their gates. |
 | A-13 | Hosted code uses the C runtime and AmigaOS services instead of duplicating them. | The purpose is to exploit the A1200, not to write another general-purpose OS. | Validate the chosen libc's size, ABI, DOS error behavior, and Kickstart 3.0/3.1 compatibility. Replace only individual facilities whose measured cost or semantics fail the product constraints. |
 | A-14 | “Fits on one floppy” is initially interpreted as a self-starting AmigaDOS distribution, not merely a file small enough to copy to floppy. | It provides the most console-like experience and a clean low-memory boot. | If only file-size fit is required, SYS-002 becomes optional and the boot-component licensing gate can be removed; all other disk-size limits remain. |
+| A-15 | The 1.0 graphics model is a three-layer virtual GPU rather than two full-screen chunky buffers. | A native planar base, a smaller optional chunky viewport, and virtual hardware-assisted objects map more directly to AGA and avoid unnecessary C2P. | Phase 0 MUST benchmark the complete pipeline on real hardware. The public semantics remain provisional until the graphics freeze gate; the project MUST revise limits rather than silently emulate an unaffordable model. |
 
 ## 6. Target platform and compatibility contract
 
@@ -326,16 +331,16 @@ The MAGI-80 UI SHOULD use the same 256 × 256 logical surface as cartridges so t
 
 | ID | Requirement |
 | --- | --- |
-| SPR-001 | The editor MUST edit indexed 4-bit sprite pixels using either the background or foreground logical palette. |
+| SPR-001 | The editor MUST edit indexed virtual-object and planar-tile pixels using the logical palette allowed by the selected asset role. Object index 0 MUST be transparent. |
 | SPR-002 | It MUST provide pencil, eraser/transparent color, fill, line, rectangle, selection, move, copy, and paste. |
 | SPR-003 | It MUST provide horizontal and vertical flip and 90-degree rotation for square selections. |
-| SPR-004 | It MUST support at least 8 × 8, 16 × 16, and 32 × 32 logical sprite cells. |
+| SPR-004 | It MUST support at least 8 × 8, 16 × 16, and 32 × 32 logical cells. It SHOULD support hardware-friendly 16-, 32-, and 64-pixel-wide object frames with bounded height. |
 | SPR-005 | It MUST show a zoomed editing grid and a 1:1 preview on both light and dark checker backgrounds. |
-| SPR-006 | It MUST edit all 31 opaque logical palette entries as 12-bit RGB values and clearly mark foreground index 0 as transparent. |
+| SPR-006 | It MUST edit all 31 opaque logical palette entries as 12-bit RGB values and clearly mark overlay/object index 0 as transparent. |
 | SPR-007 | Palette edits MUST update previews immediately and be undoable. |
-| SPR-008 | Sprite sheets MUST use the same packed asset representation consumed by the runtime or a lossless build-time transformation of it. |
-| SPR-009 | The editor MUST prevent a background/foreground palette mismatch from silently changing pixel indices. |
-| SPR-010 | Hardware-sprite authoring is not required for 1.0. The term `sprite` in the public API means a software sprite blitted into a virtual playfield. |
+| SPR-008 | Sprite and tile sheets MUST use the same packed asset representation consumed by the runtime or lossless, deterministic build-time transformations into planar, attached-sprite, and fallback caches. |
+| SPR-009 | The editor MUST prevent a planar/overlay asset-role or palette mismatch from silently changing pixel indices. |
+| SPR-010 | The editor MUST present virtual objects and tiles, not physical AGA channels. It MAY report whether an asset is eligible for direct, attached, multiplexed, or fallback rendering, but channel assignment remains a runtime concern. |
 
 ### 9.4 ProTracker import and playback
 
@@ -373,7 +378,7 @@ The MAGI-80 UI SHOULD use the same 256 × 256 logical surface as cartridges so t
 
 | ID | Requirement |
 | --- | --- |
-| CART-001 | A project MUST contain metadata, MIGA Lua source, palettes, sprites, optional map data, and optional ProTracker music. Native code and source line mappings are generated in RAM by the trusted compiler. |
+| CART-001 | A project MUST contain metadata, MIGA Lua source, palettes, tile/object assets, a declared graphics profile, optional map data, and optional ProTracker music. Native code and source line mappings are generated in RAM by the trusted compiler. |
 | CART-002 | A shareable cartridge SHOULD be a single file with magic, format version, section directory, declared lengths, checksums, and no native pointers. |
 | CART-003 | Multi-byte fields MUST use a documented byte order; big-endian is preferred to minimize target conversion. |
 | CART-004 | Every section MUST be independently bounds-checked before use. Unknown optional sections MUST be skippable. Unknown mandatory sections MUST reject the cartridge. |
@@ -439,9 +444,13 @@ function update(): void
 end
 
 function draw(): void
-  clear(BACK, 0)
-  clear(FRONT, 0)
-  sprite(player.tile, player.x, player.y, FRONT)
+  layer(PLANAR)
+  clear(0)
+  map_draw(0, 0, 32, 32)
+
+  layer(PIXEL)
+  clear(0)
+  object_set(0, player.tile, player.x, player.y, 0)
 end
 ```
 
@@ -591,9 +600,10 @@ The 1.0 API MUST cover:
 
 - lifecycle and timing: `frame`, `ticks`, and cartridge rate metadata;
 - input: `btn`, `btn_pressed`, keyboard key state where supported;
-- graphics state: `layer`, `camera`, `clip`, `palette`, `transparent`;
+- graphics state: `layer`, `camera`, `layer_scroll`, `clip`, `palette`, `transparent`, and cartridge-level chunky viewport metadata;
 - pixels and primitives: `clear`, `pixel`, `line`, `rect`, `rect_fill`, `circle`, `circle_fill`;
-- assets: `sprite`, `sprite_region`, `map_draw` if map data ships in 1.0;
+- planar assets: `tile`, `tile_region`, and `map_draw`;
+- virtual objects: `object_set`, `object_hide`, `object_clear`, and bounded status/profiling queries;
 - text: `print` with the built-in font;
 - math: integer, fixed-point, trigonometric lookup, clamp, min/max, and deterministic random;
 - audio: module play/stop/position and debug mute controls;
@@ -603,85 +613,124 @@ APIs MUST use logical coordinates and typed handles. They must not expose Chip R
 
 ## 11. Graphics specification
 
-### 11.1 Logical model
+### 11.1 Three-layer virtual GPU contract
 
-- Resolution: exactly 256 × 256 logical pixels.
-- Layers: `BACK` and `FRONT`, independently addressable by the API.
-- Per-layer depth: 4 bits per pixel.
-- `BACK`: 16 visible colors numbered 0–15.
-- `FRONT`: index 0 is transparent; indices 1–15 are visible.
-- Palette: 31 opaque colors, each selected from 12-bit RGB (`0xRGB`, four bits per component).
-- Composition: `FRONT` over `BACK`, with no blending or partial alpha.
-- Coordinates: integer, origin at top left.
-- Out-of-bounds drawing: clipped, never wrapped unless an individual API explicitly requests wrapping.
+The logical display is exactly 256 × 256 pixels and contains three independently updated layers:
 
-### 11.2 Candidate runtime representations
+| Layer | Logical role | Base representation | Intended strengths |
+| --- | --- | --- | --- |
+| `PLANAR` | Full-screen base | Four native AGA bitplanes | Tile maps, backgrounds, fonts, fills, planar sprites, and hardware scrolling |
+| `PIXEL` | Positioned transparent viewport | 4-bit chunky source converted into a four-plane overlay | Software 3D, plasma, raycasting, particles, and arbitrary pixel access |
+| `OBJECTS` | Ordered virtual object list | AGA sprites where possible, deterministic planar fallback otherwise | Players, enemies, projectiles, icons, and frequently moved images |
 
-The first implemented representation uses one combined byte per screen coordinate:
+The baseline composition is `OBJECTS` over `PIXEL` over `PLANAR`, with no blending or partial alpha. Alternative object priority bands MAY be added only if their behavior and fallback equivalence are proven and documented.
 
-- low nibble: `BACK` index;
-- high nibble: `FRONT` index;
-- total logical framebuffer: 65,536 bytes.
+- `PLANAR` has 16 visible colors numbered 0–15.
+- `PIXEL` has transparent index 0 and 15 visible colors numbered 1–15.
+- `OBJECTS` use transparent index 0 and the overlay palette so hardware and fallback rendering can remain visually equivalent.
+- The resulting portable playfield palette contains 31 opaque colors, each selected from 12-bit RGB (`0xRGB`, four bits per component).
+- Coordinates are integer with the origin at the top left of the 256 × 256 display.
+- Each layer has independent dirty state and an independent scroll/camera offset. A common camera operation MAY update several offsets together.
+- Out-of-bounds drawing is clipped, never wrapped unless an individual API explicitly requests wrapping.
 
-This preserves two logical 4-bit layers in a compact buffer and permits a single 8-bit chunky-to-planar pass. Drawing into one layer uses a masked byte update.
+`OBJECTS` is not a third bitmap playfield. It is a fantasy-machine abstraction over a scheduler that may choose direct hardware sprites, attached pairs, vertical multiplexing, or a planar fallback. Cartridge behavior MUST NOT depend on the selected path; documented profiler and capacity status may reveal it for optimization.
 
-Phase 0 now compares four internal candidates:
+### 11.2 Operation routing and authoritative semantics
 
-| Candidate | Source storage | Purpose |
-|---|---:|---|
-| Combined `fb8` | 64 KiB | Compact conventional eight-plane C2P input |
-| Two packed 4-bit layers | 64 KiB | Compact storage with independent playfield conversion |
-| Two byte-per-pixel 4-bit layers | 128 KiB | Direct per-layer byte stores at the cost of extra read bandwidth |
-| Byte FRONT plus packed BACK | 96 KiB | Fast dynamic-foreground writes with a compact background |
+High-level operations map to the cheapest conforming backend rather than implicitly touching a generic full-screen framebuffer:
 
-The representation is not part of the cartridge or language ABI and MUST NOT be exposed as a raw address. Packed cartridge assets, runtime drawing surfaces, planar sprite caches, and display buffers MAY use different representations. The runtime layout remains open until the optimized real-A1200 benchmark gate described in [Chunky Layout and C2P Benchmark](./c2p-layout-benchmark.md).
+| Operation family | Preferred path |
+| --- | --- |
+| `map_draw`, tile copies, fonts, clear/fill, and planar sprites on `PLANAR` | Native plane writes, blitter operations, pointer movement, or cached planar assets |
+| `pixel`, arbitrary primitives, and procedural effects on `PIXEL` | Chunky source drawing followed by viewport-only C2P |
+| `object_set` and other object-list updates | Sprite control/pointer updates; Copper-assisted scheduling where proven |
+| Object overflow or unsupported object shape/palette | Deterministic planar rendering into an appropriate display buffer, with affected regions marked dirty |
 
-### 11.3 AGA mapping
+The API MAY permit a primitive on either drawable playfield, but its visible result, clipping, palette, and ordering MUST remain identical across optimized paths. Backend selection, dirty-region tracking, and cached asset formats are not part of the language or cartridge ABI.
+
+A portable C reference compositor is authoritative. It models the three logical layers and object priority without depending on AGA channel allocation. Every optimized planar, C2P, blitter, sprite, multiplex, and fallback path MUST match reference golden images for supported inputs.
+
+### 11.3 Chunky viewport profiles and source layouts
+
+The chunky layer is a positioned viewport, not necessarily a full-screen framebuffer. Phase 0 MUST evaluate at least these profiles:
+
+| Profile candidate | Pixels | Packed 4-bit source | Byte-per-pixel 4-bit source | Intended use |
+| --- | ---: | ---: | ---: | --- |
+| Small | 160 × 128 | 10 KiB | 20 KiB | Effects embedded in a mostly planar scene |
+| Medium | 192 × 160 | 15 KiB | 30 KiB | Proposed default gameplay viewport |
+| Full | 256 × 256 | 32 KiB | 64 KiB | Explicitly expensive full-screen pixel effects |
+
+The cartridge declares its maximum viewport profile before runtime takeover. Resizing MUST NOT trigger allocation during a frame. The final preset names, dimensions, placement/alignment rules, and whether arbitrary smaller rectangles are accepted remain graphics-freeze decisions.
+
+For the one-layer 4-bit C2P source, the primary layout candidates are:
+
+- packed 4-bit, with two pixels per byte, minimizing source traffic and storage;
+- byte-per-pixel 4-bit, with the low nibble significant, simplifying random writes at the cost of additional storage and read traffic.
+
+The earlier combined-byte and two-layer layout benchmark remains useful evidence about source construction and the test protocol, but it no longer defines the target architecture. The next benchmark series MUST compare the two single-layer layouts at all three viewport sizes. See [Chunky Layout and C2P Benchmark](./c2p-layout-benchmark.md).
+
+The converted `PIXEL` playfield remains a planar overlay. Regions outside the visible chunky viewport are transparent and MAY also receive cached planar fallback objects if the selected implementation can preserve ordering and damage restoration correctly.
+
+### 11.4 AGA composition and object scheduling
 
 The display uses eight low-resolution AGA bitplanes in dual-playfield mode:
 
-- odd-numbered hardware bitplanes form one 4-bit playfield;
-- even-numbered hardware bitplanes form the other;
-- playfield priority places `FRONT` above `BACK`;
-- the foreground zero combination is transparent;
-- the rear zero combination reveals the global backdrop color, providing background logical color 0;
-- AGA `BPLCON3.PF2OF` selects a non-overlapping 16-entry color-bank offset for the second playfield;
-- hardware color 0 represents `BACK[0]`, colors 1–15 represent the 15 opaque `FRONT` entries, and the selected second bank represents `BACK[1..15]`; the unused transparent bank entry is ignored.
+- one four-plane playfield carries `PLANAR` without C2P;
+- the other four-plane playfield carries the converted `PIXEL` overlay and any compatible planar fallback work;
+- overlay index 0 is transparent and reveals `PLANAR`;
+- AGA hardware sprites form the fast path for `OBJECTS`, conceptually acting as a third visual plane;
+- object images that use four colors may consume one physical sprite channel; 16-color images may use an attached pair;
+- moving a resident hardware object should normally update coordinates/control data rather than redraw pixels.
 
-The exact PF1/PF2 assignment, palette-register mapping, priority bits, fetch mode, modulo, and plane-pointer ordering MUST be captured in a hardware test and then frozen in a register-level design note.
+The exact PF1/PF2 assignment, palette-register and sprite-bank mapping, playfield/sprite priority, fetch mode, modulo, plane pointers, sprite widths, attached-pair rules, multiplex schedule, and Copper program MUST be captured in hardware tests and frozen in a register-level design note. If a hardware object cannot reproduce the logical palette or priority exactly, the scheduler MUST use the documented fallback rather than silently alter the image.
 
-The first hosted Phase 0 smoke test provisionally maps `FRONT` to PF1 (BPL1/3/5/7, palette base 0) and `BACK` to PF2 (BPL2/4/6/8, palette base 16). An Intuition-managed PAL 256 × 256 × 8 dual-playfield screen passes mode, palette, Chip-RAM, reference-C2P output, raster-pattern, and repeated restoration checks under FS-UAE/Kickstart 3.0. The C99 converter also passes byte-exact golden vectors natively on macOS. This is not yet the hardware freeze: direct register/Copper mapping, optimized C2P timing, Kickstart 3.1, and real-A1200 gates remain open. See [Hosted AGA Screen Smoke Test](./aga-screen-smoke.md) and [Reference Chunky-to-Planar Converter](./c2p-reference.md).
+The first hosted Phase 0 smoke test provisionally maps the transparent overlay to PF1 (BPL1/3/5/7, palette base 0) and the opaque base to PF2 (BPL2/4/6/8, palette base 16). An Intuition-managed PAL 256 × 256 × 8 dual-playfield screen passes mode, palette, Chip-RAM, reference-C2P output, raster-pattern, and repeated restoration checks under FS-UAE/Kickstart 3.0. This proves the basic 4+4 display mapping, not the new planar/chunky/object pipeline. Direct register/Copper control, object scheduling, optimized four-plane C2P, Kickstart 3.1, and real-A1200 gates remain open. See [Hosted AGA Screen Smoke Test](./aga-screen-smoke.md) and [Reference Chunky-to-Planar Converter](./c2p-reference.md).
 
-Although AGA palette entries accept more precision, MAGI-80 expands each virtual 4-bit component to an 8-bit hardware component by nibble replication. Copper palette changes are not part of the base cartridge API; this keeps the 31-color limit stable.
+Although AGA palette entries accept more precision, MAGI-80 expands each virtual 4-bit component to an 8-bit hardware component by nibble replication. Copper palette changes are not part of the base cartridge API; this keeps the portable color limit stable.
 
-### 11.4 Conversion and buffering
+### 11.5 Dirty updates, C2P, and buffering
 
-- Conversion MUST be transparent to user code.
-- The reference C converter MUST produce bit-exact output for every pixel and plane.
-- An optimized 68020 assembly converter is expected and must be tested against the C reference.
+- The three layers MUST NOT implicitly force one another to redraw.
+- An unchanged `PLANAR` layer performs no bitmap work; scrolling SHOULD use plane pointers, fine scroll, and incremental row/column updates where possible.
+- An unchanged `PIXEL` viewport performs no C2P. A changed viewport converts only its required area into four destination planes.
+- A hardware-backed object move SHOULD update only sprite coordinates/control data. Fallback objects MUST add only their damaged regions to the relevant work list.
+- The reference four-plane C converter MUST produce bit-exact output for every pixel and plane.
+- Optimized candidates MUST include CPU-only 68020 assembly, blitter-assisted conversion, and a CPU/blitter hybrid. Blitter participation is accepted only when the full pipeline is faster under active display and audio DMA.
 - Display memory MUST be in Chip RAM and aligned for the selected AGA fetch mode.
-- Two 64 KiB planar frame sets require 128 KiB. Depending on the source layout, framebuffer storage totals 192, 224, or 256 KiB before converter scratch space.
-- Plane pointers MUST swap only at a safe display boundary.
-- The converter MAY process dirty tiles, but a correct full-frame path is mandatory.
-- A missed conversion deadline MUST repeat the prior frame rather than expose partially converted planes.
+- Safe publication MAY use double buffering, pointer swaps, Copper changes, or bounded damage repair, but MUST never expose a partially updated frame.
+- A correct full-viewport path is mandatory even if dirty tiles or scanline spans are optimized.
+- A missed deadline MUST repeat the prior display frame rather than expose partial work or change simulation timing implicitly.
 
-The allocation-free C99 reference implementations are now executable both as native macOS correctness tests and as target code writing the eight real planes of the hosted AGA screen. All four source layouts produce byte-identical plane checksums. They define authoritative semantics and plane ordering; they do not satisfy a performance target.
+The existing allocation-free C99 converters and layout tests remain correctness oracles for plane ordering. Their scalar timings do not satisfy a performance target and MUST NOT select the new single-layer source layout.
 
-Performance decisions MUST use the combined cost of source construction, representative pixel and primitive rendering, C2P, safe display publication, and audio coexistence. They MUST compare CPU-only assembly, a CPU/blitter hybrid, and planar-native high-level primitives. Isolated scalar-C timings MUST NOT freeze the source layout.
+Performance decisions MUST measure the combined cost of source construction, representative pixels/primitives, planar tile and scroll work, C2P, object scheduling and fallback, safe display publication, and audio coexistence. CPU and blitter stages MAY be pipelined only when real-hardware measurements show useful overlap after Chip-RAM contention.
 
-### 11.5 Video timing and performance targets
+### 11.6 Independent scrolling and bounded margins
 
-- Certified timing: PAL, 50 Hz display refresh.
-- Default simulation rate: 25 Hz, with each completed frame shown for two refreshes.
-- Optional simulation rate: 50 Hz for cartridges that fit the measured CPU budget.
-- Input-to-display latency: no more than two display refreshes in the standard path.
-- Empty runtime: no missed video deadlines over a 30-minute test.
-- Representative 25 Hz game: no torn frames and no audio starvation over a 30-minute test.
-- The Phase 0 converter spike MUST report full-frame, single-layer-dirty, and no-change costs on real 2 MiB Chip-RAM hardware, with bitplane DMA enabled.
+The API SHOULD expose `layer_scroll(PLANAR, x, y)`, `layer_scroll(PIXEL, x, y)`, and `layer_scroll(OBJECTS, x, y)`, with `camera(x, y)` available as common-offset sugar.
 
-### 11.6 Editor and runtime drawing
+- `PLANAR` scrolling SHOULD use bitplane pointer adjustment, AGA fine scrolling, and a small planar backing margin.
+- The converted `PIXEL` representation MAY use a larger planar backing area around the visible viewport. A candidate 192 × 160 viewport in a 256 × 224 backing area provides ±32-pixel margins.
+- `OBJECTS` scrolling SHOULD apply a camera offset to scheduled coordinates without changing resident image data.
+- Slow tile-map movement SHOULD update only newly exposed rows or columns.
 
-The editor and generated-code runtime MUST share the same clipping, palette, primitive, font, and sprite semantics. A portable C renderer is authoritative. Generated code reaches it through the native ABI; optimized paths may replace individual operations only when golden-image tests remain identical.
+Phase 0 MUST compare no margin, ±16 pixels, and ±32 pixels. The guarantee is a bounded hardware-assisted movement window, not a requirement for the cartridge to redraw the enlarged backing area every frame. Alignment, edge refill, wrapping, and the point at which a backing area is rebased MUST be deterministic and visible in profiling.
+
+### 11.7 Video profiles and visible budgets
+
+- Certified video output is PAL 50 Hz.
+- **MAGI-80 Standard** targets deterministic 25 Hz simulation/rendering, with each completed frame displayed for two refreshes.
+- **MAGI-80 Turbo** targets 50 Hz and requires an explicit cartridge opt-in plus stricter measured budgets.
+- A full 256 × 256 chunky refresh is a high-cost feature, not the baseline workload. It is available only within the performance envelope frozen by Phase 0.
+- Input-to-display latency is no more than two display refreshes in the standard path.
+- The empty runtime MUST miss no video deadline over a 30-minute test.
+- A representative Standard cartridge MUST show no torn frames or audio starvation over a 30-minute test.
+
+The runtime profiler MUST separately expose at least CPU update/draw time, C2P time and bytes, blitter occupancy, dirty-layer/region state, chunky pixels touched, object count, physical sprite channels/pairs used, multiplex events, fallback objects/bytes, audio time, total frame time, and 25/50 Hz deadline misses. Emulator measurements validate the protocol only; performance sign-off requires a stock 2 MiB A1200 with active bitplane, sprite, blitter, and audio DMA representative of the tested profile.
+
+### 11.8 Editor and runtime drawing
+
+The editor and generated-code runtime MUST share the same logical clipping, palette, primitive, tile, object, and composition semantics. Generated code reaches them through the native ABI; optimized paths may replace individual operations only when golden-image and fallback-equivalence tests remain identical. The editor MAY use a simpler AmigaOS-cooperative backend as long as its preview is visibly equivalent.
 
 ## 12. Input specification
 
@@ -808,10 +857,10 @@ Section directory[]
   checksum
 
 Sections
-  META  cartridge metadata and limits
+  META  cartridge metadata, graphics profile, and limits
   SRC   canonical MIGA Lua source
   PAL   31 virtual 12-bit colors
-  GFX   sprite-sheet data
+  GFX   packed tile and virtual-object image data
   MAP   optional map data
   MOD   optional validated module
   NOTE  optional author notes
@@ -830,7 +879,7 @@ Initial peak target:
 | Area | Target ceiling |
 | --- | ---: |
 | Program code, read-only data, globals, and C runtime | 300 KiB |
-| Chunky and double-buffered planar video | 192 KiB |
+| Virtual-GPU buffers, scroll margins, object tables, and caches | 192 KiB |
 | Loaded cartridge, including module samples | 384 KiB |
 | Editor text, undo, compiler arenas, and diagnostics | 256 KiB |
 | Generated native code, globals, guarded stack, dictionaries, and runtime work memory | 128 KiB |
@@ -838,7 +887,7 @@ Initial peak target:
 | **MAGI-80 target peak** | **1,388 KiB** |
 | **Nominal remainder for AmigaOS and safety** | **660 KiB** |
 
-These are ceilings, not allocations that must all be permanent. Editor/compiler arenas SHOULD be reset and reused for runtime work. The executable MUST avoid a single large contiguous allocation when smaller pools are sufficient. Preflight MUST report both total free memory and largest free block.
+These are ceilings, not allocations that must all be permanent. The 192 KiB graphics figure is a planning envelope for double-buffered four-plane playfields, a selected chunky viewport source, bounded scroll margins, and object control/cache data; it is not a promise that every maximum option can coexist. Phase 0 MUST publish measured memory profiles for Small, Medium, and Full viewports and for the chosen object fallback. Editor/compiler arenas SHOULD be reset and reused for runtime work. The executable MUST avoid a single large contiguous allocation when smaller pools are sufficient. Preflight MUST report both total free memory and largest free block.
 
 ### 15.2 Allocation rules
 
@@ -858,8 +907,10 @@ Phase 0 must establish measured budgets rather than estimate them from emulator 
 
 - generated native `update()` logic;
 - generated native `draw()` logic and fantasy-API calls;
-- sprite and primitive rendering;
-- chunky-to-planar conversion;
+- native planar tile, primitive, and incremental-scroll work;
+- chunky viewport drawing and four-plane conversion;
+- object scheduling, multiplexing, and planar fallback;
+- blitter occupancy and CPU/blitter overlap;
 - Copper/frame synchronization;
 - ProTracker tick processing;
 - input handling;
@@ -875,15 +926,18 @@ The runtime SHOULD expose an optional raster-bar or numeric profiler. A represen
 | --- | --- |
 | `shell` | Workspace navigation, commands, help, status, and error presentation. |
 | `editor_code` | Text buffer, rendering, commands, undo, and diagnostic navigation. |
-| `editor_sprite` | Pixel tools, palette tools, selection, previews, and undo. |
+| `editor_sprite` | Tile/object pixel tools, palettes, hardware-eligibility diagnostics, reference previews, and undo. |
 | `compiler_frontend` | Lua-like lexer/parser, type inference, semantics, typed AST/IR, and source maps. |
 | `codegen_68020` | Layout, instruction selection, register/stack allocation, machine-code emission, relocation, validation metadata, and cache synchronization. |
 | `native_runtime` | Versioned jump table, guarded callback invocation, execution budgets, stop/error trampolines, and fantasy API dispatch. |
 | `cartridge` | Container validation, packing/unpacking, versioning, and size accounting. |
 | `storage` | Hosted C stream and AmigaDOS volume, directory, error, and safe-save operations. |
-| `video_core` | Logical framebuffer, primitives, sprite rendering, palette, and clipping. |
+| `video_core` | Three-layer virtual-GPU semantics, command routing, dirty tracking, palettes, clipping, and portable reference composition. |
+| `video_planar` | Native planar tiles, primitives, cached assets, damage tracking, and hardware-assisted scrolling. |
+| `video_chunky` | Configurable viewport sources, pixel primitives, four-plane C2P, and viewport damage tracking. |
+| `video_objects` | Virtual object list, AGA sprite allocation, attached pairs, multiplex scheduling, priority, and deterministic fallback. |
 | `video_hosted` | OS-cooperative editor display. |
-| `video_exclusive` | Copper, bitplanes, C2P, frame swap, and hardware state restoration. |
+| `video_exclusive` | Copper, dual playfields, sprite DMA, blitter coordination, safe publication, and hardware state restoration. |
 | `audio_mod` | Validated MOD model, tick/effect state machine, and trace tests. |
 | `audio_hosted` | OS-cooperative preview. |
 | `audio_exclusive` | Paula/CIA ownership and register backend. |
@@ -971,9 +1025,9 @@ Cartridges and modules are untrusted input. Host builds MUST run their parsers u
 
 ### 18.1 Test layers
 
-1. **Host unit tests:** lexer, Lua-like grammar, type inference/rules, typed IR, record/array/dictionary layouts, 68020 instruction encoding and relocation, native ABI guards, fixed-point math, cartridge parser, compression, MOD effect state, and graphics primitives.
+1. **Host unit tests:** lexer, Lua-like grammar, type inference/rules, typed IR, record/array/dictionary layouts, 68020 instruction encoding and relocation, native ABI guards, fixed-point math, cartridge parser, compression, MOD effect state, and the three-layer graphics reference model.
 2. **Property and fuzz tests:** cartridge/MOD parsing, decompression, source lexer/parser, typed IR, relocation inputs, dictionary operations, and checked arithmetic.
-3. **Golden and differential tests:** rendered frame hashes, C2P plane bytes, palette mapping, emitted 68020 words/disassembly, generated-code behavior versus a host typed-IR oracle, source error locations, runtime traces, and MOD tick traces.
+3. **Golden and differential tests:** three-layer composite hashes, planar operation output, four-plane C2P bytes, palette mapping, object-scheduler/fallback traces, emitted 68020 words/disassembly, generated-code behavior versus a host typed-IR oracle, source error locations, runtime traces, and MOD tick traces.
 4. **Emulator integration:** PAL A1200, 68020, AGA, exactly 2 MiB Chip RAM, no Fast RAM; floppy boot, HD launch, disk swaps, and error paths.
 5. **Real-hardware tests:** at least two stock A1200 units if available, original or representative floppy drive/media, CRT and modern display adapter where relevant.
 6. **Soak tests:** editor idle, music preview, runtime, repeated run/stop, repeated save/load, and low-memory behavior.
@@ -997,8 +1051,8 @@ MAGI-80 1.0 is complete only when all of the following are true:
 - A legal distribution artifact fits and boots from one real DD floppy.
 - The hard-disk edition launches from CLI and Workbench.
 - A user can create a project, edit source, draw sprites, import a supported MOD, save, reload, compile, run, stop, and continue editing on a stock A1200.
-- The included example cartridge demonstrates input, both playfields, transparency, primitives, sprites, text, music, and a controlled runtime error screen.
-- Full-frame conversion sustains the certified 25 Hz content profile without tearing or starving music.
+- The included example cartridge demonstrates input, the native planar layer, a chunky viewport, virtual objects, transparency, scrolling, object fallback, text, music, and a controlled runtime error screen.
+- The frozen Standard hybrid-graphics workload sustains 25 Hz without tearing or starving music; each optional larger-viewport or Turbo profile meets its separately documented envelope.
 - Compiler, generated native code, and runtime behavior are deterministic across host reference tests, emulator, and hardware.
 - Malformed corpus and fuzz regressions do not crash or corrupt memory.
 - The 1,000-cycle takeover/restoration test passes.
@@ -1008,19 +1062,26 @@ MAGI-80 1.0 is complete only when all of the following are true:
 
 ## 19. Development roadmap
 
-The estimates below are engineering effort for one experienced developer, not calendar promises. They include implementation and ordinary testing but not large hardware-procurement or licensing delays. The critical path is hardware feasibility first, then safe on-target native compilation and the content workflow, then hardening.
+The estimates below are engineering effort for one experienced developer, not calendar promises. They include implementation and ordinary testing but not large hardware-procurement or licensing delays. The critical path is the hybrid graphics freeze on real hardware first, then safe on-target native compilation and the content workflow, then hardening.
+
+Current Phase 0 evidence includes the reproducible cross-toolchain, native golden-vector tests, an Amiga Hunk benchmark harness, and an Intuition-managed 4+4 dual-playfield smoke test under FS-UAE. The existing scalar C2P runs validate report plumbing, plane ordering, and layout equivalence only. They are not performance evidence and do not freeze the superseded two-full-chunky-layer design.
 
 ### Phase 0 — Feasibility and irreversible decisions
 
-**Estimate:** 4–6 engineer-weeks
+**Estimate:** 6–9 engineer-weeks
 
 Deliverables:
 
 - reproducible GCC cross-toolchain and minimal C99 Hunk executable;
 - bootable test ADF and HD launch test on Kickstart 3.0/3.1;
 - exact empty-boot and Workbench-launch memory measurements;
-- AGA 256 × 256 4+4 dual-playfield display with the 31-color mapping;
-- reference C and candidate 68020 assembly C2P benchmarks;
+- portable reference compositor for `PLANAR`, positioned `PIXEL`, and `OBJECTS`, including deterministic object fallback;
+- AGA 256 × 256 4+4 dual-playfield display with a native planar base, transparent four-plane overlay, and frozen 31-color playfield mapping;
+- a reproducible graphics benchmark suite covering source construction, draw operations, conversion, safe publication, and checksums;
+- reference C and optimized CPU-only, blitter-assisted, and CPU/blitter-hybrid four-plane C2P candidates;
+- native planar tile/primitive rendering, pointer/fine scrolling, incremental row/column refill, and no-margin/±16/±32-margin measurements;
+- direct, attached, and vertically multiplexed AGA sprite prototypes plus measured deterministic fallback;
+- combined scenes with bitplane, sprite, blitter, and Paula DMA active at the same time;
 - minimal strongly typed expression/function compiler that emits and safely invokes native 68020 code on the A1200;
 - generated-code instruction-cache synchronization and stop-at-loop-backedge proof;
 - prototype hosted-to-exclusive takeover and restoration loop;
@@ -1032,13 +1093,29 @@ Deliverables:
 Exit gate:
 
 - The display is stable on real PAL A1200 hardware.
-- At least 25 full logical frames per second are feasible with audio enabled and useful CPU headroom, or the graphics model is revised explicitly.
+- A frozen Standard profile sustains 25 Hz on a stock A1200 with audio enabled and at least 20% measured CPU headroom in representative planar, pixel-viewport, object-heavy, and combined scenes.
+- Small, Medium, and Full chunky profiles have measured packed-versus-byte source results; Full may remain explicitly expensive, but its correct behavior and budget are documented.
+- The project has selected its four-plane C2P path, scroll margin, object/palette/priority contract, direct/attached/multiplex limits, and deterministic fallback policy from real-hardware evidence.
 - The native compiler can emit, relocate, validate, cache-synchronize, run, budget-stop, and discard a small guarded 68020 program without destabilizing AmigaOS.
 - Run/restore succeeds 100 consecutive times without a leak or broken OS state.
 - A credible path exists to stay below 1,388 KiB peak MAGI-80 memory and 800 KiB disk payload.
 - The project has a legal route to a bootable release image.
 
-If this gate fails, do not build editors. Reduce the video conversion cost, memory model, cartridge cap, or boot scope first. If the native compiler itself fails its time, size, cache, or safety gate, simplify its language/backend or explicitly revisit the bytecode fallback before proceeding; do not maintain two production execution engines.
+If this gate fails, do not build editors. Reduce the default viewport, object guarantee, scroll margin, video buffering, memory model, cartridge cap, or boot scope first. Preserve the three-layer API only where a deterministic implementation remains affordable; do not hide an unbounded software fallback behind it. If the native compiler itself fails its time, size, cache, or safety gate, simplify its language/backend or explicitly revisit the bytecode fallback before proceeding; do not maintain two production execution engines.
+
+#### Phase 0 graphics benchmark order
+
+The next graphics work MUST proceed in this order so each result has an oracle and a clear decision consequence:
+
+1. Build the portable three-layer reference compositor and a common benchmark report schema. Use identical logical scenes and hashes across every backend.
+2. Benchmark four-plane C2P at 160 × 128, 192 × 160, and 256 × 256 for packed and byte-per-pixel sources. For each size, compare optimized CPU-only, blitter-assisted, and hybrid implementations with display DMA active.
+3. Benchmark native planar clears, fills, tiles, text, cached planar sprites, whole-screen pointer scroll, fine scroll, and incremental exposed-row/column updates.
+4. Compare no scroll margin, ±16 pixels, and ±32 pixels, including Chip-RAM footprint, rebase spikes, and worst-case refill cost.
+5. Benchmark the virtual object scheduler with direct four-color sprites, attached 16-color pairs, realistic vertical multiplexing, channel exhaustion, priority conflicts, and planar fallback.
+6. Run representative planar-only, medium-viewport, object-heavy, and combined scenes with bitplane, blitter, sprite, and Paula DMA contention. Measure Standard and Turbo deadlines and the cost of safe publication.
+7. Repeat decisive cases on real stock hardware, publish distributions rather than a single sample, and freeze the smallest contract that meets the headroom gate.
+
+Every case MUST report source construction/drawing, CPU conversion work, blitter work or wait, publication, total frame time, memory footprint, dirty bytes/regions, object allocation/fallback counts, EClock frequency, and output checksum. FS-UAE remains useful for correctness and automation but cannot choose a performance winner.
 
 ### Phase 1 — Platform foundation and hosted shell
 
@@ -1048,7 +1125,7 @@ Deliverables:
 
 - platform library/resource wrappers with strict ownership tracking;
 - Chip/Fast memory arenas and low-memory diagnostics;
-- hosted 256 × 256 screen, font, widgets, and command routing;
+- hosted 256 × 256 screen, three-layer-equivalent preview, font, widgets, and command routing;
 - keyboard, mouse, and joystick hosted input;
 - DOS volume browser and bounded file reader;
 - safe shutdown and startup error paths;
@@ -1061,21 +1138,23 @@ Exit gate:
 
 ### Phase 2 — Graphics, input, and exclusive runtime core
 
-**Estimate:** 5–7 engineer-weeks
+**Estimate:** 7–10 engineer-weeks
 
 Deliverables:
 
-- frozen virtual graphics semantics and portable reference renderer;
-- optimized C2P, double buffering, palette mapping, and Copper/display backend;
-- primitive and software-sprite renderer;
+- frozen three-layer virtual graphics semantics and portable reference compositor;
+- native planar renderer for tiles, primitives, fonts, cached images, dirtiness, and bounded hardware scrolling;
+- selected chunky viewport layouts, optimized four-plane C2P, dirty-region handling, and safe publication;
+- virtual object table, direct/attached sprite allocator, accepted multiplex scheduler, palette/priority handling, and deterministic planar fallback;
+- frozen dual-playfield, sprite, palette, Copper, blitter, and buffering backend;
 - exclusive input backend and protected emergency stop;
 - transactional takeover/restoration implementation;
-- frame scheduler, deterministic 25/50 Hz modes, and profiler;
+- frame scheduler, deterministic Standard/Turbo modes, and per-layer/DMA profiler;
 - soak and 1,000-cycle restoration harness.
 
 Exit gate:
 
-- A native C test scene runs at the certified rate with both layers, sprites, input, and clean restoration on real stock hardware.
+- Native C planar-scroller, medium-pixel-viewport, object-stress/fallback, and combined scenes run at their certified rates with input, audio contention, and clean restoration on real stock hardware.
 
 ### Phase 3 — MIGA Lua compiler and native 68020 backend
 
@@ -1087,7 +1166,7 @@ Deliverables:
 - lexer, parser, strong type inference/checking, fixed-point semantics, AST, and typed IR;
 - fixed-layout records, arrays, optionals, and deterministic fixed-capacity dictionaries;
 - 68020 data/stack layout, instruction selector, register/stack allocation, binary emitter, relocation, and generated-code validator;
-- versioned native ABI, immutable runtime jump table, typed graphics/input/audio bindings, and stop/error trampolines;
+- versioned native ABI, immutable runtime jump table, typed planar/pixel/object/input/audio bindings, and stop/error trampolines;
 - bounds/division/shift/stack guards plus execution-budget and stop checks at every backward control-flow edge;
 - generated-code arena ownership and Exec instruction-cache synchronization;
 - deterministic random, lifecycle, source line maps, and runtime diagnostic capture;
@@ -1107,7 +1186,7 @@ Deliverables:
 - versioned `.m80` container and bounded compression;
 - safe-load and safe-save workflow;
 - source editor with navigation, diagnostics, search, and bounded undo;
-- sprite/palette editor with required tools and preview;
+- tile/object/palette editor with required tools, hardware-eligibility diagnostics, and reference-composited preview;
 - budget meters and project metadata;
 - integrated compile/run/stop loop preserving editor state;
 - example cartridge graphics and source.
@@ -1158,12 +1237,12 @@ Exit gate:
 
 | Milestone | Cumulative estimate | Outcome |
 | --- | ---: | --- |
-| Feasibility gate | 4–6 weeks | Core hardware, memory, disk, legal model, and minimal native compiler path proven. |
-| Runtime prototype | 13–19 weeks | Native C test scene with safe takeover, graphics, input, and audio foundations. |
-| Creator alpha | 29–43 weeks | On-machine MIGA Lua-to-68020 compiler, code editor, sprite editor, cartridges, and integrated run loop. |
-| Version 1.0 | 39–58 weeks | Floppy/HD packaging, MOD compatibility, native-code hardening, docs, and real-hardware certification. |
+| Feasibility gate | 6–9 weeks | Hybrid GPU, core hardware, memory, disk, legal model, and minimal native compiler path proven. |
+| Runtime prototype | 17–25 weeks | Native C three-layer scenes with safe takeover, graphics, input, and audio foundations. |
+| Creator alpha | 33–49 weeks | On-machine MIGA Lua-to-68020 compiler, code editor, tile/object editor, cartridges, and integrated run loop. |
+| Version 1.0 | 43–64 weeks | Floppy/HD packaging, MOD compatibility, native-code hardening, docs, and real-hardware certification. |
 
-A solo part-time project should translate these into milestones rather than fixed dates. Schedule contingency belongs mainly to takeover/restoration, C2P performance, CIA/keyboard behavior, floppy packaging, and editor usability.
+A solo part-time project should translate these into milestones rather than fixed dates. Schedule contingency belongs mainly to takeover/restoration, object scheduling/fallback, Chip-RAM contention, four-plane C2P performance, CIA/keyboard behavior, floppy packaging, and editor usability.
 
 ## 20. Prioritization and scope cuts
 
@@ -1173,7 +1252,7 @@ If measured constraints force reductions, cut in this order:
 2. optional MIGA Lua conveniences such as non-capturing function values, method-call sugar, and generic dictionary iteration;
 3. 50 Hz simulation mode;
 4. optional ProTracker effects and hosted live preview;
-5. map data and `map_draw`;
+5. extended map tooling and formats beyond the minimal native planar tile path;
 6. sprite transform conveniences beyond flip;
 7. multiple example cartridges and expanded on-disk help;
 8. compression sophistication.
@@ -1185,7 +1264,9 @@ Do not cut:
 - on-Amiga MIGA Lua compilation to native 68020 code;
 - strong types, fixed data layouts, generated-code guards, stop safe points, and the closed native ABI;
 - the code and sprite editors;
-- the two-layer 256 × 256 graphics contract;
+- the 256 × 256 three-layer virtual graphics contract, independent dirty state, and transparent backend selection;
+- a native planar path and a bounded chunky viewport path;
+- deterministic object fallback when hardware sprite capacity is unavailable;
 - basic supported MOD import/playback;
 - OFS/FFS access through AmigaDOS;
 - both floppy and HD launch routes;
@@ -1196,7 +1277,7 @@ Do not cut:
 | ID | Risk | Probability | Impact | Mitigation and trigger |
 | --- | --- | --- | --- | --- |
 | R-01 | “Replace AmigaOS” is interpreted as bare metal, conflicting with library-backed filesystems and live editing. | High | Critical | Adopt the two-personality hosted/exclusive definition. Any demand for literal bare metal triggers a separate architecture and roadmap. |
-| R-02 | Full 8-plane C2P plus game logic cannot sustain 50 Hz on stock Chip RAM. | High | High | Certify 25 Hz first, benchmark in Phase 0, optimize in assembly, exploit dirty/no-change frames, and keep frame rate explicit. |
+| R-02 | The selected chunky viewport and four-plane C2P leave insufficient time for game logic and audio. | Medium | High | Certify 25 Hz first, benchmark three viewport sizes and two source layouts, optimize measured hot paths, skip clean viewports, and make Full/Turbo costs explicit. |
 | R-03 | 2 MiB Chip RAM is insufficient or too fragmented after Workbench launch. | High | High | Preflight total/largest blocks, reserve critical buffers at launch, reuse arenas, offer minimal floppy boot, and fail before takeover with a size report. |
 | R-04 | Long `Forbid()` sessions or incorrect interrupt/resource handling destabilize AmigaOS. | Medium | Critical | No waiting calls in runtime; avoid long `Disable()`; isolate takeover; record ownership; stress 1,000 transitions; test multiple OS versions and real machines. |
 | R-05 | Keyboard/CIA and ProTracker timer ownership conflict. | Medium | Critical | Prototype both in Phase 0, use OS resources to reserve hardware, select distinct or shared interrupt-safe scheduling, and make emergency stop independent of generated code and audio. |
@@ -1209,13 +1290,18 @@ Do not cut:
 | R-12 | A 256-pixel-wide code editor is frustrating. | Medium | High | Test 5–6-pixel fonts early, guarantee horizontal scrolling and shortcuts, keep UI chrome minimal, and consider an optional hosted high-resolution editor only after the core workflow works. |
 | R-13 | Emulator success hides real Chip-RAM contention or timing faults. | High | High | Real-hardware gate in every hardware-facing phase; use emulators for regression, never final timing sign-off. |
 | R-14 | Physical floppy writes are slow or unreliable and safe replacement needs extra free space. | High | Medium | Keep projects in memory, show writes, use temporary-file replacement, encourage separate project disks/HD, verify after write, and never autosave to floppy by default. |
-| R-15 | AGA details such as PF2 palette offsets or fetch alignment vary from assumptions. | Medium | High | Freeze behavior from a minimal register test using Commodore documentation, capture working register values, and add plane/palette golden screens. |
+| R-15 | AGA playfield/sprite priority, palette-bank, fetch, alignment, or Copper behavior differs from the proposed compositor. | Medium | High | Freeze behavior from register-level tests using Commodore documentation, capture working values and traces, and add composite/palette/sprite-priority golden screens. |
 | R-16 | C runtime or GCC output pulls in large or non-stock dependencies. | Medium | High | Inspect link maps from day one, avoid floating point and heavyweight stdio, use a minimal compatible runtime, and pin the toolchain/ABI. |
 | R-17 | Hosted module preview cannot acquire all Paula channels without disrupting other applications. | Medium | Low | Make preview cooperative and optional, report contention, and reserve exclusive guarantees for Run mode. |
 | R-18 | Disk swapping prompts for the boot volume after MAGI-80 starts. | Medium | Medium | Embed fonts/help needed after launch, avoid overlays initially, pre-open/close required libraries and files, and test single-drive boot-to-project swaps. |
 | R-19 | The on-target native compiler is too large or too slow for an edit–run loop. | Medium | High | Prove a minimal emitter in Phase 0, use compact typed IR and bounded arenas, prefer simple passes, measure per-phase time/peak memory/code size, and cache the compiled image only within the trusted current session. |
 | R-20 | A code-emitter or relocation bug generates a legal-looking but unsafe 68020 instruction stream. | Medium | Critical | Template-driven emission, independent host disassembly/golden tests, typed relocations, code-range and call-target validation, differential execution against a host IR oracle, and aggressive malformed-IR fuzzing. |
 | R-21 | The 68020 executes stale instructions after code generation. | Medium | Critical | Never execute before relocation and validation complete; call the appropriate Exec cache-clear function over the generated range before takeover; include repeated compile/run code-replacement tests on real hardware. |
+| R-22 | Virtual objects exceed physical sprite channels or cannot be multiplexed reliably in a crowded scene. | High | High | Expose fixed virtual limits, schedule deterministically, count allocation failures, and provide a bounded planar fallback whose worst-case frame and memory costs are part of the cartridge budget. |
+| R-23 | Object fallback changes colors, priority, or pixels relative to the hardware-sprite path. | Medium | High | Share a constrained logical overlay palette, compare both paths to the reference compositor, and force fallback whenever exact hardware mapping is impossible. |
+| R-24 | A blitter-assisted path is slower because CPU, display, sprite, audio, and blitter DMA contend for Chip RAM. | High | High | Measure CPU-only, blitter-only stages, and hybrids with all representative DMA active; record CPU work, blitter busy/wait, and total frame time; select by real-hardware total rather than isolated throughput. |
+| R-25 | Scroll margins save steady-state work but create visible rebase spikes or consume too much Chip RAM. | Medium | Medium | Compare no margin, ±16, and ±32; measure worst-case refill/rebase separately from averages; cap work per frame or select a smaller guarantee. |
+| R-26 | The three-layer abstraction grows into an unpredictable general compositor. | Medium | High | Freeze one baseline composition order, bounded viewport presets, fixed object capabilities, and explicit fallback rules; reject per-pixel alpha, arbitrary layer graphs, and undocumented adaptive behavior. |
 
 ## 22. Decision log required before implementation freeze
 
@@ -1225,18 +1311,21 @@ The following decisions must be recorded with measurements or prototypes:
 2. OFS or FFS format for the boot image and actual payload ceiling.
 3. Legal source of boot components.
 4. Exact hosted display API and screen depth.
-5. Exact AGA bitplane, priority, palette, fetch, modulo, and Copper settings.
-6. Combined-byte versus separate-layer chunky layout.
-7. C2P implementation and certified 25/50 Hz performance envelope.
-8. Runtime keyboard acquisition and emergency-stop mechanism.
-9. CIA-timed versus fractional-VBlank ProTracker scheduler.
-10. Selected GCC fork, commit, NDK, C runtime, ABI, and release flags.
-11. Frozen MIGA Lua grammar, Lua 5.1 compatibility matrix, type inference rules, numeric semantics, and restricted feature set.
-12. Record/array/dictionary layouts, supported key types, hash/probing algorithm, capacities, load factor, and deterministic iteration order.
-13. Native 68020 ABI, runtime-context convention, jump table, relocation model, code arena, stack rules, guards, loop budgets, stop safe points, and cache-clear sequence.
-14. Final source, generated-code, packed-cartridge, resident-cartridge, undo, and module limits.
-15. Cartridge checksum and compression algorithms.
-16. Safe-save behavior when a floppy cannot hold old and temporary copies.
+5. Exact AGA dual-playfield, sprite, priority, palette-bank, fetch, modulo, pointer, and Copper settings.
+6. Frozen `PLANAR`/`PIXEL`/`OBJECTS` semantics, baseline composition order, API names, and dirty-state rules.
+7. Small/Medium/Full chunky dimensions, placement/alignment constraints, default profile, and packed-versus-byte source layout.
+8. Four-plane CPU-only versus blitter-assisted versus hybrid C2P implementation and certified Standard/Turbo envelope.
+9. Native planar tile/cache formats, blitter operations, scroll mechanism, margin size, refill policy, and worst-case rebase budget.
+10. Virtual object count and dimensions, palette/priority contract, direct/attached/multiplex limits, scheduler order, and fallback representation/cost.
+11. Runtime keyboard acquisition and emergency-stop mechanism.
+12. CIA-timed versus fractional-VBlank ProTracker scheduler.
+13. Selected GCC fork, commit, NDK, C runtime, ABI, and release flags.
+14. Frozen MIGA Lua grammar, Lua 5.1 compatibility matrix, type inference rules, numeric semantics, and restricted feature set.
+15. Record/array/dictionary layouts, supported key types, hash/probing algorithm, capacities, load factor, and deterministic iteration order.
+16. Native 68020 ABI, runtime-context convention, jump table, relocation model, code arena, stack rules, guards, loop budgets, stop safe points, and cache-clear sequence.
+17. Final source, generated-code, packed-cartridge, resident-cartridge, undo, and module limits.
+18. Cartridge checksum and compression algorithms.
+19. Safe-save behavior when a floppy cannot hold old and temporary copies.
 
 ## 23. Recommended first vertical slice
 
@@ -1247,11 +1336,13 @@ After Phase 0, the first end-to-end slice SHOULD be deliberately small:
 3. Compile it on the A1200 directly to guarded native 68020 code, validate/relocate it, and synchronize the instruction cache.
 4. Enter exclusive mode.
 5. Read joystick input.
-6. Move one software sprite on the foreground over a patterned background.
-7. Play one validated looping MOD.
-8. Stop with the protected key chord.
-9. Restore the editor at the same cursor position.
-10. Save and reload the single-file cartridge through AmigaDOS.
+6. Scroll a native planar tile background without C2P.
+7. Update a small procedural chunky viewport independently of that background.
+8. Move one virtual object through the hardware-sprite path, then force the same object through fallback and verify identical composition.
+9. Play one validated looping MOD while the three graphics paths are active.
+10. Stop with the protected key chord.
+11. Restore the editor at the same cursor position.
+12. Save and reload the single-file cartridge through AmigaDOS.
 
 This slice exercises every architectural boundary before richer editor tools or language features make failures harder to isolate.
 
