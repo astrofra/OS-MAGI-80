@@ -34,6 +34,13 @@ C2P_HOST_TEST_SOURCE := tests/host/c2p-reference/main.c
 C2P_HOST_TEST_PROGRAM := $(C2P_HOST_BUILD_DIR)/test
 C2P_HOST_TEST_EXPECTED := tests/host/c2p-reference/expected.txt
 C2P_HOST_TEST_REPORT := $(REPORT_DIR)/c2p-reference-host.txt
+GRAPHICS_REFERENCE_SOURCE := src/graphics/reference_compositor.c
+GRAPHICS_REFERENCE_HEADER := src/graphics/reference_compositor.h
+GRAPHICS_REFERENCE_BUILD_DIR := $(HOST_BUILD_DIR)/graphics-reference
+GRAPHICS_REFERENCE_TEST_SOURCE := tests/host/graphics-reference/main.c
+GRAPHICS_REFERENCE_TEST_PROGRAM := $(GRAPHICS_REFERENCE_BUILD_DIR)/test
+GRAPHICS_REFERENCE_TEST_EXPECTED := tests/host/graphics-reference/expected.txt
+GRAPHICS_REFERENCE_TEST_REPORT := $(REPORT_DIR)/graphics-reference-host.txt
 BENCHMARK_BUILD_DIR := build/benchmark
 C2P_BENCHMARK_BUILD_DIR := $(BENCHMARK_BUILD_DIR)/c2p-layouts
 C2P_BENCHMARK_SOURCE := tests/benchmark/c2p-layouts/main.c
@@ -66,6 +73,7 @@ C2P_BENCHMARK_CFLAGS = $(filter-out -Os,$(TARGET_CFLAGS)) -O2
 .DELETE_ON_ERROR:
 
 .PHONY: all amiga stage inspect vamos-test fs-uae-smoke c2p-test \
+	graphics-reference-test \
 	aga-screen aga-screen-inspect aga-screen-smoke c2p-benchmark \
 	c2p-benchmark-inspect c2p-benchmark-fs-uae runtime-compare check run clean
 
@@ -112,6 +120,18 @@ $(C2P_HOST_TEST_PROGRAM): $(C2P_HOST_TEST_SOURCE) $(C2P_REFERENCE_SOURCES) \
 	$(HOST_CC) $(PROJECT_CPPFLAGS) $(HOST_CFLAGS) \
 		$(C2P_REFERENCE_SOURCES) $(C2P_HOST_TEST_SOURCE) -o $@
 
+graphics-reference-test: $(GRAPHICS_REFERENCE_TEST_PROGRAM)
+	@mkdir -p $(REPORT_DIR)
+	$(GRAPHICS_REFERENCE_TEST_PROGRAM) >$(GRAPHICS_REFERENCE_TEST_REPORT)
+	diff -u $(GRAPHICS_REFERENCE_TEST_EXPECTED) \
+		$(GRAPHICS_REFERENCE_TEST_REPORT)
+
+$(GRAPHICS_REFERENCE_TEST_PROGRAM): $(GRAPHICS_REFERENCE_TEST_SOURCE) \
+		$(GRAPHICS_REFERENCE_SOURCE) $(GRAPHICS_REFERENCE_HEADER) Makefile
+	@mkdir -p $(GRAPHICS_REFERENCE_BUILD_DIR)
+	$(HOST_CC) $(PROJECT_CPPFLAGS) $(HOST_CFLAGS) \
+		$(GRAPHICS_REFERENCE_SOURCE) $(GRAPHICS_REFERENCE_TEST_SOURCE) -o $@
+
 aga-screen: $(AGA_SCREEN_PROGRAM)
 
 $(AGA_SCREEN_PROGRAM): $(AGA_SCREEN_SOURCE) $(C2P_REFERENCE_SOURCE) \
@@ -154,7 +174,7 @@ c2p-benchmark-fs-uae: stage c2p-benchmark-inspect
 runtime-compare:
 	./scripts/compare-c-runtimes.sh
 
-check: c2p-test inspect vamos-test aga-screen-smoke
+check: c2p-test graphics-reference-test inspect vamos-test aga-screen-smoke
 
 clean:
 	rm -rf $(AMIGA_BUILD_DIR) $(HOST_BUILD_DIR) $(REPORT_DIR) $(SMOKE_BUILD_DIR) $(BENCHMARK_BUILD_DIR) build/fs-uae-smoke build/runtime-comparison

@@ -744,11 +744,12 @@ The top-level GNU Make interface now exposes:
 | `gmake run` | Stage it and launch the Workbench 3.0 HD profile interactively |
 | `gmake fs-uae-smoke` | Build, stage, boot the local harness, execute from `MAGI80:`, and check the result |
 | `gmake c2p-test` | Compile the portable C99 converter natively and compare its output with byte-exact golden vectors |
+| `gmake graphics-reference-test` | Compile the portable three-layer compositor natively and verify canonical PLANAR/PIXEL/OBJECTS golden output |
 | `gmake aga-screen-smoke` | Convert a chunky framebuffer into a hosted PAL 256 × 256 AGA dual-playfield screen, validate it, close it, and repeat under FS-UAE |
 | `gmake c2p-benchmark` | Build the 68020 reference layout benchmark without launching an emulator |
 | `gmake c2p-benchmark-fs-uae` | Measure all four reference layouts with E-Clock timing and display DMA active, then validate and retain the report |
 | `gmake runtime-compare` | Build, inspect, and execute the newlib, libnix, and clib2 runtime matrix through `vamos` and FS-UAE |
-| `gmake check` | Run the native C2P vectors, inspection, `vamos`, and the complete FS-UAE integration smoke tests |
+| `gmake check` | Run the native C2P and three-layer graphics vectors, inspection, `vamos`, and the complete FS-UAE integration smoke tests |
 | `gmake clean` | Remove only generated application, report, harness, and staging outputs |
 
 Future targets will add `check-tools`, further native host tests, the release ADF, and packaging once those layers exist.
@@ -810,6 +811,8 @@ FS-UAE is required for:
 - repeated restoration of AmigaOS state.
 
 The first hardware-facing regression is now `gmake aga-screen-smoke`. It validates the AGA-capable PAL dual-playfield display database entry, an exact 256 × 256 × 8 Intuition screen, eight displayable Chip-RAM planes, PF1/PF2 palette bases 0/16, conversion of a 65,536-byte two-layer chunky buffer into those planes, representative pixel readback, and a stable repeated close/reopen/close cycle. It remains an OS-managed hosted test and does not validate exclusive takeover or performance.
+
+`gmake graphics-reference-test` is the host-side logical oracle for the new three-layer direction. It composes a native-planar base, a positioned transparent pixel viewport, and priority-ordered virtual objects into canonical palette identities. Hardware-sprite and planar-fallback hints must produce identical pixels. This test validates semantics only and performs no AGA emulation. See [Three-Layer Graphics Reference Compositor](./graphics-reference-compositor.md).
 
 `gmake c2p-benchmark-fs-uae` adds a machine-readable E-Clock protocol for four source layouts. It forces source storage into Chip RAM, writes the active screen planes, and verifies identical checksums. Its scalar reference results validate the harness only; FS-UAE timing is not release evidence and cannot select the runtime layout. See [Chunky Layout and C2P Benchmark](./c2p-layout-benchmark.md).
 

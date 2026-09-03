@@ -1,0 +1,5 @@
+PASS three-layer golden composition
+PASS object backend-path equivalence
+PASS source origins, clipping, and object camera
+PASS argument contract
+result=pass
