@@ -418,6 +418,29 @@ This could become two explicit performance profiles:
 If a frame misses its deadline, repeating the previous display frame is
 preferable to allowing simulation timing to become unpredictable.
 
+### Optional Fast-RAM acceleration tier
+
+The Standard/Turbo timing profiles are independent from the machine's
+memory expansion. MAGI-80 should detect a second, transparent memory
+tier:
+
+-   `stock_chip_only` remains the compatibility and performance
+    baseline;
+-   `fast_assisted` moves CPU-only code and data to Fast RAM when it is
+    available, without changing the cartridge API or its results.
+
+The generated code, guarded stack, game state, dictionaries, packed4
+chunky viewport and CPU-only C2P scratch are good Fast-RAM candidates.
+Bitplanes, Copper lists, sprite data, audio samples, and all blitter
+sources and destinations must remain in Chip RAM.
+
+In particular, a Fast-RAM packed4 source feeding CPU C2P into Chip-RAM
+PF1 planes could reduce contention while the blitter builds the planar
+PF2 buffer. It does not remove contention on the final plane writes or
+display fetches, so it is an optimization to benchmark rather than a
+separate graphics contract. The profiler should display the active
+memory tier and the bytes allocated in each domain.
+
 ------------------------------------------------------------------------
 
 ## 11. Profiling as Part of the Fantasy Hardware

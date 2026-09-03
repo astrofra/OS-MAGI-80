@@ -127,10 +127,11 @@ Minimum kernels:
 | Sequential read | byte, word, longword with a dependency-preserving checksum |
 | Mixed | copy, read/modify/write, four-source/four-plane C2P-like access |
 | Alignment | naturally aligned plus every alignment accepted by the 68020 path |
+| CPU-visible placement | Chip source/destination baseline; Fast source or CPU-only scratch to Chip destination on equipped machines |
 | Display state | blanked, eight-plane 256 × 256 active |
 | DMA state | display only; display + Copper/sprites; display + blitter; representative display + sprites + Paula |
 
-Every physical-hardware result reports bytes per iteration, iteration count, raw E-Clock ticks, bracket overhead, minimum/median/maximum, decimal MB/s, binary MiB/s, alignment, generated disassembly, display state, enabled DMA, and interrupt mode. Reads whose values do not affect an observable checksum are invalid because an optimizer may remove them. The implemented protocol smoke already records the raw fields and observable checksums; rate formatting, alignment variants, active-display cases, and the full DMA matrix remain open before physical runs.
+Every physical-hardware result reports bytes per iteration, iteration count, raw E-Clock ticks, bracket overhead, minimum/median/maximum, decimal MB/s, binary MiB/s, alignment, source/destination memory domains, generated disassembly, display state, enabled DMA, and interrupt mode. Reads whose values do not affect an observable checksum are invalid because an optimizer may remove them. The implemented protocol smoke already records the raw fields and observable checksums; rate formatting, Fast-RAM variants, alignment variants, active-display cases, and the full DMA matrix remain open before physical runs.
 
 ## 7. Graphics Case Requirements
 

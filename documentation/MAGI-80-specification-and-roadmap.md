@@ -147,6 +147,7 @@ The adopted graphics direction is defined in [MAGI-80 Graphics Architecture — 
 | A-15 | The 1.0 graphics model is a three-layer virtual GPU rather than two full-screen chunky buffers. | A native planar base, a smaller optional chunky viewport, and virtual hardware-assisted objects map more directly to AGA and avoid unnecessary C2P. | Phase 0 MUST benchmark the complete pipeline on real hardware. The public semantics remain provisional until the graphics freeze gate; the project MUST revise limits rather than silently emulate an unaffordable model. |
 | A-16 | Generated 68020 code is exercised locally through a pinned Musashi 68EC020 runner before UAE or hardware integration. | Most compiler and ABI failures can then be reproduced in a sub-second native test without building or launching an Amiga image. | Musashi results establish functional confidence only. A curated corpus SHOULD later run under Moira as an independent oracle, while UAE and real A1200 tests remain mandatory for OS, chipset, cache, and performance behavior. |
 | A-17 | An informal stock-A1200 Chip-RAM write estimate near 6 MB/s is treated as a bandwidth warning, not as an engineering budget. | Its loop, access width, alignment, display/DMA state, and unit convention are unknown, and write-only throughput does not describe C2P's mixed traffic. | Phase 0 MUST reproduce aligned byte/word/long read, write, and mixed-access tests on real hardware with display blanked and active and with representative DMA states. Generated disassembly and raw E-Clock/raster distributions must accompany the result. |
+| A-18 | Available Fast RAM enables an optional transparent acceleration tier, never a different cartridge contract. | Moving CPU code, stacks, game state, dictionaries, chunky sources, and CPU-only scratch out of contended Chip RAM can free 68020 and chipset cycles while AGA and the blitter retain DMA access to Chip RAM. | Phase 0 MUST compare stock and Fast-assisted placement on real hardware. The allocator records every memory domain, all DMA-visible data remains in Chip RAM, and release certification still uses the stock 2 MiB configuration. |
 
 ## 6. Target platform and compatibility contract
 
@@ -168,7 +169,7 @@ The adopted graphics direction is defined in [MAGI-80 Graphics Architecture — 
 - Second joystick.
 - Accelerator.
 
-Optional hardware MUST NOT be required by a cartridge marked `stock`. MAGI-80 MAY use Fast RAM for hosted-mode buffers or caches, but it MUST preserve the stock-memory execution path and MUST place all DMA-visible data in Chip RAM.
+Optional hardware MUST NOT be required by a version 1.0 cartridge. When Fast RAM is present, MAGI-80 MAY select the `fast_assisted` memory tier without changing fantasy-machine semantics, timing rules, save data, or cartridge compatibility. It MUST preserve the stock-memory execution path and MUST place all DMA-visible data in Chip RAM.
 
 ### 6.3 Startup checks
 
@@ -911,6 +912,17 @@ No loader may trust header counts, sizes, offsets, compression output sizes, or 
 
 All RAM on a stock A1200 is Chip RAM and is shared with DMA. MAGI-80 MUST behave correctly without Fast RAM and MUST account for contention, not merely capacity.
 
+The runtime exposes two orthogonal memory tiers internally:
+
+| Memory tier | Contract |
+| --- | --- |
+| `stock_chip_only` | Required baseline: all code and data fit and meet their certified budgets with exactly 2 MiB Chip RAM. |
+| `fast_assisted` | Optional transparent acceleration: CPU-only code/data prefer Fast RAM while the same cartridge and virtual-hardware contract remain valid. |
+
+Good Fast-RAM candidates include the executable where the loader permits it, generated 68020 code, the dedicated runtime stack, MIGA Lua globals and dictionaries, game state, the packed4 chunky source, and CPU-only lookup or scratch data. Bitplanes, Copper lists, hardware-sprite data, Paula samples, and every blitter source or destination MUST remain in Chip RAM. A buffer that changes from CPU-only to DMA-visible must be allocated or explicitly staged in the correct domain; a pointer must never silently cross that boundary.
+
+The profiler MUST record the selected memory tier and per-domain bytes. Fast-assisted results may demonstrate useful acceleration, but they may not raise the minimum cartridge requirements or substitute for stock release gates. C2P and combined-frame benchmarks SHOULD compare Chip-source-to-Chip-plane against Fast-source-to-Chip-plane traffic on equipped hardware.
+
 Initial peak target:
 
 | Area | Target ceiling |
@@ -935,7 +947,7 @@ These are ceilings, not allocations that must all be permanent. The 192 KiB grap
 - Undo history and diagnostic logs MUST be bounded.
 - Temporary compiler structures SHOULD be arena-allocated and released in bulk.
 - DMA-visible buffers and samples MUST use Chip RAM allocation flags.
-- If Fast RAM exists, only non-DMA hosted data MAY prefer it; success on Fast RAM MUST not conceal a stock-memory regression.
+- If Fast RAM exists, non-DMA hosted and runtime data MAY prefer it according to the declared memory tier; success on Fast RAM MUST not conceal a stock-memory regression.
 - Allocation failure MUST preserve the current project and return a useful size report.
 
 ### 15.3 CPU budgets
@@ -1156,6 +1168,7 @@ Deliverables:
 - portable reference compositor for `PLANAR`, positioned `PIXEL`, and `OBJECTS`, including deterministic object fallback;
 - AGA 256 × 256 4+4 dual-playfield display with a native planar base, transparent four-plane overlay, and frozen 31-color playfield mapping;
 - a reproducible graphics benchmark suite covering source construction, draw operations, conversion, safe publication, and checksums;
+- stock-versus-Fast-assisted placement measurements for generated code, runtime stack, packed4 source, and CPU-only scratch, without changing cartridge semantics;
 - reference C and optimized CPU-only, blitter-assisted, and CPU/blitter-hybrid four-plane C2P candidates;
 - native planar tile/primitive rendering, pointer/fine scrolling, incremental row/column refill, and no-margin/±16/±32-margin measurements;
 - direct, attached, and vertically multiplexed AGA sprite prototypes plus measured deterministic fallback;
@@ -1412,6 +1425,7 @@ Do not cut:
 | R-31 | Host assembler, linker, CPU core, or binary tools vary across machines or introduce an unresolved license/reproducibility issue. | Medium | High | Pin revisions and checksums, archive notices, provide a scripted bootstrap, preserve ELF/flat artifacts, and keep developer-specific absolute paths out of all tracked configuration. |
 | R-32 | The local runner's synthetic memory addresses or trap protocol accidentally become cartridge ABI. | Low | High | Keep runner maps in test-only configuration, expose services through the versioned native ABI, and require an explicit decision record before any test address or trap number can become normative. |
 | R-33 | A small target stack, exception, or teardown fault is misreported as a slow benchmark because the external controller sees only a timeout. | Medium | High | Stream results instead of retaining matrices on stack; require stack-margin checks/canaries, phase markers, explicit cleanup success, and practical crash diagnostics; never treat a timeout as a timing sample. |
+| R-34 | Development on expanded machines introduces a hidden Fast-RAM dependency or a DMA-invisible buffer. | Medium | High | Keep `stock_chip_only` in CI and release gates, record allocation domains, reject invalid DMA pointers, run the same cartridge in both tiers, and treat Fast-assisted measurements as optional acceleration only. |
 
 ## 22. Decision log required before implementation freeze
 
@@ -1440,6 +1454,7 @@ The following decisions must be recorded with measurements or prototypes:
 22. Local runner memory map, 24-bit/endianness/alignment policy, return/exit protocol, instruction ceiling, runtime-call mocks, trace format, and failure artifacts.
 23. Development assembler/linker and syntax, ELF layout, symbol manifest, flat-image extraction, disassembly normalization, and direct-encoder convergence criteria.
 24. CPU regression metrics, reviewed kernels, comparison policy, and thresholds that cannot be presented as hardware timing.
+25. Fast-assisted allocation policy, fallback behavior, profiler labels, and stock-versus-Fast benchmark results for generated code, stack, chunky source, and CPU-only scratch.
 
 ## 23. Recommended first vertical slice
 
