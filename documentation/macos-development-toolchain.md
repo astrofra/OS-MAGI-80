@@ -1,18 +1,20 @@
 # MAGI-80 macOS Development Toolchain Plan
 
-**Document status:** Cross-toolchain, initial `libnix` ABI, four-layout native C2P golden vectors and E-Clock protocol, hosted bootstrap, and 256 × 256 AGA dual-playfield conversion validated through native execution, `vamos`, and FS-UAE/Kickstart 3.0; optimized C2P, Kickstart 3.1, and real-hardware validation remain pending
+**Document status:** Cross-toolchain, initial `libnix` ABI, native C2P goldens, hosted bootstrap, AGA dual-playfield conversion, and the 24-case pair-LUT/mask32 C2P4 protocol validated through native execution, `vamos`, and FS-UAE/Kickstart 3.0; exclusive fine timing, genuine hybrid C2P, Kickstart 3.1, and real-hardware validation remain pending
 
 **Host:** Apple Silicon Mac running macOS 14.1
 
 **Target:** Stock PAL Amiga 1200, 68EC020, AGA, 2 MiB Chip RAM, no Fast RAM or FPU
 
-**Related document:** [MAGI-80 Specification and Roadmap](./miga-80-specification-and-roadmap.md)
+**Related document:** [MAGI-80 Specification and Roadmap](./MAGI-80-specification-and-roadmap.md)
 
 **Graphics test note:** [Hosted AGA Screen Smoke Test](./aga-screen-smoke.md)
 
 **C2P correctness note:** [Reference Chunky-to-Planar Converter](./c2p-reference.md)
 
 **C2P benchmark note:** [Chunky Layout and C2P Benchmark](./c2p-layout-benchmark.md)
+
+**Current four-plane benchmark:** [Four-Plane C2P Reference and Benchmark](./c2p4-benchmark.md)
 
 ## 1. Purpose
 
@@ -744,12 +746,15 @@ The top-level GNU Make interface now exposes:
 | `gmake run` | Stage it and launch the Workbench 3.0 HD profile interactively |
 | `gmake fs-uae-smoke` | Build, stage, boot the local harness, execute from `MAGI80:`, and check the result |
 | `gmake c2p-test` | Compile the portable C99 converter natively and compare its output with byte-exact golden vectors |
+| `gmake c2p4-test` | Validate packed4/byte4 scalar, pair-LUT, and table-free mask32 contracts against canonical output |
 | `gmake graphics-reference-test` | Compile the portable three-layer compositor natively and verify canonical PLANAR/PIXEL/OBJECTS golden output |
 | `gmake aga-reference-test` | Decode eight dual-playfield bitplanes back to canonical pixels and verify the complete compositor → C2P → decoder differential |
 | `gmake graphics-report-test` | Validate positive and negative fixtures for the common Phase 0 graphics benchmark report schema |
 | `gmake aga-screen-smoke` | Convert a chunky framebuffer into a hosted PAL 256 × 256 AGA dual-playfield screen, validate it, close it, and repeat under FS-UAE |
 | `gmake c2p-benchmark` | Build the 68020 reference layout benchmark without launching an emulator |
 | `gmake c2p-benchmark-fs-uae` | Measure all four reference layouts with E-Clock timing and display DMA active, then validate and retain the report |
+| `gmake c2p4-benchmark` | Build the single-layer four-plane C99 pair-LUT, 68020 pair-LUT/mask32, and staged blitter-publication benchmark without launching an emulator |
+| `gmake c2p4-benchmark-fs-uae` | Run all 24 hosted C2P4 cases with active display DMA, require exact canonical output, account for minimum traffic, and validate the common graphics report |
 | `gmake runtime-compare` | Build, inspect, and execute the newlib, libnix, and clib2 runtime matrix through `vamos` and FS-UAE |
 | `gmake check` | Run the native C2P, compositor, inverse AGA decoder, and graphics-report tests, inspection, `vamos`, and the complete FS-UAE integration smoke tests |
 | `gmake clean` | Remove only generated application, report, harness, and staging outputs |
@@ -764,7 +769,7 @@ The build must fail clearly when a proprietary local input is absent. It must ne
 
 ### 11.1 Native host tests
 
-The C99 reference C2P converters now compile natively with Apple Clang and pass explicit byte-level vectors for bit ordering, playfield assignment, source-layout equivalence, strides, padding preservation, full-frame output, and invalid arguments. The target-compiled baseline also writes the real planes used by the FS-UAE AGA smoke test. See [Reference Chunky-to-Planar Converter](./c2p-reference.md).
+The C99 reference C2P converters now compile natively with Apple Clang and pass explicit byte-level vectors for bit ordering, playfield assignment, source-layout equivalence, strides, padding preservation, full-frame output, and invalid arguments. The current C2P4 suite additionally covers the three architecture viewport profiles, single-layer packed4 and byte4 sources, scalar/pair-LUT/mask32 paths, the mask32 multiple-of-32 contract, and exact compositor → C2P4 → AGA decoder output. The target-compiled benchmarks exercise both real assembly cores and display planes under FS-UAE. See [Reference Chunky-to-Planar Converter](./c2p-reference.md) for the historical two-layer contract and [Four-Plane C2P Reference and Benchmark](./c2p4-benchmark.md) for current work.
 
 The following additional portable components should also compile natively with Apple Clang:
 
@@ -822,6 +827,8 @@ The first hardware-facing regression is now `gmake aga-screen-smoke`. It validat
 
 `gmake c2p-benchmark-fs-uae` adds a machine-readable E-Clock protocol for four source layouts. It forces source storage into Chip RAM, writes the active screen planes, and verifies identical checksums. Its scalar reference results validate the harness only; FS-UAE timing is not release evidence and cannot select the runtime layout. See [Chunky Layout and C2P Benchmark](./c2p-layout-benchmark.md).
 
+`gmake c2p4-benchmark-fs-uae` runs the architecture-aligned 24-case matrix: three viewport sizes, packed4 and byte4, C99 pair-LUT, real 68020 pair-LUT and table-free mask32 assembly, and a staged Chip-RAM-to-PF1 `BltBitMap()` publication control. Every case reconstructs the complete canonical image, reports a conservative traffic lower bound and `timing_scope=hosted_cooperative`, and validates the common graphics schema. The staged copy is not a hybrid converter, direct visible-screen writes are not safe publication, and emulator E-Clock values remain protocol-only. `WaitTOF()` is outside each measured bracket but still makes this cooperative harness unsuitable for fine timing. See [Four-Plane C2P Reference and Benchmark](./c2p4-benchmark.md).
+
 ### 11.5 Real hardware
 
 FS-UAE is not the release authority for:
@@ -835,6 +842,8 @@ FS-UAE is not the release authority for:
 - restoration after long run/stop stress sessions.
 
 Real A1200 validation remains required. Transfer can initially use a Gotek, PCMCIA/CompactFlash, network transfer, or a flux-capable floppy interface. A normal USB PC floppy drive cannot generally write Amiga DD media in the required raw format.
+
+The hardware performance harness must be a separate bounded exclusive-runtime executable. It prepares files and allocations under AmigaOS, saves and acquires the required resources, freezes scheduling, owns a minimal VBlank/raster interrupt path, batches iterations without per-sample OS waits, and restores state on every recoverable exit. Stack canaries and durable phase/progress markers are required because an automation timeout alone cannot distinguish a long run from a deadlock, crash, or teardown fault. Hosted tests remain the frequent correctness and restoration gate.
 
 ## 12. Reproducibility Plan
 
@@ -899,7 +908,7 @@ The installation should be performed in small, independently verifiable steps:
 11. [x] Compare C runtimes and freeze the initial target ABI on libnix/`-mcrt=nix20`; Kickstart 3.1 and real-hardware revalidation remain gates.
 12. [x] Generate and verify OFS and FFS test ADFs.
 13. [ ] Generate a MAGI-80 ADF profile and boot it under both target Kickstart versions.
-14. [ ] Add the first AGA, input, and Paula smoke tests: the hosted AGA screen, four-layout reference C2P equivalence, and E-Clock reporting protocol pass on FS-UAE/Kickstart 3.0; input, Paula, optimized C2P timing, exclusive display ownership, Kickstart 3.1, and hardware remain pending.
+14. [ ] Add the first AGA, input, and Paula smoke tests: the hosted AGA screen, four-layout historical C2P equivalence, and 24-case optimized C2P4 correctness/report protocol pass on FS-UAE/Kickstart 3.0; input, Paula, exclusive timing/display ownership, Kickstart 3.1, and authoritative hardware timing remain pending.
 15. [ ] Package and checksum the validated compiler prefix.
 16. [ ] Complete the version manifest with later-phase versions and archive checksums.
 17. [ ] Re-run the smoke-test sequence on a real stock A1200.

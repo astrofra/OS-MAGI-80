@@ -86,9 +86,9 @@ The generic FS-UAE runner temporarily stages this executable, compares its redir
 
 ## 6. What This Does Not Prove
 
-This result does not yet validate:
+This result does not itself validate:
 
-- an optimized 68020 converter or its frame cost;
+- the optimized C2P4 candidates or their frame cost on real hardware;
 - double buffering and safe VBlank plane-pointer swaps;
 - direct AGA register values, fetch mode, modulo, or a MAGI-80 Copper list;
 - hosted-to-exclusive takeover and restoration;
@@ -96,7 +96,7 @@ This result does not yet validate:
 - Kickstart 3.1 behavior;
 - timing, Chip-RAM contention, or restoration on a physical A1200.
 
-The converter contract and native golden vectors are documented in [Reference Chunky-to-Planar Converter](./c2p-reference.md). Source-layout hypotheses and the first measurement protocol are documented in [Chunky Layout and C2P Benchmark](./c2p-layout-benchmark.md). The next graphics step is to add optimized CPU-only and CPU/blitter paths while preserving byte identity with the reference, before attempting double buffering or direct-hardware takeover.
+The converter used by this historical screen regression is documented in [Reference Chunky-to-Planar Converter](./c2p-reference.md). The current [Four-Plane C2P Reference and Benchmark](./c2p4-benchmark.md) adds a single-layer oracle, C99/68020 pair-LUT candidates, table-free C99/68020 32-pixel transposes, and a staged blitter-publication control while preserving canonical byte identity. A genuine CPU/blitter conversion, safe publication, and bounded direct-hardware benchmark/takeover remain open.
 
 ## 7. System References
 

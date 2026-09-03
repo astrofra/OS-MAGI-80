@@ -146,6 +146,7 @@ The adopted graphics direction is defined in [MAGI-80 Graphics Architecture — 
 | A-14 | “Fits on one floppy” is initially interpreted as a self-starting AmigaDOS distribution, not merely a file small enough to copy to floppy. | It provides the most console-like experience and a clean low-memory boot. | If only file-size fit is required, SYS-002 becomes optional and the boot-component licensing gate can be removed; all other disk-size limits remain. |
 | A-15 | The 1.0 graphics model is a three-layer virtual GPU rather than two full-screen chunky buffers. | A native planar base, a smaller optional chunky viewport, and virtual hardware-assisted objects map more directly to AGA and avoid unnecessary C2P. | Phase 0 MUST benchmark the complete pipeline on real hardware. The public semantics remain provisional until the graphics freeze gate; the project MUST revise limits rather than silently emulate an unaffordable model. |
 | A-16 | Generated 68020 code is exercised locally through a pinned Musashi 68EC020 runner before UAE or hardware integration. | Most compiler and ABI failures can then be reproduced in a sub-second native test without building or launching an Amiga image. | Musashi results establish functional confidence only. A curated corpus SHOULD later run under Moira as an independent oracle, while UAE and real A1200 tests remain mandatory for OS, chipset, cache, and performance behavior. |
+| A-17 | An informal stock-A1200 Chip-RAM write estimate near 6 MB/s is treated as a bandwidth warning, not as an engineering budget. | Its loop, access width, alignment, display/DMA state, and unit convention are unknown, and write-only throughput does not describe C2P's mixed traffic. | Phase 0 MUST reproduce aligned byte/word/long read, write, and mixed-access tests on real hardware with display blanked and active and with representative DMA states. Generated disassembly and raw E-Clock/raster distributions must accompany the result. |
 
 ## 6. Target platform and compatibility contract
 
@@ -684,7 +685,7 @@ The API MAY permit a primitive on either drawable playfield, but its visible res
 
 A portable C reference compositor is authoritative. It models the three logical layers and object priority without depending on AGA channel allocation. Every optimized planar, C2P, blitter, sprite, multiplex, and fallback path MUST match reference golden images for supported inputs.
 
-The initial C99 compositor now produces canonical palette identities for a planar view, positioned transparent pixel view, and priority-ordered object list. Native goldens cover clipping, source origins, camera translation, object tie-breaking, and hardware-sprite/fallback hint equivalence. An inverse AGA reference decoder reconstructs the canonical image from BPL1–BPL8 and proves a complete compositor → C2P → dual-playfield round trip. Both are integrated into `gmake check`; the hardware-sprite output adapter remains open until the object benchmark tranche. See [Three-Layer Graphics Reference Compositor](./graphics-reference-compositor.md) and [AGA Dual-Playfield Reference Decoder](./aga-reference-decoder.md).
+The initial C99 compositor now produces canonical palette identities for a planar view, positioned transparent pixel view, and priority-ordered object list. Native goldens cover clipping, source origins, camera translation, object tie-breaking, and hardware-sprite/fallback hint equivalence. An inverse AGA reference decoder reconstructs the canonical image from BPL1–BPL8. The single-layer C2P4 suite proves complete compositor → packed4/byte4 converter → dual-playfield decoder output for every viewport profile and available host backend; FS-UAE exercises the real 68020 assembly cores against the same canonical oracle. These correctness layers are integrated into `gmake check`; the hardware-sprite output adapter remains open until the object benchmark tranche. See [Three-Layer Graphics Reference Compositor](./graphics-reference-compositor.md), [AGA Dual-Playfield Reference Decoder](./aga-reference-decoder.md), and [Four-Plane C2P Reference and Benchmark](./c2p4-benchmark.md).
 
 ### 11.3 Chunky viewport profiles and source layouts
 
@@ -703,7 +704,7 @@ For the one-layer 4-bit C2P source, the primary layout candidates are:
 - packed 4-bit, with two pixels per byte, minimizing source traffic and storage;
 - byte-per-pixel 4-bit, with the low nibble significant, simplifying random writes at the cost of additional storage and read traffic.
 
-The earlier combined-byte and two-layer layout benchmark remains useful evidence about source construction and the test protocol, but it no longer defines the target architecture. The next benchmark series MUST compare the two single-layer layouts at all three viewport sizes. See [Chunky Layout and C2P Benchmark](./c2p-layout-benchmark.md).
+The earlier combined-byte and two-layer layout benchmark remains useful evidence about source construction and the test protocol, but it no longer defines the target architecture. The current single-layer series compares packed4 and byte4 at all three viewport sizes using C99/68020 pair-LUT converters, table-free C99/68020 32-pixel transposes, and a staged blitter-publication negative control. It preserves exact canonical output, accounts for conservative payload traffic, and follows the common report contract. The hosted FS-UAE signal favors packed4 plus mask32, but it does not select a layout: exclusive real-hardware timing, genuine CPU/blitter merge work, safe publication, representative contention, and stock-A1200 distributions remain mandatory. See [Four-Plane C2P Reference and Benchmark](./c2p4-benchmark.md); [Chunky Layout and C2P Benchmark](./c2p-layout-benchmark.md) records the historical experiment.
 
 The converted `PIXEL` playfield remains a planar overlay. Regions outside the visible chunky viewport are transparent and MAY also receive cached planar fallback objects if the selected implementation can preserve ordering and damage restoration correctly.
 
@@ -720,7 +721,7 @@ The display uses eight low-resolution AGA bitplanes in dual-playfield mode:
 
 The exact PF1/PF2 assignment, palette-register and sprite-bank mapping, playfield/sprite priority, fetch mode, modulo, plane pointers, sprite widths, attached-pair rules, multiplex schedule, and Copper program MUST be captured in hardware tests and frozen in a register-level design note. If a hardware object cannot reproduce the logical palette or priority exactly, the scheduler MUST use the documented fallback rather than silently alter the image.
 
-The first hosted Phase 0 smoke test provisionally maps the transparent overlay to PF1 (BPL1/3/5/7, palette base 0) and the opaque base to PF2 (BPL2/4/6/8, palette base 16). An Intuition-managed PAL 256 × 256 × 8 dual-playfield screen passes mode, palette, Chip-RAM, reference-C2P output, raster-pattern, and repeated restoration checks under FS-UAE/Kickstart 3.0. This proves the basic 4+4 display mapping, not the new planar/chunky/object pipeline. Direct register/Copper control, object scheduling, optimized four-plane C2P, Kickstart 3.1, and real-A1200 gates remain open. See [Hosted AGA Screen Smoke Test](./aga-screen-smoke.md) and [Reference Chunky-to-Planar Converter](./c2p-reference.md).
+The first hosted Phase 0 smoke test provisionally maps the transparent overlay to PF1 (BPL1/3/5/7, palette base 0) and the opaque base to PF2 (BPL2/4/6/8, palette base 16). An Intuition-managed PAL 256 × 256 × 8 dual-playfield screen passes mode, palette, Chip-RAM, reference-C2P output, raster-pattern, and repeated restoration checks under FS-UAE/Kickstart 3.0. The C2P4 benchmark now exercises a native-planar PF2 base with packed4/byte4 viewport conversion into PF1, including real pair-LUT and mask32 68020 assembly and staged `BltBitMap()` publication paths, and requires exact canonical output. These hosted results prove mapping and integration, not final performance or safe display publication. Direct register/Copper control, object scheduling, exclusive fine timing, genuine hybrid C2P, Kickstart 3.1, and real-A1200 gates remain open. See [Hosted AGA Screen Smoke Test](./aga-screen-smoke.md) and [Four-Plane C2P Reference and Benchmark](./c2p4-benchmark.md).
 
 Although AGA palette entries accept more precision, MAGI-80 expands each virtual 4-bit component to an 8-bit hardware component by nibble replication. Copper palette changes are not part of the base cartridge API; this keeps the portable color limit stable.
 
@@ -730,7 +731,7 @@ Although AGA palette entries accept more precision, MAGI-80 expands each virtual
 - An unchanged `PLANAR` layer performs no bitmap work; scrolling SHOULD use plane pointers, fine scroll, and incremental row/column updates where possible.
 - An unchanged `PIXEL` viewport performs no C2P. A changed viewport converts only its required area into four destination planes.
 - A hardware-backed object move SHOULD update only sprite coordinates/control data. Fallback objects MUST add only their damaged regions to the relevant work list.
-- The reference four-plane C converter MUST produce bit-exact output for every pixel and plane.
+- The implemented reference four-plane C converters produce bit-exact packed4 and byte4 output for every tested pixel, plane, viewport profile, and stride. This contract MUST remain authoritative.
 - Optimized candidates MUST include CPU-only 68020 assembly, blitter-assisted conversion, and a CPU/blitter hybrid. Blitter participation is accepted only when the full pipeline is faster under active display and audio DMA.
 - Display memory MUST be in Chip RAM and aligned for the selected AGA fetch mode.
 - Safe publication MAY use double buffering, pointer swaps, Copper changes, or bounded damage repair, but MUST never expose a partially updated frame.
@@ -954,6 +955,12 @@ Phase 0 must establish measured budgets rather than estimate them from emulator 
 
 The runtime SHOULD expose an optional raster-bar or numeric profiler. A representative stock cartridge at 25 Hz MUST retain at least 20% measured CPU headroom after audio and conversion. Optional 50 Hz mode must pass the same test with its declared content.
 
+Graphics reports MUST also account for a conservative payload lower bound: source construction and edits, source reads, lookup/intermediate reads, plane writes, staged publication, and display-plane fetch. This is not a substitute for measurement and MUST exclude no cost silently. Instruction fetch, memory refresh, Copper, sprites, audio, transaction granularity, and arbitration must be listed separately as omitted or measured effects.
+
+Fine timing has two distinct harnesses. The hosted cooperative harness validates APIs, allocations, exact pixels, reports, and cleanup. Its `WaitTOF()` calls occur outside timed brackets, but task scheduling can still perturb a bracket and the waits substantially increase wall-clock duration. Its reports MUST use `timing_scope=hosted_cooperative` and cannot select an implementation.
+
+The performance-authority harness enters a bounded exclusive-runtime section only after files, allocations, and setup are complete. It owns the required Copper/display, DMA, and interrupt state, freezes AmigaOS scheduling, supports a raster-polled kernel-batch mode and a minimal MAGI-80 VBlank/runtime-frame mode, measures batched or back-to-back iterations without per-sample `WaitTOF()`, and restores state symmetrically. It MUST distinguish `exclusive_kernel_batch` from `exclusive_runtime_frame` and use stack canaries, phase/progress markers, and practical exception diagnostics so a controller can distinguish slow execution, deadlock, stack damage, a crash, and teardown failure. This requirement does not authorize an unbounded blind `Disable()` region: the matched call is restricted to short atomic entry/leave windows, and hardware/interrupt ownership must follow [Exclusive Graphics Benchmark Plan](./graphics-exclusive-benchmark.md).
+
 ## 16. Software architecture
 
 ### 16.1 Major components
@@ -1096,8 +1103,8 @@ Cartridges and modules are untrusted input. Host builds MUST run their parsers u
 2. **Property and fuzz tests:** cartridge/MOD parsing, decompression, source lexer/parser, typed IR, relocation inputs, dictionary operations, checked arithmetic, and malformed or nonterminating generated programs.
 3. **Local 68EC020 execution:** run generated functions under Musashi; assert results, side effects, ABI preservation, stack balance, guards, runtime calls, controlled traps, and instruction limits. A curated edge corpus SHOULD later run under Moira as an independent CPU oracle.
 4. **Golden and differential tests:** three-layer composite hashes, planar operation output, four-plane C2P bytes, palette mapping, object-scheduler/fallback traces, selected normalized 68020 disassembly, direct-encoder behavior versus the host typed-IR oracle and assembly route, source error locations, runtime traces, and MOD tick traces.
-5. **UAE integration:** PAL A1200, 68EC020, AGA, exactly 2 MiB Chip RAM, no Fast RAM; generated-code cache synchronization, native ABI integration, floppy boot, HD launch, disk swaps, and error paths.
-6. **Real-hardware tests:** at least two stock A1200 units if available, original or representative floppy drive/media, CRT and modern display adapter where relevant.
+5. **UAE integration:** PAL A1200, 68EC020, AGA, exactly 2 MiB Chip RAM, no Fast RAM; generated-code cache synchronization, native ABI integration, floppy boot, HD launch, disk swaps, error paths, hosted/exclusive timing-scope labeling, and crash-versus-timeout diagnostics.
+6. **Real-hardware tests:** at least two stock A1200 units if available, original or representative floppy drive/media, CRT and modern display adapter where relevant; authoritative graphics runs use the bounded exclusive harness and repeat the Chip-RAM calibration under recorded DMA states.
 7. **Soak tests:** editor idle, music preview, generated-code replacement, runtime, repeated run/stop, repeated save/load, and low-memory behavior.
 
 The local CPU runner is essential for fast compiler diagnosis but validates neither AmigaOS integration nor hardware timing. UAE is essential for system automation but cannot sign off custom-chip timing, Chip-RAM contention, CIA behavior, floppy reliability, restoration, or stock-machine frame budgets.
@@ -1135,7 +1142,7 @@ MAGI-80 1.0 is complete only when all of the following are true:
 
 The estimates below are engineering effort for one experienced developer, not calendar promises. They include implementation and ordinary testing but not large hardware-procurement or licensing delays. The critical path is the hybrid graphics freeze on real hardware first, then safe on-target native compilation and the content workflow, then hardening. The local CPU-runner workstream is independent of AGA work and does not block the next graphics benchmarks.
 
-Current Phase 0 evidence includes the reproducible cross-toolchain, native C2P golden vectors, the initial three-layer C99 reference compositor and goldens, an inverse dual-playfield decoder with a full-frame differential test, a validated common graphics-report schema, an Amiga Hunk benchmark harness, and an Intuition-managed 4+4 dual-playfield smoke test under FS-UAE. The existing scalar C2P runs validate legacy report plumbing, plane ordering, and layout equivalence only. They are not performance evidence and do not freeze the superseded two-full-chunky-layer design. The Musashi-based runner is an accepted development direction but is not yet counted as implemented evidence.
+Current Phase 0 evidence includes the reproducible cross-toolchain, native C2P golden vectors, the initial three-layer C99 reference compositor and goldens, an inverse dual-playfield decoder, a validated common graphics-report schema, an Amiga Hunk benchmark harness, and an Intuition-managed 4+4 dual-playfield smoke test under FS-UAE. The architecture-aligned C2P4 tranche now includes packed4/byte4 scalar oracles, C99 and 68020 pair-LUT implementations, table-free C99 and 68020 32-pixel transposes, a staged blitter-publication negative control, all three viewport profiles, payload traffic accounting, and exact full-frame canonical differentials under host tests and FS-UAE. The 24-case hosted run labels itself `hosted_cooperative`; its emulator timings validate protocol and implementation differences only and neither select a layout/backend nor replace the planned exclusive-runtime stock-A1200 evidence. The older two-layer scalar runs remain solely as regression fixtures. The Musashi-based runner is an accepted development direction but is not yet counted as implemented evidence.
 
 ### Phase 0 — Feasibility and irreversible decisions
 
@@ -1186,14 +1193,14 @@ The next graphics work MUST proceed in this order so each result has an oracle a
 Step 1 is complete for dual-playfield output. The later object tranche must extend canonical decoding with a hardware-sprite adapter, without changing the playfield contract.
 
 1. **Completed:** establish the portable compositor, inverse AGA dual-playfield decoder, exact differential path, and common benchmark report schema. Use identical logical scenes and canonical hashes across every backend.
-2. Benchmark four-plane C2P at 160 × 128, 192 × 160, and 256 × 256 for packed and byte-per-pixel sources. For each size, compare optimized CPU-only, blitter-assisted, and hybrid implementations with display DMA active.
+2. **In progress:** benchmark four-plane C2P at 160 × 128, 192 × 160, and 256 × 256 for packed and byte-per-pixel sources. The 24-case hosted matrix now compares C99 and 68020 pair-LUT CPU paths, a table-free 32-pixel 68020 transpose, and a staged blitter-publication negative control with display DMA active. Before selecting a path, add the exclusive-runtime harness and physical Chip-RAM calibration, then genuine blitter-assisted/CPU-blitter merges, dirty/no-change cases, safe publication, Paula/native-planar contention, and stock-A1200 distributions.
 3. Benchmark native planar clears, fills, tiles, text, cached planar sprites, whole-screen pointer scroll, fine scroll, and incremental exposed-row/column updates.
 4. Compare no scroll margin, ±16 pixels, and ±32 pixels, including Chip-RAM footprint, rebase spikes, and worst-case refill cost.
 5. Benchmark the virtual object scheduler with direct four-color sprites, attached 16-color pairs, realistic vertical multiplexing, channel exhaustion, priority conflicts, and planar fallback.
 6. Run representative planar-only, medium-viewport, object-heavy, and combined scenes with bitplane, blitter, sprite, and Paula DMA contention. Measure Standard and Turbo deadlines and the cost of safe publication.
 7. Repeat decisive cases on real stock hardware, publish distributions rather than a single sample, and freeze the smallest contract that meets the headroom gate.
 
-Every case MUST follow the [Graphics Benchmark Report Format](./graphics-benchmark-report-format.md): source construction/drawing, CPU conversion work, blitter work or wait, publication, total frame distribution, memory footprint, dirty bytes/regions, object allocation/fallback counts, E-Clock frequency, DMA state, and matching oracle/output checksums. FS-UAE remains useful for correctness and automation but cannot choose a performance winner.
+Every case MUST follow the [Graphics Benchmark Report Format](./graphics-benchmark-report-format.md): source construction/drawing, CPU conversion work, blitter work or wait, publication, total frame distribution, memory footprint, dirty bytes/regions, object allocation/fallback counts, E-Clock frequency, DMA state, timing scope, conservative traffic accounting, and matching oracle/output checksums. FS-UAE remains useful for correctness and automation but cannot choose a performance winner. A controller timeout alone is not a benchmark result; successful cleanup or an explicit failure marker is required.
 
 #### Compiler-tooling workstream
 
@@ -1373,7 +1380,7 @@ Do not cut:
 | ID | Risk | Probability | Impact | Mitigation and trigger |
 | --- | --- | --- | --- | --- |
 | R-01 | “Replace AmigaOS” is interpreted as bare metal, conflicting with library-backed filesystems and live editing. | High | Critical | Adopt the two-personality hosted/exclusive definition. Any demand for literal bare metal triggers a separate architecture and roadmap. |
-| R-02 | The selected chunky viewport and four-plane C2P leave insufficient time for game logic and audio. | Medium | High | Certify 25 Hz first, benchmark three viewport sizes and two source layouts, optimize measured hot paths, skip clean viewports, and make Full/Turbo costs explicit. |
+| R-02 | The selected chunky viewport and four-plane C2P leave insufficient time or Chip-RAM bandwidth for game logic and audio. | Medium | High | Certify 25 Hz first, benchmark three viewport sizes and two source layouts, record conservative source/LUT/intermediate/plane/display traffic, calibrate real Chip RAM, optimize measured hot paths, skip clean viewports, and make Full/Turbo costs explicit. |
 | R-03 | 2 MiB Chip RAM is insufficient or too fragmented after Workbench launch. | High | High | Preflight total/largest blocks, reserve critical buffers at launch, reuse arenas, offer minimal floppy boot, and fail before takeover with a size report. |
 | R-04 | Long `Forbid()` sessions or incorrect interrupt/resource handling destabilize AmigaOS. | Medium | Critical | No waiting calls in runtime; avoid long `Disable()`; isolate takeover; record ownership; stress 1,000 transitions; test multiple OS versions and real machines. |
 | R-05 | Keyboard/CIA and ProTracker timer ownership conflict. | Medium | Critical | Prototype both in Phase 0, use OS resources to reserve hardware, select distinct or shared interrupt-safe scheduling, and make emergency stop independent of generated code and audio. |
@@ -1384,7 +1391,7 @@ Do not cut:
 | R-10 | Malformed MOD or cartridge data causes overflow or corruption. | Medium | Critical | Checked arithmetic, bounds-first parsing, host fuzzing/sanitizers, target corpus, checksums, no native-code sections in cartridges, and no code generation until all source/assets are validated. |
 | R-11 | Lua familiarity drives the language toward dynamic general-purpose Lua and erodes predictable native layouts. | High | High | Freeze the Lua compatibility matrix, retain strong types/inference, fixed records/arrays/dictionaries, no universal table or GC, and reject features without a representative-game need. |
 | R-12 | A 256-pixel-wide code editor is frustrating. | Medium | High | Test 5–6-pixel fonts early, guarantee horizontal scrolling and shortcuts, keep UI chrome minimal, and consider an optional hosted high-resolution editor only after the core workflow works. |
-| R-13 | Emulator success hides real Chip-RAM contention or timing faults. | High | High | Real-hardware gate in every hardware-facing phase; use emulators for regression, never final timing sign-off. |
+| R-13 | Emulator success hides real Chip-RAM contention, interrupt behavior, or timing faults. | High | High | Real-hardware gate in every hardware-facing phase; use emulators for regression, never final timing sign-off; use the bounded exclusive-runtime harness for authoritative fine timings. |
 | R-14 | Physical floppy writes are slow or unreliable and safe replacement needs extra free space. | High | Medium | Keep projects in memory, show writes, use temporary-file replacement, encourage separate project disks/HD, verify after write, and never autosave to floppy by default. |
 | R-15 | AGA playfield/sprite priority, palette-bank, fetch, alignment, or Copper behavior differs from the proposed compositor. | Medium | High | Freeze behavior from register-level tests using Commodore documentation, capture working values and traces, and add composite/palette/sprite-priority golden screens. |
 | R-16 | C runtime or GCC output pulls in large or non-stock dependencies. | Medium | High | Inspect link maps from day one, avoid floating point and heavyweight stdio, use a minimal compatible runtime, and pin the toolchain/ABI. |
@@ -1395,7 +1402,7 @@ Do not cut:
 | R-21 | The 68020 executes stale instructions after code generation. | Medium | Critical | Never execute before relocation and validation complete; call the appropriate Exec cache-clear function over the generated range before takeover; include repeated compile/run code-replacement tests on real hardware. |
 | R-22 | Virtual objects exceed physical sprite channels or cannot be multiplexed reliably in a crowded scene. | High | High | Expose fixed virtual limits, schedule deterministically, count allocation failures, and provide a bounded planar fallback whose worst-case frame and memory costs are part of the cartridge budget. |
 | R-23 | Object fallback changes colors, priority, or pixels relative to the hardware-sprite path. | Medium | High | Share a constrained logical overlay palette, compare both paths to the reference compositor, and force fallback whenever exact hardware mapping is impossible. |
-| R-24 | A blitter-assisted path is slower because CPU, display, sprite, audio, and blitter DMA contend for Chip RAM. | High | High | Measure CPU-only, blitter-only stages, and hybrids with all representative DMA active; record CPU work, blitter busy/wait, and total frame time; select by real-hardware total rather than isolated throughput. |
+| R-24 | A blitter-assisted path is slower because CPU, display, sprite, audio, and blitter DMA contend for Chip RAM. | High | High | Measure CPU-only, blitter-only stages, and hybrids with all representative DMA active; record CPU work, blitter busy/wait, payload lower bounds, and total frame time; select by exclusive real-hardware total rather than isolated throughput. |
 | R-25 | Scroll margins save steady-state work but create visible rebase spikes or consume too much Chip RAM. | Medium | Medium | Compare no margin, ±16, and ±32; measure worst-case refill/rebase separately from averages; cap work per frame or select a smaller guarantee. |
 | R-26 | The three-layer abstraction grows into an unpredictable general compositor. | Medium | High | Freeze one baseline composition order, bounded viewport presets, fixed object capabilities, and explicit fallback rules; reject per-pixel alpha, arbitrary layer graphs, and undocumented adaptive behavior. |
 | R-27 | The textual-assembly bootstrap and shipping direct encoder diverge into two subtly different backends. | Medium | Critical | Share one low-level m68k instruction model, run behavioral and relocation comparisons, retain selective disassembly goldens, and retire bootstrap-only paths once direct encoding is independently trusted. |
@@ -1404,6 +1411,7 @@ Do not cut:
 | R-30 | Approximate emulator cycle counts are mistaken for stock-A1200 performance. | High | High | Label them regression-only, never convert them directly to milliseconds, and permit performance claims only from EClock/raster measurements on real stock hardware with representative DMA. |
 | R-31 | Host assembler, linker, CPU core, or binary tools vary across machines or introduce an unresolved license/reproducibility issue. | Medium | High | Pin revisions and checksums, archive notices, provide a scripted bootstrap, preserve ELF/flat artifacts, and keep developer-specific absolute paths out of all tracked configuration. |
 | R-32 | The local runner's synthetic memory addresses or trap protocol accidentally become cartridge ABI. | Low | High | Keep runner maps in test-only configuration, expose services through the versioned native ABI, and require an explicit decision record before any test address or trap number can become normative. |
+| R-33 | A small target stack, exception, or teardown fault is misreported as a slow benchmark because the external controller sees only a timeout. | Medium | High | Stream results instead of retaining matrices on stack; require stack-margin checks/canaries, phase markers, explicit cleanup success, and practical crash diagnostics; never treat a timeout as a timing sample. |
 
 ## 22. Decision log required before implementation freeze
 
@@ -1416,7 +1424,7 @@ The following decisions must be recorded with measurements or prototypes:
 5. Exact AGA dual-playfield, sprite, priority, palette-bank, fetch, modulo, pointer, and Copper settings.
 6. Frozen `PLANAR`/`PIXEL`/`OBJECTS` semantics, baseline composition order, API names, and dirty-state rules.
 7. Small/Medium/Full chunky dimensions, placement/alignment constraints, default profile, and packed-versus-byte source layout.
-8. Four-plane CPU-only versus blitter-assisted versus hybrid C2P implementation and certified Standard/Turbo envelope.
+8. Four-plane CPU-only versus blitter-assisted versus hybrid C2P implementation, raw Chip-RAM calibration, exclusive timing/interrupt protocol, failure diagnostics, and certified Standard/Turbo envelope.
 9. Native planar tile/cache formats, blitter operations, scroll mechanism, margin size, refill policy, and worst-case rebase budget.
 10. Virtual object count and dimensions, palette/priority contract, direct/attached/multiplex limits, scheduler order, and fallback representation/cost.
 11. Runtime keyboard acquisition and emergency-stop mechanism.
@@ -1425,13 +1433,13 @@ The following decisions must be recorded with measurements or prototypes:
 14. Frozen MIGA Lua grammar, Lua 5.1 compatibility matrix, type inference rules, numeric semantics, and restricted feature set.
 15. Record/array/dictionary layouts, supported key types, hash/probing algorithm, capacities, load factor, and deterministic iteration order.
 16. Native 68020 ABI, exact register convention, Boolean/fixed-point representation, runtime-context convention, jump table, relocation model, code arena, stack rules, guards, traps, loop budgets, stop safe points, and cache-clear sequence.
-17. Final source, generated-code, packed-cartridge, resident-cartridge, undo, and module limits.
-18. Cartridge checksum and compression algorithms.
-19. Safe-save behavior when a floppy cannot hold old and temporary copies.
-20. Pinned Musashi revision/license/integration method and the trigger for adding a pinned Moira oracle.
-21. Local runner memory map, 24-bit/endianness/alignment policy, return/exit protocol, instruction ceiling, runtime-call mocks, trace format, and failure artifacts.
-22. Development assembler/linker and syntax, ELF layout, symbol manifest, flat-image extraction, disassembly normalization, and direct-encoder convergence criteria.
-23. CPU regression metrics, reviewed kernels, comparison policy, and thresholds that cannot be presented as hardware timing.
+18. Final source, generated-code, packed-cartridge, resident-cartridge, undo, and module limits.
+19. Cartridge checksum and compression algorithms.
+20. Safe-save behavior when a floppy cannot hold old and temporary copies.
+21. Pinned Musashi revision/license/integration method and the trigger for adding a pinned Moira oracle.
+22. Local runner memory map, 24-bit/endianness/alignment policy, return/exit protocol, instruction ceiling, runtime-call mocks, trace format, and failure artifacts.
+23. Development assembler/linker and syntax, ELF layout, symbol manifest, flat-image extraction, disassembly normalization, and direct-encoder convergence criteria.
+24. CPU regression metrics, reviewed kernels, comparison policy, and thresholds that cannot be presented as hardware timing.
 
 ## 23. Recommended first vertical slice
 

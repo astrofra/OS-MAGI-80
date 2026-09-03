@@ -2,7 +2,7 @@
 
 **Status:** Portable C99 implementation and native golden-vector suite passing on macOS; the same source is validated against an Intuition-managed AGA screen under FS-UAE 3.2.35 and Kickstart 3.0/39.106
 
-**Role:** Correctness oracle for candidate runtime layouts and future optimized 68020 implementations
+**Role:** Historical correctness oracle for the superseded two-full-chunky-layer representation
 
 ## 1. What a Golden Vector Is
 
@@ -12,14 +12,14 @@ This gives a fast development loop for pure algorithms. It catches bit ordering,
 
 ## 2. Conversion Contract
 
-The public reference routines are declared in `src/graphics/c2p_reference.h`. The `fb8` baseline is implemented in `src/graphics/c2p_reference.c`; the experimental layouts are isolated in `src/graphics/c2p_reference_layouts.c` so they do not increase the normal AGA smoke-test binary. They:
+The public reference routines are declared in `src/graphics/c2p_reference.h`. The `fb8` baseline is implemented in `src/graphics/c2p_reference.c`; the experimental layouts are isolated in `src/graphics/c2p_reference_layouts.c` so they do not increase the normal AGA smoke-test binary. These routines preserve the initial two-layer experiment and AGA screen regression; the current three-layer architecture uses the separate [Four-Plane C2P Reference and Benchmark](./c2p4-benchmark.md). They:
 
 - accept the combined `fb8`, split packed, split byte, and asymmetric source layouts;
 - interpret an `fb8` pixel as `0xFB`, where `F` is the four-bit `FRONT` value and `B` is the four-bit `BACK` value;
 - place the even x pixel in the high nibble and the odd x pixel in the low nibble of packed sources;
 - ignore the high nibble of byte-per-pixel sources;
-- writes eight separate, non-interleaved planar destinations;
-- uses explicit source and destination row strides;
+- write eight separate, non-interleaved planar destinations;
+- use explicit source and destination row strides;
 - requires a non-zero width divisible by eight and a non-zero height;
 - performs no allocation and calls no C or AmigaOS library function;
 - assumes that source and destination storage do not overlap.
@@ -83,12 +83,12 @@ This closes the gap between a host-only byte test and the OS-managed AGA bitmap 
 gmake check
 ```
 
-The separate layout and timing experiment is documented in [Chunky Layout and C2P Benchmark](./c2p-layout-benchmark.md) and runs with `gmake c2p-benchmark-fs-uae`.
+The separate historical layout and timing experiment is documented in [Chunky Layout and C2P Benchmark](./c2p-layout-benchmark.md) and runs with `gmake c2p-benchmark-fs-uae`. Current single-layer work uses `gmake c2p4-test` and `gmake c2p4-benchmark-fs-uae`.
 
 ## 5. Deliberate Limitations
 
 The reference converters favor clarity and bit-exact behavior over speed. They perform per-pixel and per-bit loops and are not intended to meet the final frame budget on a stock 68EC020.
 
-The next implementation may use 32-bit transposes, lookup tables, assembly, or a hybrid C/assembly path. Any optimized converter must remain byte-identical to this reference across deterministic vectors, randomized frames, dirty rectangles, and non-trivial strides. Performance acceptance still requires measurement on a physical stock A1200 with bitplane DMA active.
+The current four-plane tranche includes scalar C99, pair-LUT C99/68020, table-free mask32 C99/68020, and a staged blitter-publication control. A genuine CPU/blitter merge remains open. Every optimized converter must remain byte-identical to the current four-plane reference across deterministic vectors, randomized frames, dirty rectangles, and non-trivial strides. Performance acceptance still requires a bounded exclusive-runtime measurement on a physical stock A1200 with recorded DMA state.
 
 This test also does not yet validate double buffering, VBlank-safe pointer swaps, a custom Copper list, exclusive takeover, or restoration after failure.

@@ -34,6 +34,21 @@ C2P_HOST_TEST_SOURCE := tests/host/c2p-reference/main.c
 C2P_HOST_TEST_PROGRAM := $(C2P_HOST_BUILD_DIR)/test
 C2P_HOST_TEST_EXPECTED := tests/host/c2p-reference/expected.txt
 C2P_HOST_TEST_REPORT := $(REPORT_DIR)/c2p-reference-host.txt
+C2P4_REFERENCE_SOURCE := src/graphics/c2p4_reference.c
+C2P4_LOOKUP_SOURCE := src/graphics/c2p4_lookup.c
+C2P4_MASK32_SOURCE := src/graphics/c2p4_mask32.c
+C2P4_M68K_SOURCE := src/graphics/c2p4_m68k.c
+C2P4_M68K_ASM_SOURCE := src/graphics/c2p4_m68k.S
+C2P4_SOURCES := $(C2P4_REFERENCE_SOURCE) $(C2P4_LOOKUP_SOURCE) \
+	$(C2P4_MASK32_SOURCE) \
+	$(C2P4_M68K_SOURCE)
+C2P4_TARGET_SOURCES := $(C2P4_SOURCES) $(C2P4_M68K_ASM_SOURCE)
+C2P4_HEADER := src/graphics/c2p4_reference.h
+C2P4_HOST_BUILD_DIR := $(HOST_BUILD_DIR)/c2p4-reference
+C2P4_HOST_TEST_SOURCE := tests/host/c2p4-reference/main.c
+C2P4_HOST_TEST_PROGRAM := $(C2P4_HOST_BUILD_DIR)/test
+C2P4_HOST_TEST_EXPECTED := tests/host/c2p4-reference/expected.txt
+C2P4_HOST_TEST_REPORT := $(REPORT_DIR)/c2p4-reference-host.txt
 GRAPHICS_REFERENCE_SOURCE := src/graphics/reference_compositor.c
 GRAPHICS_REFERENCE_HEADER := src/graphics/reference_compositor.h
 GRAPHICS_REFERENCE_BUILD_DIR := $(HOST_BUILD_DIR)/graphics-reference
@@ -58,6 +73,11 @@ C2P_BENCHMARK_SOURCE := tests/benchmark/c2p-layouts/main.c
 C2P_BENCHMARK_PROGRAM := $(C2P_BENCHMARK_BUILD_DIR)/program
 C2P_BENCHMARK_MAP := $(C2P_BENCHMARK_BUILD_DIR)/program.map
 C2P_BENCHMARK_REPORT := $(REPORT_DIR)/c2p-layouts-fs-uae.txt
+C2P4_BENCHMARK_BUILD_DIR := $(BENCHMARK_BUILD_DIR)/c2p4
+C2P4_BENCHMARK_SOURCE := tests/benchmark/c2p4/main.c
+C2P4_BENCHMARK_PROGRAM := $(C2P4_BENCHMARK_BUILD_DIR)/program
+C2P4_BENCHMARK_MAP := $(C2P4_BENCHMARK_BUILD_DIR)/program.map
+C2P4_BENCHMARK_REPORT := $(REPORT_DIR)/c2p4-fs-uae.txt
 
 TARGET_CFLAGS := \
 	-std=c99 \
@@ -84,9 +104,11 @@ C2P_BENCHMARK_CFLAGS = $(filter-out -Os,$(TARGET_CFLAGS)) -O2
 .DELETE_ON_ERROR:
 
 .PHONY: all amiga stage inspect vamos-test fs-uae-smoke c2p-test \
-	graphics-reference-test aga-reference-test graphics-report-test \
+	c2p4-test graphics-reference-test aga-reference-test \
+	graphics-report-test \
 	aga-screen aga-screen-inspect aga-screen-smoke c2p-benchmark \
-	c2p-benchmark-inspect c2p-benchmark-fs-uae runtime-compare check run clean
+	c2p-benchmark-inspect c2p-benchmark-fs-uae c2p4-benchmark \
+	c2p4-benchmark-inspect c2p4-benchmark-fs-uae runtime-compare check run clean
 
 all: amiga
 
@@ -130,6 +152,19 @@ $(C2P_HOST_TEST_PROGRAM): $(C2P_HOST_TEST_SOURCE) $(C2P_REFERENCE_SOURCES) \
 	@mkdir -p $(C2P_HOST_BUILD_DIR)
 	$(HOST_CC) $(PROJECT_CPPFLAGS) $(HOST_CFLAGS) \
 		$(C2P_REFERENCE_SOURCES) $(C2P_HOST_TEST_SOURCE) -o $@
+
+c2p4-test: $(C2P4_HOST_TEST_PROGRAM)
+	@mkdir -p $(REPORT_DIR)
+	$(C2P4_HOST_TEST_PROGRAM) >$(C2P4_HOST_TEST_REPORT)
+	diff -u $(C2P4_HOST_TEST_EXPECTED) $(C2P4_HOST_TEST_REPORT)
+
+$(C2P4_HOST_TEST_PROGRAM): $(C2P4_HOST_TEST_SOURCE) $(C2P4_SOURCES) \
+		$(C2P4_HEADER) $(AGA_REFERENCE_SOURCE) $(AGA_REFERENCE_HEADER) \
+		$(GRAPHICS_REFERENCE_SOURCE) $(GRAPHICS_REFERENCE_HEADER) Makefile
+	@mkdir -p $(C2P4_HOST_BUILD_DIR)
+	$(HOST_CC) $(PROJECT_CPPFLAGS) $(HOST_CFLAGS) \
+		$(C2P4_SOURCES) $(AGA_REFERENCE_SOURCE) \
+		$(GRAPHICS_REFERENCE_SOURCE) $(C2P4_HOST_TEST_SOURCE) -o $@
 
 graphics-reference-test: $(GRAPHICS_REFERENCE_TEST_PROGRAM)
 	@mkdir -p $(REPORT_DIR)
@@ -204,10 +239,38 @@ c2p-benchmark-fs-uae: stage c2p-benchmark-inspect
 	cp $(STAGING_DIR)/fs-uae-smoke.out $(C2P_BENCHMARK_REPORT)
 	./scripts/validate-c2p-benchmark-report.sh $(C2P_BENCHMARK_REPORT)
 
+c2p4-benchmark: $(C2P4_BENCHMARK_PROGRAM)
+
+$(C2P4_BENCHMARK_PROGRAM): $(C2P4_BENCHMARK_SOURCE) \
+		$(C2P4_TARGET_SOURCES) \
+		$(C2P4_HEADER) $(AGA_REFERENCE_SOURCE) $(AGA_REFERENCE_HEADER) \
+		$(GRAPHICS_REFERENCE_SOURCE) $(GRAPHICS_REFERENCE_HEADER) Makefile
+	@mkdir -p $(C2P4_BENCHMARK_BUILD_DIR)
+	$(TARGET_CC) $(PROJECT_CPPFLAGS) $(C2P_BENCHMARK_CFLAGS) \
+		$(C2P4_BENCHMARK_SOURCE) $(C2P4_TARGET_SOURCES) \
+		$(GRAPHICS_REFERENCE_SOURCE) $(AGA_REFERENCE_SOURCE) \
+		-Wl,-Map,$(C2P4_BENCHMARK_MAP) -o $@ $(TARGET_RUNTIME)
+
+c2p4-benchmark-inspect: $(C2P4_BENCHMARK_PROGRAM)
+	@mkdir -p $(REPORT_DIR)
+	$(TARGET_SIZE) $(C2P4_BENCHMARK_PROGRAM) | \
+		tee $(REPORT_DIR)/c2p4-size.txt
+	$(TARGET_NM) --print-size --size-sort $(C2P4_BENCHMARK_PROGRAM) \
+		>$(REPORT_DIR)/c2p4-symbols.txt
+	$(TARGET_OBJDUMP) -dr $(C2P4_BENCHMARK_PROGRAM) \
+		>$(REPORT_DIR)/c2p4-disassembly.txt
+
+c2p4-benchmark-fs-uae: stage c2p4-benchmark-inspect
+	MAGI80_FS_UAE_TIMEOUT_SECONDS=360 \
+		./scripts/test-fs-uae-runtime.sh $(C2P4_BENCHMARK_PROGRAM) -
+	@mkdir -p $(REPORT_DIR)
+	cp $(STAGING_DIR)/fs-uae-smoke.out $(C2P4_BENCHMARK_REPORT)
+	$(GRAPHICS_REPORT_VALIDATOR) $(C2P4_BENCHMARK_REPORT)
+
 runtime-compare:
 	./scripts/compare-c-runtimes.sh
 
-check: c2p-test graphics-reference-test aga-reference-test \
+check: c2p-test c2p4-test graphics-reference-test aga-reference-test \
 	graphics-report-test inspect vamos-test aga-screen-smoke
 
 clean:

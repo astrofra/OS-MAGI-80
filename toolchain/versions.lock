@@ -2,7 +2,7 @@
 # Generated after a successful full build and C99/68020 smoke test.
 
 manifest_format=1
-validated_at=2026-09-02
+validated_at=2026-09-03
 
 [host]
 architecture=arm64
@@ -158,6 +158,34 @@ aga_reference_decoder_stride_argument_contract=pass
 graphics_benchmark_report_format=1
 graphics_benchmark_report_validator=pass
 graphics_benchmark_report_oracle_match_required=pass
+c2p4_reference_host_compile=pass
+c2p4_reference_host_asan_ubsan=pass
+c2p4_reference_single_byte_golden=pass
+c2p4_reference_profiles=160x128,192x160,256x256
+c2p4_reference_layouts=packed4,byte4
+c2p4_reference_backends=scalar_c99,pair_lut_c99,pair_lut_m68k,mask32_c99,mask32_m68k
+c2p4_reference_backend_byte_exact=pass
+c2p4_reference_compositor_aga_differential=pass
+c2p4_reference_mask32_width_contract=pass
+c2p4_benchmark_hunk_file_bytes=20476
+c2p4_benchmark_text_bytes=16580
+c2p4_benchmark_data_bytes=184
+c2p4_benchmark_bss_bytes=1076
+c2p4_benchmark_cases=24
+c2p4_benchmark_source_memory=chip_verified
+c2p4_benchmark_display_dma=active
+c2p4_benchmark_sprite_dma=active
+c2p4_benchmark_audio_dma=inactive
+c2p4_benchmark_timing_authority=fs_uae_protocol_only
+c2p4_benchmark_timing_scope=hosted_cooperative
+c2p4_benchmark_traffic_accounting=pass_lower_bound
+c2p4_benchmark_result_storage=streamed_124_bytes
+c2p4_mask32_packed_core_bytes=260
+c2p4_mask32_byte_core_bytes=528
+c2p4_benchmark_canonical_output=pass
+c2p4_benchmark_byte4_high_nibble_ignored=pass
+c2p4_benchmark_staged_blitter_publication=pass_negative_control
+c2p4_benchmark_fs_uae_ks30=pass
 c2p_layout_benchmark_hunk_file_bytes=10212
 c2p_layout_benchmark_text_bytes=7348
 c2p_layout_benchmark_data_bytes=184

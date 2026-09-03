@@ -1,12 +1,14 @@
 # MAGI-80 Chunky Layout and C2P Benchmark
 
-**Status:** Reference-C baseline implemented and validated under FS-UAE 3.2.35 with Kickstart 3.0/39.106; no runtime layout has been selected
+**Status:** Historical two-layer Reference-C baseline retained and validated under FS-UAE 3.2.35 with Kickstart 3.0/39.106; superseded by the single-layer C2P4 matrix for current architecture decisions
 
 **Decision authority:** A physical stock PAL A1200 with 68EC020, 2 MiB Chip RAM, no Fast RAM, no FPU, display DMA active, and eventually four-channel audio active
 
 ## 1. Question
 
 MAGI-80 exposes two logical 16-color layers, but that does not determine their in-memory representation. The benchmark compares the cost of constructing and modifying candidate source layouts as well as converting them to the same eight AGA dual-playfield planes.
+
+This document records the original two-full-chunky-layer experiment. The three-layer architecture keeps the base playfield natively planar and converts only the optional four-bit `PIXEL` viewport; current evidence is documented in [Four-Plane C2P Reference and Benchmark](./c2p4-benchmark.md).
 
 The layout MUST remain private to the runtime until this decision is frozen. Cartridge assets have an independent serialized representation and MAY be expanded or preconverted when loaded.
 
@@ -72,17 +74,20 @@ No absolute time is acceptable: even the fastest scalar reference C2P took about
 
 FS-UAE is a functional and protocol-validation environment. Its E-Clock results MUST NOT be used as release performance claims or as the final layout decision.
 
-## 6. Optimized Candidate Matrix
+## 6. Successor Candidate Matrix
 
-The next benchmark tranche MUST add:
+The successor C2P4 benchmark has added pair-LUT C99/68020 candidates, a table-free 32-pixel C99/68020 transpose, payload traffic accounting, and a staged blitter-publication negative control across all three viewport profiles. It MUST still add:
 
-- a CPU-only 68020 assembly transpose processing at least 16 and preferably 32 pixels per iteration;
-- an inner loop designed around the 68EC020's 256-byte instruction cache;
+- real-stock-hardware inspection of the mask32 hot loop against the 68EC020's 256-byte instruction cache;
+- a bounded exclusive-runtime benchmark with owned interrupts and no per-sample `WaitTOF()`;
+- raw aligned Chip-RAM read/write/mixed calibration with active and blanked display states;
 - a `CPU3BLIT1`-style hybrid in which the CPU performs early merge stages and the blitter performs the final merge;
-- full eight-plane conversion, FRONT-only four-plane conversion, aligned dirty rectangles, and no-change paths;
+- aligned dirty rectangles and no-change paths for the four-plane viewport;
 - direct-planar blitter baselines for clear, opaque sprite, masked sprite, tile row, and scroll operations;
 - active-display and blanked-display measurements, with blitter priority recorded;
 - integrated frame measurements that include rendering, conversion, pointer swap, and eventually Paula playback.
+
+The existing hosted `WaitTOF()` calls are outside their E-Clock brackets, but the cooperative harness is still unsuitable for authoritative fine timing: AmigaOS may schedule inside a bracket, wall-clock execution is inflated, and a controller timeout cannot distinguish slowness from a crash. The exclusive successor must retain stack canaries and phase/progress markers and restore OS/chipset state on every recoverable exit.
 
 The blitter is asynchronous but shares Chip RAM bandwidth with the CPU and display DMA. A hybrid therefore succeeds only if saved CPU merge work and useful overlap outweigh its extra intermediate traffic. Commodore documents the DMA arbitration and `BLITHOG` behavior in [Blitter Operations and System DMA](https://amigadev.elowar.com/read/ADCD_2.1/Hardware_Manual_guide/node012B.html). The classic `CPU3BLIT1` merge split is explained in the [Kalms C2P tutorial](https://amycoders.org/sources/c2ptut.html).
 
@@ -100,4 +105,4 @@ The source layout may be frozen only after the optimized matrix runs on real har
 - audio stability and missed-frame behavior;
 - whether a planar-native fast path can avoid conversion for high-level primitives without changing language semantics.
 
-Until then, `fb8` is the implementation baseline and correctness oracle, not the selected MAGI-80 ABI.
+Until then, neither packed4 nor byte4 is the selected MAGI-80 ABI. The historical `fb8` representation remains only a regression fixture for the initial screen smoke test.

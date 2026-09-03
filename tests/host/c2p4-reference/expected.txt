@@ -1,0 +1,5 @@
+PASS four-plane single-byte golden
+PASS four-plane stride and argument contract
+PASS reference, lookup, and mask32 profile equivalence
+PASS compositor C2P4 decoder differentials
+result=pass

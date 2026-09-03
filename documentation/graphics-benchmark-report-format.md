@@ -89,6 +89,18 @@ The phase medians are diagnostic and may overlap, especially when CPU and blitte
 
 Benchmark-specific fields such as `source_layout`, `dirty_percent`, `blitter_priority`, `scroll_margin`, `sprite_channels`, or `audio_channels` may be appended before `result=pass`. Once a field affects comparisons across suites, it should be promoted in a later schema revision rather than inferred from a case name.
 
+Current graphics producers SHOULD additionally emit:
+
+| Field | Meaning |
+| --- | --- |
+| `timing_scope` | `hosted_cooperative` or `exclusive_runtime`; the former cannot authorize a performance decision |
+| `lookup_traffic_bytes` | Payload bytes read from conversion lookup tables during the complete sample |
+| `minimum_chip_traffic_bytes` | Conservative payload lower bound for explicitly modeled CPU/blitter source, edit, intermediate, and destination traffic |
+| `display_plane_fetch_bytes_per_video_frame` | Active display-plane payload, kept separate from the workload lower bound |
+| `video_hz` | Video refresh rate associated with the display fetch value |
+
+Traffic accounting is diagnostic, not a bandwidth measurement. A producer must document included and omitted traffic and must not infer available bus bandwidth from these fields alone.
+
 ## 5. Canonical Checksum
 
 Both checksum fields cover the complete 256 × 256 canonical image in top-to-bottom, left-to-right order, regardless of viewport size. Start with `2166136261`; for each canonical byte, XOR it into the low eight bits and multiply by `16777619` modulo 2^32.
@@ -133,4 +145,6 @@ gmake graphics-report-test
 
 The test proves acceptance of the version 1 contract and rejection of wrong case counts, unordered timing distributions, and oracle checksum mismatches. `gmake check` includes it.
 
-The earlier two-layer C2P harness retains its legacy `benchmark_format=1` report and validator for reproducibility. New four-plane, planar, scroll, object, and combined-scene benchmarks must use this graphics-wide schema.
+The earlier two-layer C2P harness retains its legacy `benchmark_format=1` report and validator for reproducibility. The `c2p4` producer uses this graphics-wide schema for its C99, pair-LUT and mask32 68020 assembly, and staged blitter-publication cases. Future planar, scroll, object, combined-scene, and genuine hybrid C2P benchmarks must use the same schema.
+
+An external controller timeout is not a valid case record. A successful run must emit the final `result=pass` only after cleanup. An exclusive harness should also preserve bounded phase/progress markers and explicit failure state so a missing footer can be classified as slow execution, deadlock, crash, stack corruption, or teardown failure rather than guessed from elapsed wall time.

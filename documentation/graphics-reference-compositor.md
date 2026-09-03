@@ -102,7 +102,7 @@ The expected report is stored in `tests/host/graphics-reference/expected.txt`; t
 
 ## 7. Relationship to the Next Benchmarks
 
-The next four-plane C2P and native-planar benchmarks should use this oracle as follows:
+The four-plane C2P and native-planar benchmarks use this oracle as follows:
 
 1. construct one deterministic logical scene;
 2. compose its canonical expected image with this implementation;
@@ -110,14 +110,14 @@ The next four-plane C2P and native-planar benchmarks should use this oracle as f
 4. decode the resulting AGA playfields and adapt any hardware-sprite output into canonical palette identities;
 5. require byte equality or an identical canonical checksum before considering timing results.
 
-The first performance tranche remains:
+The first performance tranche covers:
 
 - packed and byte-per-pixel 4-bit sources;
 - 160 × 128, 192 × 160, and 256 × 256 viewports;
-- CPU-only, blitter-assisted, and CPU/blitter-hybrid four-plane conversion;
+- C99/68020 pair-LUT conversion, table-free C99/68020 32-pixel transposes, and a staged blitter-publication control, followed by genuine CPU/blitter-hybrid conversion;
 - active display DMA, followed later by combined sprite and Paula DMA.
 
-The portable [AGA Dual-Playfield Reference Decoder](./aga-reference-decoder.md) now implements the inverse PF1/PF2 mapping and proves a full-frame compositor → C2P → decoder round trip. The existing [Reference Chunky-to-Planar Converter](./c2p-reference.md) remains the byte-level plane oracle until the new single-layer four-plane converters are implemented. Hardware-sprite output still needs a separate canonical adapter when the object benchmark tranche begins.
+The portable [AGA Dual-Playfield Reference Decoder](./aga-reference-decoder.md) implements the inverse PF1/PF2 mapping. The [Four-Plane C2P Reference and Benchmark](./c2p4-benchmark.md) now proves exact compositor → C2P4 → decoder output for packed4 and byte4 sources at every viewport size and exercises the pair-LUT and mask32 assembly cores under FS-UAE. Hardware-sprite output still needs a separate canonical adapter when the object benchmark tranche begins.
 
 Every new benchmark must emit the validated [Graphics Benchmark Report Format](./graphics-benchmark-report-format.md), including matching oracle/candidate checksums before its timing data can be considered.
 
