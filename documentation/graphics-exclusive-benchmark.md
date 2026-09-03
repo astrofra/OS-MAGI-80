@@ -1,6 +1,6 @@
 # MAGI-80 Exclusive Graphics Benchmark Plan
 
-**Status:** Raw Chip-RAM kernel-batch foundation implemented and validated in FS-UAE; graphics integration and physical-hardware authority pending
+**Status:** Blanked/active display and additive DMA matrix implemented around the raw and C2P4 kernels and validated in FS-UAE; expanded workloads, stress testing, and physical-hardware authority pending
 
 **Decision authority:** Only distributions produced by this harness on a physical stock PAL A1200 may select a graphics backend or certify a frame budget
 
@@ -8,7 +8,7 @@
 
 The hosted FS-UAE graphics benchmark proves byte-exact output, target ABI execution, Chip-RAM allocation, report generation, and clean OS-managed teardown. It deliberately does not provide fine timing. AmigaOS remains scheduled, system interrupt handlers remain active, and every sample is preceded by `WaitTOF()` outside the measured bracket.
 
-The first `exclusive_kernel_batch` foundation now exists for raw Chip-RAM kernels. It validates the takeover shape, a dedicated stack, interrupt masking, E-Clock batching, restoration, result checksums, and machine-readable failure output. It does not yet own the display or install the MAGI-80 runtime interrupt path.
+The `exclusive_kernel_batch` successor now wraps both the raw Chip-RAM kernels and the real pair-LUT/mask32 68020 C2P4 kernels. It switches an Intuition-managed eight-plane dual-playfield screen between a blanked fixture and additive display/Copper/sprite/audio/blitter DMA profiles, while retaining the dedicated stack, interrupt masking, E-Clock batching, exact checksums, restoration checks, and machine-readable failure output. It does not yet replace the system Copper list, install the MAGI-80 runtime interrupt path, or model a complete runtime frame.
 
 The exclusive harness separates two questions:
 
@@ -32,6 +32,34 @@ gmake chipram-benchmark-fs-uae
 ```
 
 The report is written to `build/reports/chipram-fs-uae.txt`; kernel sizes and generated instructions are recorded in the adjacent size, symbol, and disassembly reports. It deliberately declares `timing_authority=protocol_only`. In particular, the initial headless FS-UAE smoke run captured display, sprite, and audio DMA as inactive. Its tick values cannot reproduce or refute the informal physical-machine figure near 6 MB/s.
+
+### 1.2 Implemented graphics and DMA matrix
+
+`tests/benchmark/exclusive-graphics/` opens a PAL 256 × 256 × 8 dual-playfield screen, verifies that all live planes are in Chip RAM, prepares the C2P oracle, allocates four Paula channels through `audio.device`, and acquires the blitter before entering `Forbid()`. Every state change is raster-polled to line 32 and performed inside a short `Disable()`/`Enable()` handover. Each batch restores and verifies the prior `DMACON` and `INTENA` bits; there is no `WaitTOF()`, allocation, DOS I/O, or report formatting in the exclusive section.
+
+The seven profiles are additive so their deltas can be inspected:
+
+| Profile | Display | Copper | Sprite | Audio | Blitter |
+| --- | --- | --- | --- | --- | --- |
+| `blanked` | off | off | off | off | off |
+| `display` | on | off | off | off | off |
+| `display_copper` | on | on | off | off | off |
+| `display_copper_sprite` | on | on | on | off | off |
+| `display_copper_sprite_audio` | on | on | on | four channels | off |
+| `display_copper_sprite_audio_blitter_fair` | on | on | on | four channels | one fair 32 KiB A-to-D copy |
+| `display_copper_sprite_audio_blitter_hog` | on | on | on | four channels | one hog 32 KiB A-to-D copy |
+
+Each profile runs the six raw kernels plus twelve C2P4 cases: Small, Medium, and Full viewports; packed4 and byte4 inputs; and the real pair-LUT and table-free mask32 68020 assembly cores. That produces 126 checked cases. C2P writes directly to the live PF1 planes and is compared with the hosted scalar oracle after the exclusive section. All measured CPU sources and lookup data are currently in Chip RAM, making this the stock-memory baseline.
+
+The audio profile uses real four-channel DMA at period 124 with volume zero. The sprite profile currently measures only the screen-managed sprite-DMA state; it does not yet create representative sprite fetch traffic. Likewise, the blitter profiles launch a real concurrent copy, but they are contention controls rather than C2P hybrids and do not sustain blitter work for the entire longest conversion. Those limits are explicit report metadata and must be closed before the combined-scene gate.
+
+Run and validate the complete matrix with:
+
+```sh
+gmake exclusive-graphics-benchmark-fs-uae
+```
+
+The validated report is written to `build/reports/exclusive-graphics-fs-uae.txt`, with size, symbol, map, and disassembly artifacts beside the other benchmark reports. The validator checks the exact DMA profile mapping, sampling contracts, traffic arithmetic, output hashes, timer plausibility, stack margin, state restoration, case count, and final footer. The passing FS-UAE run completed all 126 cases with 132 bytes of measured 16 KiB stack high water and no discarded timer sample. Its `timing_authority=protocol_only` label is deliberate: the values prove execution and instrumentation, not A1200 performance.
 
 ## 2. Why `Forbid()` and `Disable()` Are Not Run Modes
 
@@ -131,7 +159,7 @@ Minimum kernels:
 | Display state | blanked, eight-plane 256 × 256 active |
 | DMA state | display only; display + Copper/sprites; display + blitter; representative display + sprites + Paula |
 
-Every physical-hardware result reports bytes per iteration, iteration count, raw E-Clock ticks, bracket overhead, minimum/median/maximum, decimal MB/s, binary MiB/s, alignment, source/destination memory domains, generated disassembly, display state, enabled DMA, and interrupt mode. Reads whose values do not affect an observable checksum are invalid because an optimizer may remove them. The implemented protocol smoke already records the raw fields and observable checksums; rate formatting, Fast-RAM variants, alignment variants, active-display cases, and the full DMA matrix remain open before physical runs.
+Every physical-hardware result reports bytes per iteration, iteration count, raw E-Clock ticks, bracket overhead, minimum/median/maximum, decimal MB/s, binary MiB/s, alignment, source/destination memory domains, generated disassembly, display state, enabled DMA, and interrupt mode. Reads whose values do not affect an observable checksum are invalid because an optimizer may remove them. The implemented successor now records blanked/active and additive DMA profiles with observable checksums. Rate formatting, byte/word read variants, read/modify/write kernels, misalignment cases, Fast-RAM placements, explicit sprite payloads, and physical distributions remain open.
 
 ## 7. Graphics Case Requirements
 
@@ -171,14 +199,14 @@ The exclusive harness is ready to inform architecture only when:
 6. repeated case distributions, not single samples, are available from a physical stock PAL A1200;
 7. the same report cannot accidentally label an FS-UAE run as `real_hardware`.
 
-Until this gate passes, the hosted C2P4 matrix remains correctness and protocol evidence only.
+Until this gate passes, both the hosted and exclusive FS-UAE C2P4 matrices remain correctness and protocol evidence only.
 
 The immediate implementation sequence is:
 
-1. wrap the raw harness in blanked and owned active-display fixtures and add the alignment/read/mixed matrix;
-2. reuse its stack, phase, interrupt-handover, checksum, and restoration machinery around the existing C2P4 oracle cases;
-3. add the reviewed minimal Level-3 path for `exclusive_runtime_frame`, then stress transitions and forced failures;
-4. run the resulting distributions on a physical stock PAL A1200 before selecting a source layout or backend.
+1. **Completed:** wrap the raw and C2P4 assembly kernels in blanked/active screen fixtures and the seven-profile DMA matrix, with guarded-stack, checksum, state-restoration, and report validation under FS-UAE;
+2. run the present stock-memory baseline on a physical stock PAL A1200, then add explicit sprite payloads, sustained/repeated blitter load, missing raw read/mixed/alignment cases, and optional Fast-source variants;
+3. implement genuine C2P4 CPU/blitter merge candidates, dirty/no-change cases, and safe publication, preserving the same oracle and DMA profiles;
+4. add the reviewed minimal Level-3 path for `exclusive_runtime_frame`, then stress at least 100 transitions and forced failures before the final physical selection run.
 
 ## 9. Primary References
 

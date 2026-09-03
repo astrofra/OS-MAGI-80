@@ -1,6 +1,6 @@
 # MAGI-80 Four-Plane C2P Reference and Benchmark
 
-**Status:** Reference, pair-LUT C99/68020, table-free mask32 C99/68020, and staged blitter-publication baseline implemented; native goldens and the 24-case FS-UAE protocol pass
+**Status:** Reference, pair-LUT C99/68020, table-free mask32 C99/68020, staged blitter-publication control, and the 126-case exclusive display/DMA wrapper implemented; native and FS-UAE protocols pass
 
 **Decision authority:** Correctness is byte-exact on the host and under FS-UAE. Layout and performance decisions remain blocked on a physical stock PAL A1200.
 
@@ -161,15 +161,17 @@ Phase 0 must reproduce a raw Chip-RAM calibration on a physical stock A1200. It 
 
 This tranche does not yet select packed4, byte4, or any backend. The next C2P4 work is:
 
-1. extend the implemented raw `exclusive_kernel_batch` foundation to owned blanked/active display states, the full DMA/alignment matrix, and the existing C2P4 oracle cases;
-2. add the minimal MAGI-80 Level-3 VBlank/raster path, exception capture and visible persistent phase marker needed for `exclusive_runtime_frame`; the current raw foundation already provides a dedicated measured stack, external canaries, progress phases, explicit failure output, batched E-Clock timing, and exact custom-interrupt restoration;
-3. stress hosted-to-exclusive restoration and forced failures, then run the raw Chip-RAM calibration on a physical stock machine before interpreting C2P rates;
-4. shorten or restructure the byte4 compaction core so its repeated instruction footprint can be compared with the current approximately 468-byte loop;
-5. implement a genuine CPU/blitter merge split such as a C2P4 adaptation of CPU3BLIT1, with explicit intermediate layout and direct-register ownership documented;
-6. add aligned dirty-rectangle and no-change workloads;
-7. add double-buffered or Copper-safe publication rather than direct writes to the visible PF1 planes;
-8. repeat with Paula DMA active and representative native-planar work;
+1. run the implemented exclusive baseline on a physical stock machine before interpreting C2P rates; it already covers blanked/active display, seven additive DMA profiles, all three viewport sizes, both source layouts, and the real pair-LUT/mask32 assembly cores;
+2. replace the current screen-managed sprite enable with representative sprite data/fetches, add sustained blitter traffic, and complete the raw read/mixed/alignment cases plus optional Fast-source variants;
+3. shorten or restructure the byte4 compaction core so its repeated instruction footprint can be compared with the current approximately 468-byte loop;
+4. implement a genuine CPU/blitter merge split such as a C2P4 adaptation of CPU3BLIT1, with explicit intermediate layout and direct-register ownership documented;
+5. add aligned dirty-rectangle and no-change workloads;
+6. add double-buffered or Copper-safe publication rather than direct writes to the visible PF1 planes;
+7. add the minimal MAGI-80 Level-3 VBlank/raster path, exception capture and visible persistent phase marker needed for `exclusive_runtime_frame`;
+8. stress hosted-to-exclusive restoration and forced failures, then repeat with representative native-planar, sprite, blitter, and Paula traffic;
 9. run longer distributions on a stock 2 MiB PAL A1200 and freeze only the smallest profile/layout contract that meets headroom.
+
+The new target is built and exercised with `gmake exclusive-graphics-benchmark-fs-uae`. It runs 126 cases: seven DMA profiles multiplied by six raw kernels and twelve C2P4 combinations. Paula contributes four real muted DMA channels; the fair/hog blitter cases each overlap one direct-register 32 KiB A-to-D copy with the CPU kernel. The screen remains Intuition-managed, sprite DMA has no representative object payload yet, and direct PF1 writes are not safe publication. The report therefore remains `protocol_only` even though its output hashes, DMA/interrupt restoration, and guarded-stack invariants pass.
 
 The hosted and exclusive harnesses have different jobs. Hosted cooperative runs remain the frequent correctness, API, allocation, and restoration regression. Fine performance runs use a bounded exclusive section after all files and allocations are prepared, with no DOS calls or general OS waits inside it. The two exclusive scopes and their takeover, interrupt, stack, crash, and Chip-RAM calibration contracts are defined in [Exclusive Graphics Benchmark Plan](./graphics-exclusive-benchmark.md). Takeover must use documented ownership and a small controlled interrupt path; it must not be implemented as an unbounded blind `Disable()` region.
 

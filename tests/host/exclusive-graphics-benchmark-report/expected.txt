@@ -1,0 +1,5 @@
+PASS exclusive graphics report accepts the version 1 matrix contract
+PASS exclusive graphics report rejects a mismatched DMA profile
+PASS exclusive graphics report rejects checksum mismatches
+PASS exclusive graphics report rejects implausible timer samples
+result=pass
