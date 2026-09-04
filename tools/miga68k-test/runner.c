@@ -66,6 +66,8 @@ static const uint8_t infinite_loop_code[] = {0x60, 0xfe};
 static const uint8_t saved_register_clobber_code[] = {0x76, 0x00, 0x4e, 0x75};
 
 static struct trace_buffer *active_trace;
+static uint32_t active_stack_entry;
+static uint32_t active_stack_low;
 
 static m68k_register_t musashi_register(enum miga80_abi_register reg)
 {
@@ -101,10 +103,22 @@ static void trace_add(struct trace_buffer *trace, uint32_t pc)
 
 static void instruction_hook(unsigned int pc)
 {
+    const uint32_t stack_pointer = m68k_get_reg(NULL, M68K_REG_A7);
+
     if (active_trace != NULL) {
         trace_add(active_trace, pc);
+        if (stack_pointer < active_stack_low) {
+            active_stack_low = stack_pointer;
+        }
     }
     m68k_end_timeslice();
+}
+
+static void finish_stack_measurement(unsigned int *stack_bytes)
+{
+    if (stack_bytes != NULL) {
+        *stack_bytes = (unsigned int)(active_stack_entry - active_stack_low);
+    }
 }
 
 static void print_trace(const struct trace_buffer *trace)
@@ -239,34 +253,43 @@ static int prepare_program(const char *name, const uint8_t *code,
 }
 
 static enum stop_reason execute_program(struct trace_buffer *trace,
-                                        unsigned int *instruction_count)
+                                        unsigned int *instruction_count,
+                                        unsigned int *stack_bytes)
 {
     active_trace = trace;
+    active_stack_entry = m68k_get_reg(NULL, M68K_REG_A7);
+    active_stack_low = active_stack_entry;
     *instruction_count = 0;
     while (*instruction_count < MAX_INSTRUCTIONS) {
         const uint32_t pc = m68k_get_reg(NULL, M68K_REG_PC);
 
         if (pc == RETURN_SENTINEL) {
+            finish_stack_measurement(stack_bytes);
             return STOP_RETURNED;
         }
         if (!miga68k_memory_is_executable(pc)) {
+            finish_stack_measurement(stack_bytes);
             return STOP_BAD_PC;
         }
 
         (void)m68k_execute(1000000);
         ++*instruction_count;
         if (miga68k_memory_has_fault()) {
+            finish_stack_measurement(stack_bytes);
             return STOP_MEMORY_FAULT;
         }
     }
+    finish_stack_measurement(stack_bytes);
     return STOP_INSTRUCTION_LIMIT;
 }
 
 static int run_case(const struct test_case *test,
-                    unsigned int *executed_instructions)
+                    unsigned int *executed_instructions,
+                    unsigned int *maximum_stack_bytes)
 {
     struct trace_buffer trace;
     unsigned int instruction_count;
+    unsigned int stack_bytes = 0U;
     enum stop_reason stop;
     int passed = 1;
     const char *failure = NULL;
@@ -279,9 +302,12 @@ static int run_case(const struct test_case *test,
         return 0;
     }
 
-    stop = execute_program(&trace, &instruction_count);
+    stop = execute_program(&trace, &instruction_count, &stack_bytes);
     if (executed_instructions != NULL) {
         *executed_instructions = instruction_count;
+    }
+    if (maximum_stack_bytes != NULL) {
+        *maximum_stack_bytes = stack_bytes;
     }
     if (stop == STOP_INSTRUCTION_LIMIT) {
         failure = "instruction limit reached";
@@ -308,9 +334,10 @@ static int run_case(const struct test_case *test,
     if (failure != NULL) {
         fprintf(stderr,
                 "TEST: %s\nRESULT: %s; expected D0=%08x, got %08x\n"
-                "INSTRUCTIONS: %u\n",
+                "INSTRUCTIONS: %u\nSTACK BYTES: %u\n",
                 test->name, failure, (unsigned int)test->expected,
-                m68k_get_reg(NULL, M68K_REG_D0), instruction_count);
+                m68k_get_reg(NULL, M68K_REG_D0), instruction_count,
+                stack_bytes);
         print_registers();
         print_trace(&trace);
         passed = 0;
@@ -331,7 +358,7 @@ static int run_memory_guard_test(void)
         return 0;
     }
     m68k_set_reg(M68K_REG_A0, MIGA68K_STACK_END);
-    stop = execute_program(&trace, &instruction_count);
+    stop = execute_program(&trace, &instruction_count, NULL);
     active_trace = NULL;
     if (stop == STOP_MEMORY_FAULT && miga68k_memory_has_fault()) {
         return 1;
@@ -357,7 +384,7 @@ static int run_instruction_limit_test(void)
                          sizeof(infinite_loop_code), 0U, 0U, 0U)) {
         return 0;
     }
-    stop = execute_program(&trace, &instruction_count);
+    stop = execute_program(&trace, &instruction_count, NULL);
     active_trace = NULL;
     if (stop == STOP_INSTRUCTION_LIMIT &&
         instruction_count == MAX_INSTRUCTIONS) {
@@ -385,7 +412,7 @@ static int run_saved_register_guard_test(void)
                          sizeof(saved_register_clobber_code), 0U, 0U, 0U)) {
         return 0;
     }
-    stop = execute_program(&trace, &instruction_count);
+    stop = execute_program(&trace, &instruction_count, NULL);
     active_trace = NULL;
     if (stop == STOP_RETURNED && !preserved_registers_are_valid()) {
         return 1;
@@ -417,6 +444,7 @@ int main(int argc, char **argv)
 
     if (argc == 8 && strcmp(argv[1], "--case") == 0) {
         unsigned int instruction_count;
+        unsigned int stack_bytes;
 
         command_line_case.name = argv[3];
         if (!load_program_image(argv[2]) ||
@@ -429,13 +457,15 @@ int main(int argc, char **argv)
         }
         m68k_init();
         m68k_set_instr_hook_callback(instruction_hook);
-        if (!run_case(&command_line_case, &instruction_count)) {
+        if (!run_case(&command_line_case, &instruction_count,
+                      &stack_bytes)) {
             return 1;
         }
-        printf("PASS  %s D0=%08x instructions=%u code_bytes=%lu\n",
+        printf("PASS  %s D0=%08x instructions=%u code_bytes=%lu "
+               "stack_bytes=%u\n",
                command_line_case.name,
                (unsigned int)command_line_case.expected, instruction_count,
-               (unsigned long)active_program_code_size);
+               (unsigned long)active_program_code_size, stack_bytes);
         return 0;
     }
 
@@ -453,7 +483,7 @@ int main(int argc, char **argv)
     m68k_init();
     m68k_set_instr_hook_callback(instruction_hook);
     for (index = 0; index < ARRAY_COUNT(cases); ++index) {
-        if (!run_case(&cases[index], NULL)) {
+        if (!run_case(&cases[index], NULL, NULL)) {
             return 1;
         }
     }

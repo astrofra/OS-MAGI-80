@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "compiler/backend_m68k/backend.h"
@@ -21,6 +22,54 @@ static int compile_source(const char *source, struct miga80_ir_function *ir,
 
     return miga80_parse_function(source, strlen(source), &ast, diagnostic) &&
            miga80_lower_function(&ast, ir, diagnostic);
+}
+
+static void set_value(struct miga80_value_function *function,
+                      unsigned int index, enum miga80_value_opcode opcode,
+                      unsigned int left, unsigned int right,
+                      unsigned int parameter_index)
+{
+    struct miga80_value_instruction *value = &function->values[index];
+
+    (void)memset(value, 0, sizeof(*value));
+    value->type = MIGA80_VALUE_I32;
+    value->opcode = opcode;
+    value->left = left;
+    value->right = right;
+    value->parameter_index = parameter_index;
+    value->line = 1U;
+    value->column = index + 1U;
+    value->live = 1;
+}
+
+static void build_spill_fixture(struct miga80_value_function *function)
+{
+    unsigned int index;
+
+    (void)memset(function, 0, sizeof(*function));
+    (void)snprintf(function->name, sizeof(function->name), "spill_fixture");
+    function->parameter_count = 3U;
+    for (index = 0U; index < 3U; ++index) {
+        set_value(function, index, MIGA80_VALUE_PARAMETER,
+                  MIGA80_INVALID_VALUE, MIGA80_INVALID_VALUE, index);
+    }
+    for (index = 3U; index < 7U; ++index) {
+        set_value(function, index, MIGA80_VALUE_MUL, 0U, 1U, 0U);
+    }
+    set_value(function, 7U, MIGA80_VALUE_ADD, 0U, 1U, 0U);
+    set_value(function, 8U, MIGA80_VALUE_SUB, 0U, 1U, 0U);
+    set_value(function, 9U, MIGA80_VALUE_NEG, 0U, MIGA80_INVALID_VALUE, 0U);
+    set_value(function, 10U, MIGA80_VALUE_MUL, 0U, 1U, 0U);
+    set_value(function, 11U, MIGA80_VALUE_ADD, 3U, 4U, 0U);
+    set_value(function, 12U, MIGA80_VALUE_ADD, 5U, 6U, 0U);
+    set_value(function, 13U, MIGA80_VALUE_ADD, 7U, 8U, 0U);
+    set_value(function, 14U, MIGA80_VALUE_ADD, 9U, 10U, 0U);
+    set_value(function, 15U, MIGA80_VALUE_ADD, 11U, 12U, 0U);
+    set_value(function, 16U, MIGA80_VALUE_ADD, 13U, 14U, 0U);
+    set_value(function, 17U, MIGA80_VALUE_ADD, 15U, 16U, 0U);
+    set_value(function, 18U, MIGA80_VALUE_ADD, 17U, 2U, 0U);
+    function->value_count = 19U;
+    function->result = 18U;
 }
 
 static int test_valid_function(void)
@@ -170,9 +219,68 @@ static int test_constant_folding(void)
     return emitted && closed == 0;
 }
 
-int main(void)
+static int test_spill_frame(void)
 {
+    struct miga80_value_function value_ir;
+    struct miga80_diagnostic diagnostic;
+    char assembly_text[4096];
+    size_t assembly_size;
+    FILE *assembly;
+    int emitted;
+    int closed;
+
+    build_spill_fixture(&value_ir);
+    assembly = tmpfile();
+    if (assembly == NULL) {
+        return 0;
+    }
+    emitted = miga80_emit_gnu_m68k_o1(assembly, &value_ir, &diagnostic);
+    rewind(assembly);
+    assembly_size =
+        fread(assembly_text, 1U, sizeof(assembly_text) - 1U, assembly);
+    assembly_text[assembly_size] = '\0';
+    if (ferror(assembly) ||
+        strstr(assembly_text, "link.w  %a6,#-12") == NULL ||
+        strstr(assembly_text, "%d3/%d4/%d5/%d6/%d7") == NULL ||
+        strstr(assembly_text, "move.l  %d7,-") == NULL ||
+        strstr(assembly_text, "(%a6),%d") == NULL ||
+        strstr(assembly_text, "unlk    %a6") == NULL) {
+        emitted = 0;
+    }
+    closed = fclose(assembly);
+    return emitted && closed == 0;
+}
+
+int main(int argc, char **argv)
+{
+    if (argc == 2 && strcmp(argv[1], "--emit-spill-fixture") == 0) {
+        struct miga80_value_function *value_ir;
+        struct miga80_diagnostic diagnostic;
+        int emitted;
+
+        value_ir =
+            (struct miga80_value_function *)malloc(sizeof(*value_ir));
+        if (value_ir == NULL) {
+            fprintf(stderr, "unable to allocate spill fixture IR\n");
+            return 1;
+        }
+        build_spill_fixture(value_ir);
+        emitted = miga80_emit_gnu_m68k_o1(stdout, value_ir, &diagnostic);
+        free(value_ir);
+        if (!emitted) {
+            fprintf(stderr, "spill fixture emission failed: %s\n",
+                    diagnostic.message);
+            return 1;
+        }
+        return 0;
+    }
+    if (argc != 1) {
+        fprintf(stderr, "Usage: %s [--emit-spill-fixture]\n", argv[0]);
+        return 2;
+    }
+
     if (!test_valid_function() || !test_constant_folding() ||
+        !test_spill_frame() ||
         !expect_error("function f(a): i32 return a end", 1U, 13U,
                       "expected ':'") ||
         !expect_error("function f(a: i32): i32 return missing end", 1U, 32U,
@@ -190,6 +298,6 @@ int main(void)
         return 1;
     }
 
-    printf("PASS  compiler frontend, typed and value IR, O0/O1 GNU m68k renderers\n");
+    printf("PASS  compiler frontend, typed/value IR, O0/O1 renderers, and spill frames\n");
     return 0;
 }

@@ -77,11 +77,14 @@ before compiler code may emit them.
 `compiler/abi/abi.h` and `compiler/abi/abi.c` are the machine-readable source
 of this register subset. The GNU assembly renderer obtains argument register
 names from it. The Musashi runner obtains its callee-saved set from it, gives
-`A5` a valid synthetic context address, checks four-byte stack alignment, and
-uses a negative control to prove that a modified saved register is detected.
+`A5` a valid synthetic context address, checks four-byte stack alignment,
+measures maximum callee stack use, and uses a negative control to prove that a
+modified saved register is detected. The generated spill fixture additionally
+exercises a 12-byte `A6` frame, direct negative-offset reloads, and preservation
+of `D3-D7/A6` across six edge inputs.
 
 Run the host contract and generated-code checks with:
 
 ```sh
-gmake compiler-abi-test miga68k-test compiler-execute-test
+gmake compiler-abi-test miga68k-test compiler-execute-test compiler-spill-test
 ```

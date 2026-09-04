@@ -1,1 +1,1 @@
-PASS  compiler frontend, typed and value IR, O0/O1 GNU m68k renderers
+PASS  compiler frontend, typed/value IR, O0/O1 renderers, and spill frames

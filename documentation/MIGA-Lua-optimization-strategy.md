@@ -1,6 +1,6 @@
 # MIGA Lua Optimization Strategy
 
-**Status:** initial straight-line value IR and `-O1` implemented
+**Status:** straight-line value IR, `-O1`, spilling, and frame layout implemented
 
 MIGA Lua is a statically typed, ahead-of-time compiled dialect designed for
 native 68EC020/68020 code. Familiar Lua syntax is a usability goal. Dynamic Lua
@@ -48,13 +48,20 @@ linear scan. Used `D3-D7` registers are preserved once with `MOVEM`; expression
 values are not pushed to `A7`. Constant multiplication by two or three is
 strength-reduced when the available registers make that profitable.
 
-Register spilling, basic blocks, copy propagation across control-flow joins,
-address-register allocation, frame layout for locals, and the shared low-level
-m68k model remain pending. The current `-O1` reports a bounded register-pressure
-diagnostic instead of generating incorrect code when its eight data registers
-are insufficient. Global value numbering, expensive interprocedural
-optimization, speculative dynamic typing, and exhaustive instruction
-scheduling remain excluded until measurements justify their compiler cost.
+The allocator first tries all eight data registers, so ordinary leaf functions
+do not lose `D7` merely to reserve a scratch register. If that plan needs a
+spill, a second bounded pass allocates values in `D0-D6`, reserves `D7` as the
+spill scratch, and reuses four-byte spill slots after their last use. The
+backend emits an ABI 0.1 `A6` frame with `LINK`/`UNLK`, addresses slots at
+negative `A6` offsets, consumes spilled operands directly as 68020 memory
+operands where possible, and preserves `D7` with the other used saved
+registers. Frame size is checked before any assembly is emitted.
+
+Basic blocks, copy propagation across control-flow joins, address-register
+allocation, frame layout for source locals, and the shared low-level m68k model
+remain pending. Global value numbering, expensive interprocedural optimization,
+speculative dynamic typing, and exhaustive instruction scheduling remain
+excluded until measurements justify their compiler cost.
 
 The first 68020-specific choices include keeping scalars in data registers,
 keeping future addresses in address registers, folding constant displacements
@@ -92,16 +99,23 @@ measurements on a stock physical A1200 under a declared DMA and memory profile.
 
 The first optimization milestone is met. Across three reviewed expression
 corpora and six edge inputs each, both optimization levels agree with the typed
-IR under Musashi. The current regression measurements are:
+IR under Musashi. The current regression measurements are shown as code bytes /
+executed instructions / maximum callee stack bytes:
 
-| Corpus | `-O0` bytes / instructions | `-O1` bytes / instructions |
+| Corpus | `-O0` | `-O1` |
 | --- | ---: | ---: |
-| arithmetic and parameter reuse | 116 / 41 | 28 / 12 |
-| folding, negation, and identities | 132 / 46 | 28 / 10 |
-| register pressure and repeated products | 120 / 43 | 40 / 13 |
+| arithmetic and parameter reuse | 116 / 41 / 28 | 28 / 12 / 4 |
+| folding, negation, and identities | 132 / 46 / 28 | 28 / 10 / 4 |
+| register pressure and repeated products | 120 / 43 / 32 | 40 / 13 / 8 |
 
 The register-pressure corpus forces simultaneous `D3/D4` allocation and
-verifies their ABI preservation. The `-Os` 68020/libnix compiler currently has
-a 27,264-byte linked text/data/BSS footprint; its host and Amiga builds emit
-byte-identical `-O1` assembly. These counts are regression signals, not A1200
+verifies their ABI preservation. A separate deliberately pressure-heavy value
+IR fixture forces three reusable spill slots; its 96-byte image executes 33
+instructions with 36 callee stack bytes and agrees with the source-level oracle
+for six edge inputs. This brings the current Musashi compiler total to 42
+executions.
+
+The `-Os` 68020/libnix compiler currently has a 28,468-byte linked
+text/data/BSS footprint. Its host and Amiga builds emit byte-identical ordinary
+and spilling `-O1` assembly. These counts are regression signals, not A1200
 cycle claims.

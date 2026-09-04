@@ -1,0 +1,7 @@
+PASS  generated-o1-spill/zero D0=00000000 instructions=33 code_bytes=96 stack_bytes=36
+PASS  generated-o1-spill/positive D0=000000b8 instructions=33 code_bytes=96 stack_bytes=36
+PASS  generated-o1-spill/negative_a D0=ffffffeb instructions=33 code_bytes=96 stack_bytes=36
+PASS  generated-o1-spill/negative_b D0=ffffff98 instructions=33 code_bytes=96 stack_bytes=36
+PASS  generated-o1-spill/wrap_u32 D0=7ffffff0 instructions=33 code_bytes=96 stack_bytes=36
+PASS  generated-o1-spill/min_i32 D0=fffffffd instructions=33 code_bytes=96 stack_bytes=36
+PASS  compiler O1 spill frame matches typed-IR oracle (6 cases)

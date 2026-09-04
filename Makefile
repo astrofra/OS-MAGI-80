@@ -85,6 +85,11 @@ MIGA80C_AMIGA_REPORT := $(REPORT_DIR)/compiler-amiga-vamos.txt
 MIGA80C_AMIGA_SIZE_REPORT := $(REPORT_DIR)/compiler-amiga-size.txt
 MIGA80C_AMIGA_HOST_ASSEMBLY := $(MIGA80C_AMIGA_BUILD_DIR)/host-generated.s
 MIGA80C_AMIGA_TARGET_ASSEMBLY := $(MIGA80C_AMIGA_BUILD_DIR)/amiga-generated.s
+MIGA80C_AMIGA_SPILL_TEST := $(MIGA80C_AMIGA_BUILD_DIR)/spill-test
+MIGA80C_AMIGA_HOST_SPILL_ASSEMBLY := \
+	$(MIGA80C_AMIGA_BUILD_DIR)/host-spill-generated.s
+MIGA80C_AMIGA_TARGET_SPILL_ASSEMBLY := \
+	$(MIGA80C_AMIGA_BUILD_DIR)/amiga-spill-generated.s
 COMPILER_TEST_SOURCE := tests/host/compiler/main.c
 COMPILER_TEST_EXPECTED := tests/host/compiler/expected.txt
 COMPILER_TEST_BUILD_DIR := $(HOST_BUILD_DIR)/compiler
@@ -110,6 +115,11 @@ COMPILER_REGISTER_PIPELINE_BUILD_DIR := \
 	$(HOST_BUILD_DIR)/compiler-register-pipeline
 COMPILER_REGISTER_PIPELINE_REPORT := \
 	$(REPORT_DIR)/compiler-register-pipeline-host.txt
+COMPILER_SPILL_SOURCE := tests/compile/spill_fixture.lua
+COMPILER_SPILL_EXPECTED := tests/compile/spill_fixture.expected
+COMPILER_SPILL_SCRIPT := scripts/test-compiler-spills.sh
+COMPILER_SPILL_BUILD_DIR := $(HOST_BUILD_DIR)/compiler-spill
+COMPILER_SPILL_REPORT := $(REPORT_DIR)/compiler-spill-host.txt
 C2P_HOST_BUILD_DIR := $(HOST_BUILD_DIR)/c2p-reference
 C2P_HOST_TEST_SOURCE := tests/host/c2p-reference/main.c
 C2P_HOST_TEST_PROGRAM := $(C2P_HOST_BUILD_DIR)/test
@@ -241,7 +251,7 @@ C2P_BENCHMARK_CFLAGS = $(filter-out -Os,$(TARGET_CFLAGS)) -O2
 .PHONY: all amiga stage inspect vamos-test fs-uae-smoke c2p-test \
 	c2p4-test graphics-reference-test aga-reference-test \
 	miga68k-test miga80c compiler-abi-test compiler-test \
-	compiler-execute-test compiler-amiga-test \
+	compiler-execute-test compiler-spill-test compiler-amiga-test \
 	graphics-report-test chipram-report-test \
 	exclusive-graphics-report-test \
 	aga-screen aga-screen-inspect aga-screen-smoke c2p-benchmark \
@@ -369,6 +379,7 @@ $(MIGA80C_PROGRAM): $(MIGA80C_SOURCE) $(COMPILER_SOURCES) \
 		$(MIGA80C_SOURCE) -o $@
 
 compiler-amiga-test: $(MIGA80C_AMIGA_PROGRAM) $(MIGA80C_PROGRAM) \
+		$(MIGA80C_AMIGA_SPILL_TEST) $(COMPILER_TEST_PROGRAM) \
 		$(COMPILER_PIPELINE_SOURCE) $(MIGA80C_AMIGA_EXPECTED)
 	@mkdir -p $(REPORT_DIR)
 	$(TARGET_SIZE) $(MIGA80C_AMIGA_PROGRAM) | \
@@ -383,6 +394,13 @@ compiler-amiga-test: $(MIGA80C_AMIGA_PROGRAM) $(MIGA80C_PROGRAM) \
 		$(MIGA80C_AMIGA_PROGRAM) $(COMPILER_PIPELINE_SOURCE) -O1 -S \
 		-o $(MIGA80C_AMIGA_TARGET_ASSEMBLY)
 	cmp $(MIGA80C_AMIGA_HOST_ASSEMBLY) $(MIGA80C_AMIGA_TARGET_ASSEMBLY)
+	$(COMPILER_TEST_PROGRAM) --emit-spill-fixture \
+		>$(MIGA80C_AMIGA_HOST_SPILL_ASSEMBLY)
+	PATH="$(MAGI80_PIPX_BIN):$$PATH" vamos -C 20 -- \
+		$(MIGA80C_AMIGA_SPILL_TEST) --emit-spill-fixture \
+		>$(MIGA80C_AMIGA_TARGET_SPILL_ASSEMBLY)
+	cmp $(MIGA80C_AMIGA_HOST_SPILL_ASSEMBLY) \
+		$(MIGA80C_AMIGA_TARGET_SPILL_ASSEMBLY)
 
 $(MIGA80C_AMIGA_PROGRAM): $(MIGA80C_SOURCE) $(COMPILER_SOURCES) \
 		$(COMPILER_HEADERS) Makefile
@@ -390,6 +408,12 @@ $(MIGA80C_AMIGA_PROGRAM): $(MIGA80C_SOURCE) $(COMPILER_SOURCES) \
 	$(TARGET_CC) $(COMPILER_CPPFLAGS) $(TARGET_CFLAGS) $(COMPILER_SOURCES) \
 		$(MIGA80C_SOURCE) -Wl,-Map,$(MIGA80C_AMIGA_MAP) -o $@ \
 		$(TARGET_RUNTIME)
+
+$(MIGA80C_AMIGA_SPILL_TEST): $(COMPILER_TEST_SOURCE) $(COMPILER_SOURCES) \
+		$(COMPILER_HEADERS) Makefile
+	@mkdir -p $(MIGA80C_AMIGA_BUILD_DIR)
+	$(TARGET_CC) $(COMPILER_CPPFLAGS) $(TARGET_CFLAGS) $(COMPILER_SOURCES) \
+		$(COMPILER_TEST_SOURCE) -o $@ $(TARGET_RUNTIME)
 
 compiler-abi-test: $(COMPILER_ABI_TEST_PROGRAM) $(COMPILER_ABI_TEST_EXPECTED)
 	@mkdir -p $(REPORT_DIR)
@@ -432,6 +456,14 @@ compiler-execute-test: $(MIGA80C_PROGRAM) $(MIGA68K_TEST_PROGRAM) \
 		$(COMPILER_REGISTER_PIPELINE_BUILD_DIR) $(TARGET_AS) $(TARGET_OBJCOPY) \
 		$(COMPILER_REGISTER_PIPELINE_REPORT) \
 		$(COMPILER_REGISTER_PIPELINE_EXPECTED)
+
+compiler-spill-test: $(COMPILER_TEST_PROGRAM) $(MIGA80C_PROGRAM) \
+		$(MIGA68K_TEST_PROGRAM) $(COMPILER_SPILL_SOURCE) \
+		$(COMPILER_SPILL_EXPECTED) $(COMPILER_SPILL_SCRIPT)
+	$(COMPILER_SPILL_SCRIPT) $(COMPILER_TEST_PROGRAM) $(MIGA80C_PROGRAM) \
+		$(MIGA68K_TEST_PROGRAM) $(COMPILER_SPILL_SOURCE) \
+		$(COMPILER_SPILL_BUILD_DIR) $(TARGET_AS) $(TARGET_OBJCOPY) \
+		$(COMPILER_SPILL_REPORT) $(COMPILER_SPILL_EXPECTED)
 
 c2p-test: $(C2P_HOST_TEST_PROGRAM)
 	@mkdir -p $(REPORT_DIR)
@@ -677,7 +709,7 @@ runtime-compare:
 	./scripts/compare-c-runtimes.sh
 
 check: miga68k-test compiler-abi-test compiler-test compiler-execute-test \
-	compiler-amiga-test c2p-test \
+	compiler-spill-test compiler-amiga-test c2p-test \
 	c2p4-test graphics-reference-test aga-reference-test \
 	graphics-report-test chipram-report-test exclusive-graphics-report-test \
 	chipram-benchmark exclusive-graphics-benchmark inspect vamos-test \

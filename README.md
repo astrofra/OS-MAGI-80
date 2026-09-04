@@ -39,7 +39,7 @@ Build the initial typed MIGA Lua expression compiler, verify native ABI 0.1,
 and validate generated 68020 code against its typed-IR oracle with:
 
 ```sh
-gmake compiler-abi-test compiler-test compiler-execute-test
+gmake compiler-abi-test compiler-test compiler-execute-test compiler-spill-test
 ```
 
 Cross-build the same portable C99 compiler bootstrap for 68020/libnix and run
@@ -52,7 +52,8 @@ gmake compiler-amiga-test
 The implemented subset accepts one annotated `i32` function with up to three
 parameters, `return`, decimal literals, parentheses, unary `-`, `+`, `-`, and
 `*`. Assembly generation defaults to the value-IR `-O1` backend; `-O0` keeps
-the stack baseline for comparison. See the [compiler
+the stack baseline for comparison. `-O1` creates bounded ABI frames and spill
+slots when its first eight-register plan is insufficient. See the [compiler
 bootstrap](documentation/MIGA-Lua-compiler-bootstrap.md)
 for its exact grammar, the [native ABI
 0.1](documentation/MIGA-Lua-native-ABI-v0.md) for the frozen register/stack
