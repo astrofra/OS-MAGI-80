@@ -102,6 +102,25 @@ EXCLUSIVE_GRAPHICS_REPORT_TEST_EXPECTED := \
 	tests/host/exclusive-graphics-benchmark-report/expected.txt
 EXCLUSIVE_GRAPHICS_REPORT_TEST_REPORT := \
 	$(REPORT_DIR)/exclusive-graphics-benchmark-report-host.txt
+EXCLUSIVE_GRAPHICS_PHYSICAL_BUILD_DIR := \
+	$(BENCHMARK_BUILD_DIR)/exclusive-graphics-physical
+EXCLUSIVE_GRAPHICS_PHYSICAL_PROGRAM := \
+	$(EXCLUSIVE_GRAPHICS_PHYSICAL_BUILD_DIR)/program
+EXCLUSIVE_GRAPHICS_PHYSICAL_MAP := \
+	$(EXCLUSIVE_GRAPHICS_PHYSICAL_BUILD_DIR)/program.map
+EXCLUSIVE_GRAPHICS_PHYSICAL_STARTUP := \
+	tests/benchmark/exclusive-graphics/physical-startup-sequence
+EXCLUSIVE_GRAPHICS_PHYSICAL_README := \
+	tests/benchmark/exclusive-graphics/physical-readme.txt
+EXCLUSIVE_GRAPHICS_ADF_BUILDER := \
+	scripts/build-exclusive-graphics-test-adf.sh
+EXCLUSIVE_GRAPHICS_ADF_TESTER := \
+	scripts/test-exclusive-graphics-adf-fs-uae.sh
+DISTRIBUTION_DIR := build/distribution
+EXCLUSIVE_GRAPHICS_TEST_ADF := \
+	$(DISTRIBUTION_DIR)/magi80-exclusive-graphics-test.adf
+EXCLUSIVE_GRAPHICS_TEST_ADF_MANIFEST := \
+	$(DISTRIBUTION_DIR)/magi80-exclusive-graphics-test.manifest.txt
 
 TARGET_CFLAGS := \
 	-std=c99 \
@@ -136,7 +155,9 @@ C2P_BENCHMARK_CFLAGS = $(filter-out -Os,$(TARGET_CFLAGS)) -O2
 	c2p4-benchmark-inspect c2p4-benchmark-fs-uae chipram-benchmark \
 	chipram-benchmark-inspect chipram-benchmark-fs-uae \
 	exclusive-graphics-benchmark exclusive-graphics-benchmark-inspect \
-	exclusive-graphics-benchmark-fs-uae runtime-compare \
+	exclusive-graphics-benchmark-fs-uae exclusive-graphics-test-adf \
+	exclusive-graphics-test-adf-inspect exclusive-graphics-test-adf-fs-uae \
+	runtime-compare \
 	check run clean
 
 all: amiga
@@ -367,6 +388,41 @@ exclusive-graphics-benchmark-fs-uae: stage \
 	cp $(STAGING_DIR)/fs-uae-smoke.out $(EXCLUSIVE_GRAPHICS_REPORT)
 	$(EXCLUSIVE_GRAPHICS_REPORT_VALIDATOR) $(EXCLUSIVE_GRAPHICS_REPORT)
 
+$(EXCLUSIVE_GRAPHICS_PHYSICAL_PROGRAM): $(EXCLUSIVE_GRAPHICS_SOURCE) \
+		$(CHIPRAM_BENCHMARK_ASM_SOURCE) $(CHIPRAM_BENCHMARK_HEADER) \
+		$(C2P4_TARGET_SOURCES) $(C2P4_HEADER) Makefile
+	@mkdir -p $(EXCLUSIVE_GRAPHICS_PHYSICAL_BUILD_DIR)
+	$(TARGET_CC) $(PROJECT_CPPFLAGS) $(C2P_BENCHMARK_CFLAGS) \
+		-DMAGI80_BENCHMARK_ENVIRONMENT=\"physical_a1200_pal_candidate\" \
+		-DMAGI80_BENCHMARK_AUTHORITY=\"real_hardware_candidate\" \
+		-DMAGI80_BENCHMARK_REPORT_PATH=\"MAGI80BENCH:RESULT.TXT\" \
+		$(EXCLUSIVE_GRAPHICS_SOURCE) $(CHIPRAM_BENCHMARK_ASM_SOURCE) \
+		$(C2P4_TARGET_SOURCES) \
+		-Wl,-Map,$(EXCLUSIVE_GRAPHICS_PHYSICAL_MAP) -o $@ \
+		$(TARGET_RUNTIME)
+
+exclusive-graphics-test-adf: $(EXCLUSIVE_GRAPHICS_TEST_ADF)
+
+$(EXCLUSIVE_GRAPHICS_TEST_ADF): $(EXCLUSIVE_GRAPHICS_PHYSICAL_PROGRAM) \
+		$(EXCLUSIVE_GRAPHICS_PHYSICAL_STARTUP) \
+		$(EXCLUSIVE_GRAPHICS_PHYSICAL_README) \
+		$(EXCLUSIVE_GRAPHICS_ADF_BUILDER)
+	$(EXCLUSIVE_GRAPHICS_ADF_BUILDER) \
+		$(EXCLUSIVE_GRAPHICS_PHYSICAL_PROGRAM) \
+		$(EXCLUSIVE_GRAPHICS_PHYSICAL_STARTUP) \
+		$(EXCLUSIVE_GRAPHICS_PHYSICAL_README) $@
+
+exclusive-graphics-test-adf-inspect: $(EXCLUSIVE_GRAPHICS_TEST_ADF)
+	xdfscan $(EXCLUSIVE_GRAPHICS_TEST_ADF)
+	xdftool $(EXCLUSIVE_GRAPHICS_TEST_ADF) list
+	@printf 'Manifest: %s\n' $(EXCLUSIVE_GRAPHICS_TEST_ADF_MANIFEST)
+
+exclusive-graphics-test-adf-fs-uae: $(EXCLUSIVE_GRAPHICS_TEST_ADF) \
+		$(EXCLUSIVE_GRAPHICS_ADF_TESTER) \
+		$(EXCLUSIVE_GRAPHICS_REPORT_VALIDATOR)
+	MAGI80_FS_UAE_TIMEOUT_SECONDS=360 \
+		$(EXCLUSIVE_GRAPHICS_ADF_TESTER) $(EXCLUSIVE_GRAPHICS_TEST_ADF)
+
 runtime-compare:
 	./scripts/compare-c-runtimes.sh
 
@@ -376,5 +432,8 @@ check: c2p-test c2p4-test graphics-reference-test aga-reference-test \
 	aga-screen-smoke
 
 clean:
-	rm -rf $(AMIGA_BUILD_DIR) $(HOST_BUILD_DIR) $(REPORT_DIR) $(SMOKE_BUILD_DIR) $(BENCHMARK_BUILD_DIR) build/fs-uae-smoke build/runtime-comparison
+	rm -rf $(AMIGA_BUILD_DIR) $(HOST_BUILD_DIR) $(REPORT_DIR) \
+		$(SMOKE_BUILD_DIR) $(BENCHMARK_BUILD_DIR) $(DISTRIBUTION_DIR) \
+		build/fs-uae-smoke build/fs-uae-physical-adf \
+		build/runtime-comparison
 	rm -f $(STAGED_PROGRAM) $(STAGING_DIR)/fs-uae-smoke.out

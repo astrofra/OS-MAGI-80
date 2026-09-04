@@ -7,6 +7,7 @@
 #include <dos/dos.h>
 #include <exec/libraries.h>
 #include <exec/memory.h>
+#include <exec/execbase.h>
 #include <exec/tasks.h>
 #include <graphics/gfx.h>
 #include <graphics/gfxbase.h>
@@ -76,6 +77,7 @@
 #define BENCH_BLITTER_ROWS 256U
 #define BENCH_BLITTER_POLL_LIMIT 4000000UL
 #define BENCH_RASTER_START_LINE 32U
+#define BENCH_RASTER_POLL_LIMIT 4000000UL
 #define BENCH_TIMER_RETRY_LIMIT 8U
 
 #define BENCH_ALL_CUSTOM_INTERRUPTS 0x7fffU
@@ -85,6 +87,14 @@
 
 #ifndef MAGI80_BENCHMARK_ENVIRONMENT
 #define MAGI80_BENCHMARK_ENVIRONMENT "fs_uae_a1200_pal"
+#endif
+
+#ifndef MAGI80_BENCHMARK_AUTHORITY
+#define MAGI80_BENCHMARK_AUTHORITY "protocol_only"
+#endif
+
+#ifndef MAGI80_BENCHMARK_REPORT_PATH
+#define MAGI80_BENCHMARK_REPORT_PATH NULL
 #endif
 
 struct GfxBase *GfxBase = NULL;
@@ -247,6 +257,15 @@ static ULONG timer_overhead_ticks;
 static ULONG timer_discarded_samples;
 static ULONG frame_budget_ticks;
 static ULONG initial_stack_bytes;
+static ULONG available_chip_bytes_before_setup;
+static ULONG available_fast_bytes_before_setup;
+static UWORD exec_version;
+static UWORD exec_revision;
+static UWORD attention_flags;
+static UBYTE power_supply_hz;
+static UBYTE detected_stock_constraints;
+static ULONG initial_cache_bits;
+static int cache_controlled;
 static UWORD suite_initial_intena;
 static UWORD suite_initial_dma;
 static UWORD audio_dma_mask;
@@ -257,12 +276,11 @@ static ULONG stack_inspection_code;
 static ULONG stack_guard_mismatch_index;
 static ULONG stack_guard_mismatch_value;
 static ULONG blitter_timeout_count;
+static ULONG raster_timeout_count;
 static int suite_status;
 
 static volatile struct Custom *const custom =
     (volatile struct Custom *)(uintptr_t)0x00dff000UL;
-static volatile ULONG *const beam_position =
-    (volatile ULONG *)(uintptr_t)0x00dff004UL;
 
 static ULONG elapsed_ticks(const struct EClockVal *start,
                            const struct EClockVal *end)
@@ -430,15 +448,41 @@ static int inspect_stack(void)
 
 static UWORD current_beam_line(void)
 {
-    return (UWORD)((*beam_position & 0x0001ff00UL) >> 8);
+    UWORD high_before;
+    UWORD high_after;
+    UWORD low;
+
+    /*
+     * VPOSR and VHPOSR are separate 16-bit custom registers.  A 32-bit read
+     * is not atomic on the custom-chip bus and can straddle line 255/256.
+     * Retry that boundary so the returned 9-bit PAL line is coherent.
+     */
+    do {
+        high_before = custom->vposr;
+        low = custom->vhposr;
+        high_after = custom->vposr;
+    } while (((high_before ^ high_after) & 1U) != 0U);
+
+    return (UWORD)(((high_after & 1U) << 8) | (low >> 8));
 }
 
-static void wait_for_raster_start(void)
+static int wait_for_raster_start(void)
 {
+    ULONG polls = 0U;
+
     while (current_beam_line() >= BENCH_RASTER_START_LINE) {
+        if (++polls >= BENCH_RASTER_POLL_LIMIT) {
+            ++raster_timeout_count;
+            return 0;
+        }
     }
     while (current_beam_line() < BENCH_RASTER_START_LINE) {
+        if (++polls >= BENCH_RASTER_POLL_LIMIT) {
+            ++raster_timeout_count;
+            return 0;
+        }
     }
+    return 1;
 }
 
 static UWORD profile_dma_bits(const struct DmaProfile *profile)
@@ -523,7 +567,9 @@ static int begin_batch(const struct DmaProfile *profile,
     UWORD wanted = profile_dma_bits(profile);
     UWORD active;
 
-    wait_for_raster_start();
+    if (!wait_for_raster_start()) {
+        return 0;
+    }
     Disable();
     state->interrupt_enable = custom->intenar;
     state->dma_enable = custom->dmaconr;
@@ -555,7 +601,9 @@ static int end_batch(const struct DmaProfile *profile,
         }
     }
     /* Do not change display DMA in the middle of a visible scan line. */
-    wait_for_raster_start();
+    if (!wait_for_raster_start()) {
+        success = 0;
+    }
     if (!restore_batch_state(state)) {
         success = 0;
     }
@@ -1058,9 +1106,35 @@ static int write_header(BPTR output)
                       "exclusive_graphics_benchmark_format=1\n"
                       "benchmark=chipram_c2p4\n"
                       "environment=" MAGI80_BENCHMARK_ENVIRONMENT "\n"
-                      "timing_authority=protocol_only\n"
+                      "timing_authority=" MAGI80_BENCHMARK_AUTHORITY "\n"
                       "timing_scope=exclusive_kernel_batch\n"
                       "timing_source=eclock\n") &&
+           write_key_decimal(output, "exec_version=", exec_version) &&
+           write_text(output, "\n") &&
+           write_key_decimal(output, "exec_revision=", exec_revision) &&
+           write_text(output, "\n") &&
+           write_key_decimal(output, "attention_flags=", attention_flags) &&
+           write_text(output, "\n") &&
+           write_key_decimal(output, "power_supply_hz=", power_supply_hz) &&
+           write_text(output, "\n") &&
+           write_key_decimal(output, "available_chip_bytes_before_setup=",
+                             available_chip_bytes_before_setup) &&
+           write_text(output, "\n") &&
+           write_key_decimal(output, "available_fast_bytes_before_setup=",
+                             available_fast_bytes_before_setup) &&
+           write_text(output, "\ndetected_stock_constraints=") &&
+           write_text(output,
+                      detected_stock_constraints != 0U ? "pass" : "fail") &&
+           write_text(output, "\n") &&
+           write_text(output, "initial_instruction_cache=") &&
+           write_text(output,
+                      (initial_cache_bits & CACRF_EnableI) != 0U
+                          ? "active"
+                          : "inactive") &&
+           write_text(output, "\nbenchmark_instruction_cache=active\n") &&
+           write_key_decimal(output, "raster_timeout_count=",
+                             raster_timeout_count) &&
+           write_text(output, "\n") &&
            write_key_decimal(output, "eclock_hz=", eclock_hz) &&
            write_text(output, "\n") &&
            write_key_decimal(output, "timer_overhead_ticks=",
@@ -1209,12 +1283,31 @@ static int write_c2p_result(BPTR output, const struct C2PResult *result)
            write_text(output, " destination=pf1 result=pass\n");
 }
 
-static int report_failure(const char *failure)
+static int report_failure(BPTR output, const char *failure)
 {
-    BPTR output = Output();
-
     (void)write_text(output, "benchmark=chipram_c2p4\nfailure=");
     (void)write_text(output, failure);
+    (void)write_text(output, "\nexec_version=");
+    (void)write_decimal(output, exec_version);
+    (void)write_text(output, "\nexec_revision=");
+    (void)write_decimal(output, exec_revision);
+    (void)write_text(output, "\nattention_flags=");
+    (void)write_decimal(output, attention_flags);
+    (void)write_text(output, "\npower_supply_hz=");
+    (void)write_decimal(output, power_supply_hz);
+    (void)write_text(output, "\navailable_chip_bytes_before_setup=");
+    (void)write_decimal(output, available_chip_bytes_before_setup);
+    (void)write_text(output, "\navailable_fast_bytes_before_setup=");
+    (void)write_decimal(output, available_fast_bytes_before_setup);
+    (void)write_text(output, "\ndetected_stock_constraints=");
+    (void)write_text(output,
+                     detected_stock_constraints != 0U ? "pass" : "fail");
+    (void)write_text(output, "\ninitial_instruction_cache=");
+    (void)write_text(output,
+                     (initial_cache_bits & CACRF_EnableI) != 0U
+                         ? "active"
+                         : "inactive");
+    (void)write_text(output, "\nbenchmark_instruction_cache=active");
     (void)write_text(output, "\nlast_phase=");
     (void)write_decimal(output, progress_phase);
     (void)write_text(output, "\nlast_case=");
@@ -1231,6 +1324,8 @@ static int report_failure(const char *failure)
     (void)write_decimal(output, stack_guard_mismatch_value);
     (void)write_text(output, "\nblitter_timeout_count=");
     (void)write_decimal(output, blitter_timeout_count);
+    (void)write_text(output, "\nraster_timeout_count=");
+    (void)write_decimal(output, raster_timeout_count);
     (void)write_text(output, "\ntimer_discarded_samples=");
     (void)write_decimal(output, timer_discarded_samples);
     (void)write_text(output, "\nresult=fail\n");
@@ -1319,7 +1414,7 @@ static void stop_audio_load(void)
     }
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     static struct TagItem video_control[] = {
         {VTAG_PF1_BASE_SET, 0U},
@@ -1348,6 +1443,10 @@ int main(void)
     struct Screen *screen = NULL;
     struct BitMap *bitmap;
     struct EClockVal now;
+    BPTR console_output = Output();
+    BPTR report_output = console_output;
+    BPTR report_file = (BPTR)0;
+    const char *report_path = MAGI80_BENCHMARK_REPORT_PATH;
     UBYTE *usable_stack;
     ULONG chip_revision;
     size_t plane;
@@ -1356,10 +1455,67 @@ int main(void)
     int blitter_owned = 0;
     const char *failure = NULL;
 
+    if (argc == 3 && strcmp(argv[1], "--report") == 0) {
+        report_path = argv[2];
+    }
+    if (report_path != NULL) {
+        (void)write_text(
+            console_output,
+            "MAGI-80 exclusive graphics benchmark starting.\n"
+            "Screen changes and silence are expected. Please wait up to five minutes.\n");
+        report_file = Open(report_path, MODE_NEWFILE);
+        if (report_file == (BPTR)0) {
+            (void)write_text(console_output,
+                             "MAGI-80 BENCHMARK RESULT: FAIL\n"
+                             "The writable result file could not be created.\n");
+            return RETURN_ERROR;
+        }
+        if (!write_text(report_file,
+                        "benchmark=chipram_c2p4\nresult=running\n")) {
+            (void)Close(report_file);
+            report_file = (BPTR)0;
+            (void)write_text(console_output,
+                             "MAGI-80 BENCHMARK RESULT: FAIL\n"
+                             "The writable result file could not be created.\n");
+            return RETURN_ERROR;
+        }
+        if (!Close(report_file)) {
+            report_file = (BPTR)0;
+            (void)write_text(console_output,
+                             "MAGI-80 BENCHMARK RESULT: FAIL\n"
+                             "The writable result file could not be created.\n");
+            return RETURN_ERROR;
+        }
+        report_file = (BPTR)0;
+    }
+
     memset(&timer_request, 0, sizeof(timer_request));
     memset(raw_results, 0, sizeof(raw_results));
     memset(c2p_results, 0, sizeof(c2p_results));
     progress_phase = PHASE_HOSTED_PREPARE;
+
+    exec_version = SysBase->LibNode.lib_Version;
+    exec_revision = SysBase->LibNode.lib_Revision;
+    attention_flags = SysBase->AttnFlags;
+    power_supply_hz = SysBase->PowerSupplyFrequency;
+    available_chip_bytes_before_setup = AvailMem(MEMF_CHIP);
+    available_fast_bytes_before_setup = AvailMem(MEMF_FAST);
+    detected_stock_constraints =
+        (UBYTE)(((attention_flags & AFF_68020) != 0U &&
+                 (attention_flags & (AFF_68030 | AFF_68040 | AFF_68060)) ==
+                     0U &&
+                 power_supply_hz == 50U &&
+                 available_fast_bytes_before_setup == 0U)
+                    ? 1U
+                    : 0U);
+
+    /* A normal Workbench startup enables the 68020 instruction cache via
+     * SetPatch.  A self-contained boot floppy does not, so request the same
+     * state through exec.library and restore the caller's global state later.
+     */
+    initial_cache_bits =
+        CacheControl(CACRF_EnableI, CACRF_EnableI);
+    cache_controlled = 1;
 
     task = FindTask(NULL);
     if (task == NULL || task->tc_SPUpper <= task->tc_SPLower) {
@@ -1543,18 +1699,26 @@ int main(void)
         failure = "dma_restore";
         goto cleanup;
     }
-    if (!write_header(Output())) {
+    if (report_path != NULL) {
+        report_file = Open(report_path, MODE_NEWFILE);
+        if (report_file == (BPTR)0) {
+            failure = "open_report_after_exclusive";
+            goto cleanup;
+        }
+        report_output = report_file;
+    }
+    if (!write_header(report_output)) {
         failure = "write_report_header";
         goto cleanup;
     }
     for (index = 0U; index < BENCH_RAW_RESULT_COUNT; ++index) {
-        if (!write_raw_result(Output(), &raw_results[index])) {
+        if (!write_raw_result(report_output, &raw_results[index])) {
             failure = "write_raw_result";
             goto cleanup;
         }
     }
     for (index = 0U; index < BENCH_C2P_RESULT_COUNT; ++index) {
-        if (!write_c2p_result(Output(), &c2p_results[index])) {
+        if (!write_c2p_result(report_output, &c2p_results[index])) {
             failure = "write_c2p_result";
             goto cleanup;
         }
@@ -1615,12 +1779,52 @@ cleanup:
         CloseLibrary((struct Library *)GfxBase);
         GfxBase = NULL;
     }
+    if (cache_controlled) {
+        (void)CacheControl(initial_cache_bits, CACRF_EnableI);
+        cache_controlled = 0;
+    }
     if (failure != NULL) {
-        return report_failure(failure);
+        if (report_path != NULL && report_file == (BPTR)0) {
+            report_file = Open(report_path, MODE_NEWFILE);
+            if (report_file != (BPTR)0) {
+                report_output = report_file;
+            }
+        }
+        (void)report_failure(report_output, failure);
+        if (report_file != (BPTR)0) {
+            (void)Close(report_file);
+            (void)write_text(console_output,
+                             "\nMAGI-80 BENCHMARK RESULT: FAIL\n"
+                             "Keep the disk and photograph this screen.\n"
+                             "Diagnostic report: ");
+            (void)write_text(console_output, report_path);
+            (void)write_text(console_output, "\n");
+        }
+        return RETURN_ERROR;
     }
     progress_phase = PHASE_COMPLETE;
-    if (!write_text(Output(), "result=pass\n")) {
+    if (!write_text(report_output, "result=pass\n")) {
+        if (report_file != (BPTR)0) {
+            (void)Close(report_file);
+            (void)write_text(console_output,
+                             "\nMAGI-80 BENCHMARK RESULT: FAIL\n"
+                             "The report footer could not be written.\n");
+        }
         return RETURN_ERROR;
+    }
+    if (report_file != (BPTR)0) {
+        if (!Close(report_file)) {
+            (void)write_text(console_output,
+                             "\nMAGI-80 BENCHMARK RESULT: FAIL\n"
+                             "The report file could not be closed.\n");
+            return RETURN_ERROR;
+        }
+        (void)write_text(console_output,
+                         "\nMAGI-80 BENCHMARK RESULT: PASS\n"
+                         "Wait for the floppy LED to stop before ejecting.\n"
+                         "Result report: ");
+        (void)write_text(console_output, report_path);
+        (void)write_text(console_output, "\n");
     }
     return RETURN_OK;
 }

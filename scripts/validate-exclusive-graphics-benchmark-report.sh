@@ -52,39 +52,49 @@ function expect_dma(profile, display, copper, sprite, audio, blitter) {
 }
 
 BEGIN {
-  header_count = 32
+  header_count = 42
   header_name[1] = "exclusive_graphics_benchmark_format"
   header_name[2] = "benchmark"
   header_name[3] = "environment"
   header_name[4] = "timing_authority"
   header_name[5] = "timing_scope"
   header_name[6] = "timing_source"
-  header_name[7] = "eclock_hz"
-  header_name[8] = "timer_overhead_ticks"
-  header_name[9] = "timer_discarded_samples"
-  header_name[10] = "interrupt_mode"
-  header_name[11] = "source_memory"
-  header_name[12] = "destination_memory"
-  header_name[13] = "display_mode"
-  header_name[14] = "video_hz"
-  header_name[15] = "screen_owner"
-  header_name[16] = "publication"
-  header_name[17] = "sprite_load"
-  header_name[18] = "audio_load"
-  header_name[19] = "blitter_load"
-  header_name[20] = "raster_start_line"
-  header_name[21] = "dma_profile_count"
-  header_name[22] = "audio_channels"
-  header_name[23] = "blitter_copy_bytes"
-  header_name[24] = "dedicated_stack_bytes"
-  header_name[25] = "stack_boundary_reserve_bytes"
-  header_name[26] = "stack_guard_bytes"
-  header_name[27] = "stack_high_water_bytes"
-  header_name[28] = "initial_stack_bytes"
-  header_name[29] = "interrupt_restore"
-  header_name[30] = "dma_restore"
-  header_name[31] = "checksum_algorithm"
-  header_name[32] = "case_count"
+  header_name[7] = "exec_version"
+  header_name[8] = "exec_revision"
+  header_name[9] = "attention_flags"
+  header_name[10] = "power_supply_hz"
+  header_name[11] = "available_chip_bytes_before_setup"
+  header_name[12] = "available_fast_bytes_before_setup"
+  header_name[13] = "detected_stock_constraints"
+  header_name[14] = "initial_instruction_cache"
+  header_name[15] = "benchmark_instruction_cache"
+  header_name[16] = "raster_timeout_count"
+  header_name[17] = "eclock_hz"
+  header_name[18] = "timer_overhead_ticks"
+  header_name[19] = "timer_discarded_samples"
+  header_name[20] = "interrupt_mode"
+  header_name[21] = "source_memory"
+  header_name[22] = "destination_memory"
+  header_name[23] = "display_mode"
+  header_name[24] = "video_hz"
+  header_name[25] = "screen_owner"
+  header_name[26] = "publication"
+  header_name[27] = "sprite_load"
+  header_name[28] = "audio_load"
+  header_name[29] = "blitter_load"
+  header_name[30] = "raster_start_line"
+  header_name[31] = "dma_profile_count"
+  header_name[32] = "audio_channels"
+  header_name[33] = "blitter_copy_bytes"
+  header_name[34] = "dedicated_stack_bytes"
+  header_name[35] = "stack_boundary_reserve_bytes"
+  header_name[36] = "stack_guard_bytes"
+  header_name[37] = "stack_high_water_bytes"
+  header_name[38] = "initial_stack_bytes"
+  header_name[39] = "interrupt_restore"
+  header_name[40] = "dma_restore"
+  header_name[41] = "checksum_algorithm"
+  header_name[42] = "case_count"
 
   common[1] = "case"
   common[2] = "kind"
@@ -287,10 +297,15 @@ END {
       header_value["benchmark"] != "chipram_c2p4") {
     reject("unsupported benchmark format")
   }
+  authority = header_value["timing_authority"]
   if (!token(header_value["environment"]) ||
-      header_value["timing_authority"] != "protocol_only" ||
+      (authority != "protocol_only" &&
+       authority != "real_hardware_candidate") ||
       header_value["timing_scope"] != "exclusive_kernel_batch" ||
       header_value["timing_source"] != "eclock" ||
+      (header_value["initial_instruction_cache"] != "active" &&
+       header_value["initial_instruction_cache"] != "inactive") ||
+      header_value["benchmark_instruction_cache"] != "active" ||
       header_value["interrupt_mode"] != "custom_intena_masked" ||
       header_value["source_memory"] != "chip" ||
       header_value["destination_memory"] != "chip" ||
@@ -306,6 +321,17 @@ END {
       header_value["checksum_algorithm"] != "fnv1a32") {
     reject("bad environment or execution metadata")
   }
+  if (authority == "real_hardware_candidate" &&
+      header_value["environment"] != "physical_a1200_pal_candidate") {
+    reject("hardware-candidate authority has the wrong environment")
+  }
+  if (header_value["detected_stock_constraints"] != "pass" &&
+      header_value["detected_stock_constraints"] != "fail") {
+    reject("bad detected stock constraints metadata")
+  }
+  if (header_value["raster_timeout_count"] != "0") {
+    reject("raster synchronization timed out")
+  }
   positive_header[1] = "eclock_hz"
   positive_header[2] = "raster_start_line"
   positive_header[3] = "dma_profile_count"
@@ -317,12 +343,19 @@ END {
   positive_header[9] = "stack_high_water_bytes"
   positive_header[10] = "initial_stack_bytes"
   positive_header[11] = "case_count"
-  for (number = 1; number <= 11; ++number) {
+  positive_header[12] = "exec_version"
+  positive_header[13] = "power_supply_hz"
+  positive_header[14] = "available_chip_bytes_before_setup"
+  for (number = 1; number <= 14; ++number) {
     key = positive_header[number]
     if (!positive_decimal(header_value[key])) reject("bad header decimal " key)
   }
   if (!unsigned_decimal(header_value["timer_overhead_ticks"]) ||
-      !unsigned_decimal(header_value["timer_discarded_samples"])) {
+      !unsigned_decimal(header_value["timer_discarded_samples"]) ||
+      !unsigned_decimal(header_value["raster_timeout_count"]) ||
+      !unsigned_decimal(header_value["exec_revision"]) ||
+      !unsigned_decimal(header_value["attention_flags"]) ||
+      !unsigned_decimal(header_value["available_fast_bytes_before_setup"])) {
     reject("bad timer metadata")
   }
   if (header_value["raster_start_line"] != "32" ||

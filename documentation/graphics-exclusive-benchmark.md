@@ -1,6 +1,6 @@
 # MAGI-80 Exclusive Graphics Benchmark Plan
 
-**Status:** Blanked/active display and additive DMA matrix implemented around the raw and C2P4 kernels and validated in FS-UAE; expanded workloads, stress testing, and physical-hardware authority pending
+**Status:** Blanked/active display and additive DMA matrix implemented around the raw and C2P4 kernels and validated in FS-UAE; self-contained writable physical-test ADF available as a hardware candidate; expanded workloads, stress testing, and physical-hardware authority pending
 
 **Decision authority:** Only distributions produced by this harness on a physical stock PAL A1200 may select a graphics backend or certify a frame budget
 
@@ -60,6 +60,16 @@ gmake exclusive-graphics-benchmark-fs-uae
 ```
 
 The validated report is written to `build/reports/exclusive-graphics-fs-uae.txt`, with size, symbol, map, and disassembly artifacts beside the other benchmark reports. The validator checks the exact DMA profile mapping, sampling contracts, traffic arithmetic, output hashes, timer plausibility, stack margin, state restoration, case count, and final footer. The passing FS-UAE run completed all 126 cases with 132 bytes of measured 16 KiB stack high water and no discarded timer sample. Its `timing_authority=protocol_only` label is deliberate: the values prove execution and instrumentation, not A1200 performance.
+
+### 1.3 Physical-test ADF
+
+`gmake exclusive-graphics-test-adf` now produces a bootable OFS image plus a SHA-256 manifest in `build/distribution/`. The image is self-contained except for the Kickstart libraries and devices it deliberately uses, and contains no copied AmigaOS commands. Its physical build fixes the report path at compile time so a minimal Startup-Sequence does not depend on C-runtime command-line parsing.
+
+The program first creates a closed `RESULT.TXT` containing `result=running`, before entering the exclusive section. On controlled completion it replaces that marker with either a full PASS report or failure diagnostics. An absent file therefore distinguishes startup or media-write trouble; a remaining `running` footer proves startup and writable media but classifies the run as incomplete. Raster waits and blitter waits are bounded so their controlled timeouts can unwind through the normal restoration path. The 68020 instruction cache is requested through `exec.library/CacheControl()` for a consistent benchmark state and its prior global state is restored during cleanup.
+
+The ADF boot and writable `running` preflight pass under FS-UAE. The benchmark compiled with the same kernels and physical-candidate metadata completes all 126 cases when loaded from the project's host-backed FS-UAE volume, while the complete writable-ADF path has not yet produced its final report within the automated 240-second observation window. This difference remains an emulator/integration investigation, not a timing result. The ADF is deliberately labelled `real_hardware_candidate`; only returned reports from declared physical machines can advance the real-hardware gate.
+
+The exact handoff, safety limit, observations, result-state meanings, return form, and extraction commands are in [MAGI-80 Physical A1200 Graphics Test](./physical-a1200-graphics-test.md).
 
 ## 2. Why `Forbid()` and `Disable()` Are Not Run Modes
 
@@ -204,7 +214,7 @@ Until this gate passes, both the hosted and exclusive FS-UAE C2P4 matrices remai
 The immediate implementation sequence is:
 
 1. **Completed:** wrap the raw and C2P4 assembly kernels in blanked/active screen fixtures and the seven-profile DMA matrix, with guarded-stack, checksum, state-restoration, and report validation under FS-UAE;
-2. run the present stock-memory baseline on a physical stock PAL A1200, then add explicit sprite payloads, sustained/repeated blitter load, missing raw read/mixed/alignment cases, and optional Fast-source variants;
+2. distribute the candidate ADF using the physical-test handoff, collect repeated stock PAL A1200 reports, and resolve the FS-UAE writable-ADF completion discrepancy; then add explicit sprite payloads, sustained/repeated blitter load, missing raw read/mixed/alignment cases, and optional Fast-source variants;
 3. implement genuine C2P4 CPU/blitter merge candidates, dirty/no-change cases, and safe publication, preserving the same oracle and DMA profiles;
 4. add the reviewed minimal Level-3 path for `exclusive_runtime_frame`, then stress at least 100 transitions and forced failures before the final physical selection run.
 
