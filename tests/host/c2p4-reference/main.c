@@ -7,8 +7,8 @@
 #include "graphics/c2p4_reference.h"
 #include "graphics/reference_compositor.h"
 
-#define MAX_WIDTH MAGI80_GRAPHICS_REFERENCE_WIDTH
-#define MAX_HEIGHT MAGI80_GRAPHICS_REFERENCE_HEIGHT
+#define MAX_WIDTH MIGA80_GRAPHICS_REFERENCE_WIDTH
+#define MAX_HEIGHT MIGA80_GRAPHICS_REFERENCE_HEIGHT
 #define MAX_PIXELS (MAX_WIDTH * MAX_HEIGHT)
 #define MAX_PACKED_BYTES (MAX_PIXELS / 2U)
 #define MAX_PLANE_BYTES (MAX_PIXELS / 8U)
@@ -16,35 +16,35 @@
 static uint8_t front_byte[MAX_PIXELS];
 static uint8_t front_packed[MAX_PACKED_BYTES];
 static uint8_t planar_byte[MAX_PIXELS];
-static uint8_t reference_planes[MAGI80_C2P4_PLANE_COUNT]
+static uint8_t reference_planes[MIGA80_C2P4_PLANE_COUNT]
                                [MAX_PLANE_BYTES];
-static uint8_t candidate_planes[MAGI80_C2P4_PLANE_COUNT]
+static uint8_t candidate_planes[MIGA80_C2P4_PLANE_COUNT]
                                [MAX_PLANE_BYTES];
-static uint8_t physical_planes[MAGI80_AGA_REFERENCE_PLANE_COUNT]
+static uint8_t physical_planes[MIGA80_AGA_REFERENCE_PLANE_COUNT]
                               [MAX_PLANE_BYTES];
 static uint8_t canonical_expected[MAX_PIXELS];
 static uint8_t canonical_actual[MAX_PIXELS];
-static uint32_t pair_lut[MAGI80_C2P4_PAIR_LUT_ENTRIES];
+static uint32_t pair_lut[MIGA80_C2P4_PAIR_LUT_ENTRIES];
 
 static void set_four_planes(
-    uint8_t *planes[MAGI80_C2P4_PLANE_COUNT],
-    uint8_t storage[MAGI80_C2P4_PLANE_COUNT][MAX_PLANE_BYTES])
+    uint8_t *planes[MIGA80_C2P4_PLANE_COUNT],
+    uint8_t storage[MIGA80_C2P4_PLANE_COUNT][MAX_PLANE_BYTES])
 {
     size_t plane;
 
-    for (plane = 0U; plane < MAGI80_C2P4_PLANE_COUNT; ++plane) {
+    for (plane = 0U; plane < MIGA80_C2P4_PLANE_COUNT; ++plane) {
         planes[plane] = storage[plane];
     }
 }
 
 static int planes_match(
-    const uint8_t left[MAGI80_C2P4_PLANE_COUNT][MAX_PLANE_BYTES],
-    const uint8_t right[MAGI80_C2P4_PLANE_COUNT][MAX_PLANE_BYTES],
+    const uint8_t left[MIGA80_C2P4_PLANE_COUNT][MAX_PLANE_BYTES],
+    const uint8_t right[MIGA80_C2P4_PLANE_COUNT][MAX_PLANE_BYTES],
     size_t plane_bytes)
 {
     size_t plane;
 
-    for (plane = 0U; plane < MAGI80_C2P4_PLANE_COUNT; ++plane) {
+    for (plane = 0U; plane < MIGA80_C2P4_PLANE_COUNT; ++plane) {
         if (memcmp(left[plane], right[plane], plane_bytes) != 0) {
             return 0;
         }
@@ -53,10 +53,10 @@ static int planes_match(
 }
 
 static int single_output_matches(
-    const uint8_t storage[MAGI80_C2P4_PLANE_COUNT],
-    const uint8_t expected[MAGI80_C2P4_PLANE_COUNT])
+    const uint8_t storage[MIGA80_C2P4_PLANE_COUNT],
+    const uint8_t expected[MIGA80_C2P4_PLANE_COUNT])
 {
-    return memcmp(storage, expected, MAGI80_C2P4_PLANE_COUNT) == 0;
+    return memcmp(storage, expected, MIGA80_C2P4_PLANE_COUNT) == 0;
 }
 
 static int test_single_byte_golden(void)
@@ -65,50 +65,50 @@ static int test_single_byte_golden(void)
     static const uint8_t byte[8] = {
         0xcfU, 0xc8U, 0xc4U, 0xc2U, 0xc1U, 0xc0U, 0xc5U, 0xcaU
     };
-    static const uint8_t expected[MAGI80_C2P4_PLANE_COUNT] = {
+    static const uint8_t expected[MIGA80_C2P4_PLANE_COUNT] = {
         0x8aU, 0x91U, 0xa2U, 0xc1U
     };
-    uint8_t storage[MAGI80_C2P4_PLANE_COUNT] = {0U};
-    uint8_t *planes[MAGI80_C2P4_PLANE_COUNT];
+    uint8_t storage[MIGA80_C2P4_PLANE_COUNT] = {0U};
+    uint8_t *planes[MIGA80_C2P4_PLANE_COUNT];
     size_t plane;
 
-    for (plane = 0U; plane < MAGI80_C2P4_PLANE_COUNT; ++plane) {
+    for (plane = 0U; plane < MIGA80_C2P4_PLANE_COUNT; ++plane) {
         planes[plane] = &storage[plane];
     }
-    if (magi80_c2p4_reference_packed4(packed, 8U, 1U, 4U, planes,
-                                      1U) != MAGI80_C2P4_OK ||
+    if (miga80_c2p4_reference_packed4(packed, 8U, 1U, 4U, planes,
+                                      1U) != MIGA80_C2P4_OK ||
         !single_output_matches(storage, expected)) {
         return 0;
     }
     memset(storage, 0, sizeof(storage));
-    if (magi80_c2p4_reference_byte4(byte, 8U, 1U, 8U, planes, 1U) !=
-            MAGI80_C2P4_OK ||
+    if (miga80_c2p4_reference_byte4(byte, 8U, 1U, 8U, planes, 1U) !=
+            MIGA80_C2P4_OK ||
         !single_output_matches(storage, expected)) {
         return 0;
     }
     memset(storage, 0, sizeof(storage));
-    if (magi80_c2p4_lookup_packed4(packed, 8U, 1U, 4U, planes, 1U,
-                                   pair_lut) != MAGI80_C2P4_OK ||
+    if (miga80_c2p4_lookup_packed4(packed, 8U, 1U, 4U, planes, 1U,
+                                   pair_lut) != MIGA80_C2P4_OK ||
         !single_output_matches(storage, expected)) {
         return 0;
     }
     memset(storage, 0, sizeof(storage));
-    if (magi80_c2p4_lookup_byte4(byte, 8U, 1U, 8U, planes, 1U,
-                                pair_lut) != MAGI80_C2P4_OK ||
+    if (miga80_c2p4_lookup_byte4(byte, 8U, 1U, 8U, planes, 1U,
+                                pair_lut) != MIGA80_C2P4_OK ||
         !single_output_matches(storage, expected)) {
         return 0;
     }
     memset(storage, 0, sizeof(storage));
-    if (magi80_c2p4_pair_lut_m68k_packed4(
+    if (miga80_c2p4_pair_lut_m68k_packed4(
             packed, 8U, 1U, 4U, planes, 1U, pair_lut) !=
-            MAGI80_C2P4_OK ||
+            MIGA80_C2P4_OK ||
         !single_output_matches(storage, expected)) {
         return 0;
     }
     memset(storage, 0, sizeof(storage));
-    if (magi80_c2p4_pair_lut_m68k_byte4(
+    if (miga80_c2p4_pair_lut_m68k_byte4(
             byte, 8U, 1U, 8U, planes, 1U, pair_lut) !=
-            MAGI80_C2P4_OK ||
+            MIGA80_C2P4_OK ||
         !single_output_matches(storage, expected)) {
         return 0;
     }
@@ -143,8 +143,8 @@ static int test_profile_equivalence(void)
 {
     static const size_t widths[3] = {160U, 192U, 256U};
     static const size_t heights[3] = {128U, 160U, 256U};
-    uint8_t *reference[MAGI80_C2P4_PLANE_COUNT];
-    uint8_t *candidate[MAGI80_C2P4_PLANE_COUNT];
+    uint8_t *reference[MIGA80_C2P4_PLANE_COUNT];
+    uint8_t *candidate[MIGA80_C2P4_PLANE_COUNT];
     size_t profile;
 
     set_four_planes(reference, reference_planes);
@@ -157,88 +157,88 @@ static int test_profile_equivalence(void)
 
         prepare_profile(width, height);
         memset(reference_planes, 0xcc, sizeof(reference_planes));
-        if (magi80_c2p4_reference_packed4(
+        if (miga80_c2p4_reference_packed4(
                 front_packed, width, height, width >> 1, reference,
-                plane_stride) != MAGI80_C2P4_OK) {
+                plane_stride) != MIGA80_C2P4_OK) {
             return 0;
         }
 
         memset(candidate_planes, 0xdd, sizeof(candidate_planes));
-        if (magi80_c2p4_reference_byte4(
+        if (miga80_c2p4_reference_byte4(
                 front_byte, width, height, width, candidate,
-                plane_stride) != MAGI80_C2P4_OK ||
+                plane_stride) != MIGA80_C2P4_OK ||
             !planes_match(reference_planes, candidate_planes,
                           plane_bytes)) {
             return 0;
         }
 
         memset(candidate_planes, 0xdd, sizeof(candidate_planes));
-        if (magi80_c2p4_lookup_packed4(
+        if (miga80_c2p4_lookup_packed4(
                 front_packed, width, height, width >> 1, candidate,
-                plane_stride, pair_lut) != MAGI80_C2P4_OK ||
+                plane_stride, pair_lut) != MIGA80_C2P4_OK ||
             !planes_match(reference_planes, candidate_planes,
                           plane_bytes)) {
             return 0;
         }
 
         memset(candidate_planes, 0xdd, sizeof(candidate_planes));
-        if (magi80_c2p4_lookup_byte4(
+        if (miga80_c2p4_lookup_byte4(
                 front_byte, width, height, width, candidate, plane_stride,
-                pair_lut) != MAGI80_C2P4_OK ||
+                pair_lut) != MIGA80_C2P4_OK ||
             !planes_match(reference_planes, candidate_planes,
                           plane_bytes)) {
             return 0;
         }
 
         memset(candidate_planes, 0xdd, sizeof(candidate_planes));
-        if (magi80_c2p4_pair_lut_m68k_packed4(
+        if (miga80_c2p4_pair_lut_m68k_packed4(
                 front_packed, width, height, width >> 1, candidate,
-                plane_stride, pair_lut) != MAGI80_C2P4_OK ||
+                plane_stride, pair_lut) != MIGA80_C2P4_OK ||
             !planes_match(reference_planes, candidate_planes,
                           plane_bytes)) {
             return 0;
         }
 
         memset(candidate_planes, 0xdd, sizeof(candidate_planes));
-        if (magi80_c2p4_pair_lut_m68k_byte4(
+        if (miga80_c2p4_pair_lut_m68k_byte4(
                 front_byte, width, height, width, candidate, plane_stride,
-                pair_lut) != MAGI80_C2P4_OK ||
+                pair_lut) != MIGA80_C2P4_OK ||
             !planes_match(reference_planes, candidate_planes,
                           plane_bytes)) {
             return 0;
         }
 
         memset(candidate_planes, 0xdd, sizeof(candidate_planes));
-        if (magi80_c2p4_mask32_packed4(
+        if (miga80_c2p4_mask32_packed4(
                 front_packed, width, height, width >> 1, candidate,
-                plane_stride) != MAGI80_C2P4_OK ||
+                plane_stride) != MIGA80_C2P4_OK ||
             !planes_match(reference_planes, candidate_planes,
                           plane_bytes)) {
             return 0;
         }
 
         memset(candidate_planes, 0xdd, sizeof(candidate_planes));
-        if (magi80_c2p4_mask32_byte4(
+        if (miga80_c2p4_mask32_byte4(
                 front_byte, width, height, width, candidate,
-                plane_stride) != MAGI80_C2P4_OK ||
+                plane_stride) != MIGA80_C2P4_OK ||
             !planes_match(reference_planes, candidate_planes,
                           plane_bytes)) {
             return 0;
         }
 
         memset(candidate_planes, 0xdd, sizeof(candidate_planes));
-        if (magi80_c2p4_mask32_m68k_packed4(
+        if (miga80_c2p4_mask32_m68k_packed4(
                 front_packed, width, height, width >> 1, candidate,
-                plane_stride) != MAGI80_C2P4_OK ||
+                plane_stride) != MIGA80_C2P4_OK ||
             !planes_match(reference_planes, candidate_planes,
                           plane_bytes)) {
             return 0;
         }
 
         memset(candidate_planes, 0xdd, sizeof(candidate_planes));
-        if (magi80_c2p4_mask32_m68k_byte4(
+        if (miga80_c2p4_mask32_m68k_byte4(
                 front_byte, width, height, width, candidate,
-                plane_stride) != MAGI80_C2P4_OK ||
+                plane_stride) != MIGA80_C2P4_OK ||
             !planes_match(reference_planes, candidate_planes,
                           plane_bytes)) {
             return 0;
@@ -248,9 +248,9 @@ static int test_profile_equivalence(void)
 }
 
 static int strided_output_matches(
-    const uint8_t storage[MAGI80_C2P4_PLANE_COUNT][6])
+    const uint8_t storage[MIGA80_C2P4_PLANE_COUNT][6])
 {
-    static const uint8_t expected[MAGI80_C2P4_PLANE_COUNT][6] = {
+    static const uint8_t expected[MIGA80_C2P4_PLANE_COUNT][6] = {
         {0xffU, 0x00U, 0x5aU, 0xaaU, 0xffU, 0x5aU},
         {0x00U, 0xffU, 0x5aU, 0xaaU, 0xffU, 0x5aU},
         {0x00U, 0x00U, 0x5aU, 0xaaU, 0xffU, 0x5aU},
@@ -271,8 +271,8 @@ static int test_strides_and_arguments(void)
     };
     uint8_t packed[HEIGHT * PACKED_STRIDE];
     uint8_t byte[HEIGHT * BYTE_STRIDE];
-    uint8_t storage[MAGI80_C2P4_PLANE_COUNT][HEIGHT * PLANE_STRIDE];
-    uint8_t *planes[MAGI80_C2P4_PLANE_COUNT];
+    uint8_t storage[MIGA80_C2P4_PLANE_COUNT][HEIGHT * PLANE_STRIDE];
+    uint8_t *planes[MIGA80_C2P4_PLANE_COUNT];
     size_t plane;
     size_t x;
     size_t y;
@@ -298,76 +298,76 @@ static int test_strides_and_arguments(void)
             }
         }
     }
-    for (plane = 0U; plane < MAGI80_C2P4_PLANE_COUNT; ++plane) {
+    for (plane = 0U; plane < MIGA80_C2P4_PLANE_COUNT; ++plane) {
         planes[plane] = storage[plane];
     }
 
     memset(storage, 0x5a, sizeof(storage));
-    if (magi80_c2p4_reference_packed4(
+    if (miga80_c2p4_reference_packed4(
             packed, WIDTH, HEIGHT, PACKED_STRIDE, planes,
-            PLANE_STRIDE) != MAGI80_C2P4_OK ||
+            PLANE_STRIDE) != MIGA80_C2P4_OK ||
         !strided_output_matches(storage)) {
         return 0;
     }
     memset(storage, 0x5a, sizeof(storage));
-    if (magi80_c2p4_reference_byte4(byte, WIDTH, HEIGHT, BYTE_STRIDE,
+    if (miga80_c2p4_reference_byte4(byte, WIDTH, HEIGHT, BYTE_STRIDE,
                                     planes, PLANE_STRIDE) !=
-            MAGI80_C2P4_OK ||
+            MIGA80_C2P4_OK ||
         !strided_output_matches(storage)) {
         return 0;
     }
     memset(storage, 0x5a, sizeof(storage));
-    if (magi80_c2p4_lookup_packed4(
+    if (miga80_c2p4_lookup_packed4(
             packed, WIDTH, HEIGHT, PACKED_STRIDE, planes, PLANE_STRIDE,
-            pair_lut) != MAGI80_C2P4_OK ||
+            pair_lut) != MIGA80_C2P4_OK ||
         !strided_output_matches(storage)) {
         return 0;
     }
     memset(storage, 0x5a, sizeof(storage));
-    if (magi80_c2p4_lookup_byte4(byte, WIDTH, HEIGHT, BYTE_STRIDE, planes,
+    if (miga80_c2p4_lookup_byte4(byte, WIDTH, HEIGHT, BYTE_STRIDE, planes,
                                  PLANE_STRIDE, pair_lut) !=
-            MAGI80_C2P4_OK ||
+            MIGA80_C2P4_OK ||
         !strided_output_matches(storage)) {
         return 0;
     }
     memset(storage, 0x5a, sizeof(storage));
-    if (magi80_c2p4_pair_lut_m68k_packed4(
+    if (miga80_c2p4_pair_lut_m68k_packed4(
             packed, WIDTH, HEIGHT, PACKED_STRIDE, planes, PLANE_STRIDE,
-            pair_lut) != MAGI80_C2P4_OK ||
+            pair_lut) != MIGA80_C2P4_OK ||
         !strided_output_matches(storage)) {
         return 0;
     }
     memset(storage, 0x5a, sizeof(storage));
-    if (magi80_c2p4_pair_lut_m68k_byte4(
+    if (miga80_c2p4_pair_lut_m68k_byte4(
             byte, WIDTH, HEIGHT, BYTE_STRIDE, planes, PLANE_STRIDE,
-            pair_lut) != MAGI80_C2P4_OK ||
+            pair_lut) != MIGA80_C2P4_OK ||
         !strided_output_matches(storage)) {
         return 0;
     }
 
     memset(storage, 0x5a, sizeof(storage));
-    if (magi80_c2p4_reference_byte4(NULL, 8U, 1U, 8U, planes, 1U) !=
-            MAGI80_C2P4_INVALID_ARGUMENT ||
-        magi80_c2p4_reference_byte4(byte, 0U, 1U, 8U, planes, 1U) !=
-            MAGI80_C2P4_INVALID_DIMENSIONS ||
-        magi80_c2p4_reference_byte4(byte, 9U, 1U, 9U, planes, 2U) !=
-            MAGI80_C2P4_INVALID_DIMENSIONS ||
-        magi80_c2p4_reference_byte4(byte, 16U, 2U, 15U, planes, 2U) !=
-            MAGI80_C2P4_INVALID_STRIDE ||
-        magi80_c2p4_reference_packed4(
+    if (miga80_c2p4_reference_byte4(NULL, 8U, 1U, 8U, planes, 1U) !=
+            MIGA80_C2P4_INVALID_ARGUMENT ||
+        miga80_c2p4_reference_byte4(byte, 0U, 1U, 8U, planes, 1U) !=
+            MIGA80_C2P4_INVALID_DIMENSIONS ||
+        miga80_c2p4_reference_byte4(byte, 9U, 1U, 9U, planes, 2U) !=
+            MIGA80_C2P4_INVALID_DIMENSIONS ||
+        miga80_c2p4_reference_byte4(byte, 16U, 2U, 15U, planes, 2U) !=
+            MIGA80_C2P4_INVALID_STRIDE ||
+        miga80_c2p4_reference_packed4(
             packed, 16U, 2U, 7U, planes, 2U) !=
-            MAGI80_C2P4_INVALID_STRIDE ||
-        magi80_c2p4_lookup_byte4(byte, 16U, 2U, 16U, planes, 2U,
+            MIGA80_C2P4_INVALID_STRIDE ||
+        miga80_c2p4_lookup_byte4(byte, 16U, 2U, 16U, planes, 2U,
                                  NULL) !=
-            MAGI80_C2P4_INVALID_ARGUMENT ||
-        magi80_c2p4_mask32_byte4(byte, 16U, 2U, 16U, planes, 2U) !=
-            MAGI80_C2P4_INVALID_DIMENSIONS ||
-        magi80_c2p4_mask32_m68k_packed4(
+            MIGA80_C2P4_INVALID_ARGUMENT ||
+        miga80_c2p4_mask32_byte4(byte, 16U, 2U, 16U, planes, 2U) !=
+            MIGA80_C2P4_INVALID_DIMENSIONS ||
+        miga80_c2p4_mask32_m68k_packed4(
             packed, 16U, 2U, 8U, planes, 2U) !=
-            MAGI80_C2P4_INVALID_DIMENSIONS) {
+            MIGA80_C2P4_INVALID_DIMENSIONS) {
         return 0;
     }
-    for (plane = 0U; plane < MAGI80_C2P4_PLANE_COUNT; ++plane) {
+    for (plane = 0U; plane < MIGA80_C2P4_PLANE_COUNT; ++plane) {
         for (x = 0U; x < sizeof(storage[plane]); ++x) {
             if (storage[plane][x] != 0x5aU) {
                 return 0;
@@ -395,73 +395,73 @@ static int run_canonical_backend(size_t width, size_t height,
                                  size_t origin_x, size_t origin_y,
                                  unsigned int backend)
 {
-    uint8_t *front_planes[MAGI80_C2P4_PLANE_COUNT];
-    uint8_t *back_planes[MAGI80_C2P4_PLANE_COUNT];
-    const uint8_t *read_planes[MAGI80_AGA_REFERENCE_PLANE_COUNT];
+    uint8_t *front_planes[MIGA80_C2P4_PLANE_COUNT];
+    uint8_t *back_planes[MIGA80_C2P4_PLANE_COUNT];
+    const uint8_t *read_planes[MIGA80_AGA_REFERENCE_PLANE_COUNT];
     size_t plane;
-    enum Magi80C2P4Status status;
+    enum Miga80C2P4Status status;
 
     memset(physical_planes, 0, sizeof(physical_planes));
-    for (plane = 0U; plane < MAGI80_C2P4_PLANE_COUNT; ++plane) {
+    for (plane = 0U; plane < MIGA80_C2P4_PLANE_COUNT; ++plane) {
         front_planes[plane] =
             physical_planes[plane << 1] +
             (origin_y * (MAX_WIDTH / 8U)) + (origin_x / 8U);
         back_planes[plane] = physical_planes[(plane << 1) + 1U];
     }
-    for (plane = 0U; plane < MAGI80_AGA_REFERENCE_PLANE_COUNT; ++plane) {
+    for (plane = 0U; plane < MIGA80_AGA_REFERENCE_PLANE_COUNT; ++plane) {
         read_planes[plane] = physical_planes[plane];
     }
-    if (magi80_c2p4_reference_byte4(
+    if (miga80_c2p4_reference_byte4(
             planar_byte, MAX_WIDTH, MAX_HEIGHT, MAX_WIDTH, back_planes,
-            MAX_WIDTH / 8U) != MAGI80_C2P4_OK) {
+            MAX_WIDTH / 8U) != MIGA80_C2P4_OK) {
         return 0;
     }
 
     if (backend == 0U) {
-        status = magi80_c2p4_reference_packed4(
+        status = miga80_c2p4_reference_packed4(
             front_packed, width, height, width >> 1, front_planes,
             MAX_WIDTH / 8U);
     } else if (backend == 1U) {
-        status = magi80_c2p4_reference_byte4(
+        status = miga80_c2p4_reference_byte4(
             front_byte, width, height, width, front_planes,
             MAX_WIDTH / 8U);
     } else if (backend == 2U) {
-        status = magi80_c2p4_lookup_packed4(
+        status = miga80_c2p4_lookup_packed4(
             front_packed, width, height, width >> 1, front_planes,
             MAX_WIDTH / 8U, pair_lut);
     } else if (backend == 3U) {
-        status = magi80_c2p4_lookup_byte4(
+        status = miga80_c2p4_lookup_byte4(
             front_byte, width, height, width, front_planes,
             MAX_WIDTH / 8U, pair_lut);
     } else if (backend == 4U) {
-        status = magi80_c2p4_pair_lut_m68k_packed4(
+        status = miga80_c2p4_pair_lut_m68k_packed4(
             front_packed, width, height, width >> 1, front_planes,
             MAX_WIDTH / 8U, pair_lut);
     } else if (backend == 5U) {
-        status = magi80_c2p4_pair_lut_m68k_byte4(
+        status = miga80_c2p4_pair_lut_m68k_byte4(
             front_byte, width, height, width, front_planes,
             MAX_WIDTH / 8U, pair_lut);
     } else if (backend == 6U) {
-        status = magi80_c2p4_mask32_packed4(
+        status = miga80_c2p4_mask32_packed4(
             front_packed, width, height, width >> 1, front_planes,
             MAX_WIDTH / 8U);
     } else if (backend == 7U) {
-        status = magi80_c2p4_mask32_byte4(
+        status = miga80_c2p4_mask32_byte4(
             front_byte, width, height, width, front_planes,
             MAX_WIDTH / 8U);
     } else if (backend == 8U) {
-        status = magi80_c2p4_mask32_m68k_packed4(
+        status = miga80_c2p4_mask32_m68k_packed4(
             front_packed, width, height, width >> 1, front_planes,
             MAX_WIDTH / 8U);
     } else {
-        status = magi80_c2p4_mask32_m68k_byte4(
+        status = miga80_c2p4_mask32_m68k_byte4(
             front_byte, width, height, width, front_planes,
             MAX_WIDTH / 8U);
     }
-    if (status != MAGI80_C2P4_OK ||
-        magi80_aga_reference_decode_dual_playfield(
+    if (status != MIGA80_C2P4_OK ||
+        miga80_aga_reference_decode_dual_playfield(
             read_planes, MAX_WIDTH / 8U, canonical_actual,
-            MAX_WIDTH) != MAGI80_AGA_REFERENCE_OK) {
+            MAX_WIDTH) != MIGA80_AGA_REFERENCE_OK) {
         return 0;
     }
     return memcmp(canonical_actual, canonical_expected, MAX_PIXELS) == 0;
@@ -471,7 +471,7 @@ static int test_canonical_differentials(void)
 {
     static const size_t widths[3] = {160U, 192U, 256U};
     static const size_t heights[3] = {128U, 160U, 256U};
-    struct Magi80GraphicsReferenceScene scene;
+    struct Miga80GraphicsReferenceScene scene;
     size_t profile;
 
     prepare_planar();
@@ -500,9 +500,9 @@ static int test_canonical_differentials(void)
         scene.pixel.screen_x = (int32_t)origin_x;
         scene.pixel.screen_y = (int32_t)origin_y;
         scene.pixel.enabled = 1U;
-        if (magi80_graphics_reference_compose(
+        if (miga80_graphics_reference_compose(
                 &scene, canonical_expected, MAX_WIDTH) !=
-            MAGI80_GRAPHICS_REFERENCE_OK) {
+            MIGA80_GRAPHICS_REFERENCE_OK) {
             return 0;
         }
         for (backend = 0U; backend < 10U; ++backend) {
@@ -517,7 +517,7 @@ static int test_canonical_differentials(void)
 
 int main(void)
 {
-    magi80_c2p4_build_pair_lut(pair_lut);
+    miga80_c2p4_build_pair_lut(pair_lut);
 
     if (!test_single_byte_golden()) {
         puts("FAIL four-plane single-byte golden");

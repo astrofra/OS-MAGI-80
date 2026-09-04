@@ -1,4 +1,4 @@
-# MAGI-80 macOS Development Toolchain Plan
+# MIGA-80 macOS Development Toolchain Plan
 
 **Document status:** Cross-toolchain, initial `libnix` ABI, native C2P goldens, hosted bootstrap, AGA dual-playfield conversion, and the 24-case pair-LUT/mask32 C2P4 protocol validated through native execution, `vamos`, and FS-UAE/Kickstart 3.0; exclusive fine timing, genuine hybrid C2P, Kickstart 3.1, and real-hardware validation remain pending
 
@@ -6,7 +6,7 @@
 
 **Target:** Stock PAL Amiga 1200, 68EC020, AGA, 2 MiB Chip RAM, no Fast RAM or FPU
 
-**Related document:** [MAGI-80 Specification and Roadmap](./MAGI-80-specification-and-roadmap.md)
+**Related document:** [MIGA-80 Specification and Roadmap](./MIGA-80-specification-and-roadmap.md)
 
 **Graphics test note:** [Hosted AGA Screen Smoke Test](./aga-screen-smoke.md)
 
@@ -18,7 +18,7 @@
 
 ## 1. Purpose
 
-This document defines the development environment required to build, inspect, package, run, and test MAGI-80 from macOS.
+This document defines the development environment required to build, inspect, package, run, and test MIGA-80 from macOS.
 
 The toolchain must support:
 
@@ -33,7 +33,7 @@ The toolchain must support:
 - both hard-disk/directory and bootable-floppy development workflows;
 - reproducible builds without committing proprietary ROM or Workbench files.
 
-This is a host-development setup. It does not alter the MAGI-80 architectural decision to use AmigaOS services while editing and to take exclusive control only while a game is running.
+This is a host-development setup. It does not alter the MIGA-80 architectural decision to use AmigaOS services while editing and to take exclusive control only while a game is running.
 
 ## 2. Recommended Tool Stack
 
@@ -319,7 +319,7 @@ Initial flags to evaluate are:
 -fdata-sections
 ```
 
-`-msoft-float` is a safeguard against generating FPU instructions for the stock A1200. MAGI-80 should avoid floating-point code in target builds altogether. Section garbage collection and the final link flags must be tested against the selected Hunk linker before becoming mandatory.
+`-msoft-float` is a safeguard against generating FPU instructions for the stock A1200. MIGA-80 should avoid floating-point code in target builds altogether. Section garbage collection and the final link flags must be tested against the selected Hunk linker before becoming mandatory.
 
 Debug builds should initially use `-O1 -g`. Release builds should compare `-Os` with `-O2`; hot paths such as C2P conversion should be selected using measurements rather than a single project-wide optimization assumption.
 
@@ -327,15 +327,15 @@ Debug builds should initially use `-O1 -g`. Release builds should compare `-Os` 
 
 ### 7.1 General policy
 
-MAGI-80 is allowed and encouraged to use any appropriate documented system API provided by the target machine. Calls such as `malloc()`, `free()`, `fopen()`, and `fread()` are examples of this policy, not a boundary around it.
+MIGA-80 is allowed and encouraged to use any appropriate documented system API provided by the target machine. Calls such as `malloc()`, `free()`, `fopen()`, and `fread()` are examples of this policy, not a boundary around it.
 
-The default engineering decision is to reuse proven AmigaOS facilities whenever they satisfy the product's compatibility, memory, performance, and runtime-mode constraints. MAGI-80 should not reimplement a general-purpose operating-system service merely to appear more like a standalone kernel.
+The default engineering decision is to reuse proven AmigaOS facilities whenever they satisfy the product's compatibility, memory, performance, and runtime-mode constraints. MIGA-80 should not reimplement a general-purpose operating-system service merely to appear more like a standalone kernel.
 
 Candidate facilities include, but are not limited to:
 
 - Exec memory allocation, lists, tasks, signals, messages, ports, semaphores, interrupts, and cache-control functions;
 - DOS file handles, locks, directories, volume enumeration, notifications, processes, and filesystem handlers;
-- Intuition, GadTools, graphics, layers, and related display services while MAGI-80 is in hosted editing mode;
+- Intuition, GadTools, graphics, layers, and related display services while MIGA-80 is in hosted editing mode;
 - timer, input, keyboard, gameport, audio, console, clipboard, and trackdisk devices where they provide the required semantics;
 - system resources such as CIA and misc resources when lower-level ownership is necessary and can be acquired safely;
 - datatypes, locale, IFF, and other installed libraries when their availability and footprint match the minimum target;
@@ -343,7 +343,7 @@ Candidate facilities include, but are not limited to:
 
 The [Amiga Developer CD 2.1 documentation](http://amigadev.elowar.com/read/ADCD_2.1/) is the primary online programming reference for this work. It includes the ROM Kernel Reference Manuals, Devices manual, Hardware Reference Manual, Includes and Autodocs, IFF material, and Amiga Mail technical articles.
 
-The documentation collection also contains material for releases newer than the minimum MAGI-80 target. Every selected function must therefore be checked against the exact library or device version present on Kickstart/Workbench 3.0 and 3.1. Compilation against an NDK header is not proof that the function exists on both target systems.
+The documentation collection also contains material for releases newer than the minimum MIGA-80 target. Every selected function must therefore be checked against the exact library or device version present on Kickstart/Workbench 3.0 and 3.1. Compilation against an NDK header is not proof that the function exists on both target systems.
 
 ### 7.2 API-use constraints
 
@@ -352,14 +352,14 @@ System API reuse remains subject to the following rules:
 - use public, documented interfaces rather than private structures or undocumented ROM entry points;
 - open each library or device with a minimum version consistent with the exact functions used, and handle failure cleanly;
 - preserve the stock A1200 path: no API may silently introduce a Fast RAM, FPU, accelerator, or later-OS dependency;
-- use AmigaDOS filesystem APIs for mounted OFS and FFS volumes rather than parsing their raw structures in MAGI-80;
+- use AmigaDOS filesystem APIs for mounted OFS and FFS volumes rather than parsing their raw structures in MIGA-80;
 - allocate DMA-visible graphics and audio data in Chip RAM with the appropriate Exec flags;
 - keep blocking, allocating, filesystem, and other scheduler-dependent calls out of exclusive runtime sections where AmigaOS scheduling is forbidden;
 - acquire and release devices, resources, interrupts, display ownership, and audio channels symmetrically;
 - prefer the hosted OS service for editing and project management, but permit measured direct-hardware code for the game runtime, C2P, Copper, blitter, input, and Paula paths;
 - verify restoration and error paths under both supported OS versions.
 
-This is the practical meaning of MAGI-80 “replacing AmigaOS” for the user without pointlessly replacing the mature services already present in the machine.
+This is the practical meaning of MIGA-80 “replacing AmigaOS” for the user without pointlessly replacing the mature services already present in the machine.
 
 ### 7.3 Selected C runtime and initial ABI lock
 
@@ -411,7 +411,7 @@ The initial system build ABI is locked as one compatibility unit:
 - C99 source mode;
 - AmigaOS Hunk executable format;
 - 68020 CPU baseline;
-- software floating point, with floating-point use excluded from MAGI-80 code;
+- software floating point, with floating-point use excluded from MIGA-80 code;
 - libnix Kickstart 2+ startup and runtime via `-mcrt=nix20`;
 - default non-base-relative data model and startup stack policy;
 - no ixemul, shared libc, FPU, Fast RAM, or later-OS dependency;
@@ -482,7 +482,7 @@ FS-UAE requires legally obtained Kickstart ROM images. A local ROM collection al
 $HOME/Documents/Amiga/amiga-roms
 ```
 
-MAGI-80 also needs legally obtained Workbench/AmigaOS files for its hosted development and boot workflows.
+MIGA-80 also needs legally obtained Workbench/AmigaOS files for its hosted development and boot workflows.
 
 The resulting local layout is:
 
@@ -506,10 +506,10 @@ cp config/fs-uae/local.env.example config/fs-uae/local.env
 Then set either or both of the following path/checksum pairs:
 
 ```sh
-MAGI80_KICKSTART_30="/absolute/path/to/a1200-kickstart-39.106.rom"
-MAGI80_KICKSTART_30_SHA256="optional-local-sha256"
-MAGI80_KICKSTART_31="/absolute/path/to/a1200-kickstart-40.068.rom"
-MAGI80_KICKSTART_31_SHA256="optional-local-sha256"
+MIGA80_KICKSTART_30="/absolute/path/to/a1200-kickstart-39.106.rom"
+MIGA80_KICKSTART_30_SHA256="optional-local-sha256"
+MIGA80_KICKSTART_31="/absolute/path/to/a1200-kickstart-40.068.rom"
+MIGA80_KICKSTART_31_SHA256="optional-local-sha256"
 ```
 
 The generator requires at least one ROM, verifies its size, optional SHA-256 digest, internal ROM checksum, and exact revision with `romtool`, then resolves it into concrete FS-UAE files under the ignored `build/fs-uae/` directory. ROM files do not need to be copied into FS-UAE's default Kickstarts directory.
@@ -556,8 +556,8 @@ Four media-backed configurations are maintained as templates:
 |---|---|---|---|
 | `a1200-pal-ks30-hd` | 3.0 | Local system drive plus mounted build directory | Fast development |
 | `a1200-pal-ks31-hd` | 3.1 | Local system drive plus mounted build directory | Fast compatibility testing |
-| `a1200-pal-ks30-adf` | 3.0 | Generated MAGI-80 ADF | Floppy boot validation |
-| `a1200-pal-ks31-adf` | 3.1 | Generated MAGI-80 ADF | Floppy boot validation |
+| `a1200-pal-ks30-adf` | 3.0 | Generated MIGA-80 ADF | Floppy boot validation |
+| `a1200-pal-ks31-adf` | 3.1 | Generated MIGA-80 ADF | Floppy boot validation |
 
 An optional Fast RAM profile may be added later, but it must never replace the zero-Fast-RAM test profiles.
 
@@ -599,7 +599,7 @@ chip_memory = 2048
 fast_memory = 0
 ntsc_mode = 0
 kickstart_file = @KICKSTART_ROM@
-floppy_drive_0 = @MAGI80_ADF@
+floppy_drive_0 = @MIGA80_ADF@
 ```
 
 The ADF loop is:
@@ -627,9 +627,9 @@ Launch the currently validated ROM-only profile with:
 ./scripts/run-fs-uae.sh a1200-pal-ks30-rom
 ```
 
-The 2026-09-02 ROM launch was confirmed in the FS-UAE log as an A1200 in PAL mode at 50 Hz, with a 68020-class CPU, no FPU, no JIT, 2 MiB Chip RAM, no Fast RAM, and recognized Kickstart 3.0/39.106. The HD launch additionally confirmed a read-only `DH0:` hardfile and writable `DH1:MAGI80` host-directory mount, followed by the Workbench interlaced PAL display mode.
+The 2026-09-02 ROM launch was confirmed in the FS-UAE log as an A1200 in PAL mode at 50 Hz, with a 68020-class CPU, no FPU, no JIT, 2 MiB Chip RAM, no Fast RAM, and recognized Kickstart 3.0/39.106. The HD launch additionally confirmed a read-only `DH0:` hardfile and writable `DH1:MIGA80` host-directory mount, followed by the Workbench interlaced PAL display mode.
 
-The full-system smoke harness then booted a generated OFS test ADF, ran the staged `MAGI80:magi80` Hunk executable, redirected its AmigaDOS output to `MAGI80:fs-uae-smoke.out`, and compared that host-visible file with a golden result. This validates the complete cross-compile-to-FS-UAE loop without modifying the Workbench HDF or adding proprietary data to the test disk.
+The full-system smoke harness then booted a generated OFS test ADF, ran the staged `MIGA80:miga80` Hunk executable, redirected its AmigaDOS output to `MIGA80:fs-uae-smoke.out`, and compared that host-visible file with a golden result. This validates the complete cross-compile-to-FS-UAE loop without modifying the Workbench HDF or adding proprietary data to the test disk.
 
 The hosted AGA display and reference chunky-to-planar path are now validated. Exclusive takeover, Paula output, optimized-converter timing, and real-hardware behavior remain unvalidated. The current automated launch environment emitted OpenAL source errors; audio must therefore remain a separate pending smoke test.
 
@@ -739,12 +739,12 @@ The top-level GNU Make interface now exposes:
 
 | Target | Result |
 |---|---|
-| `gmake amiga` | Build `build/amiga/magi80`, an AmigaOS Hunk executable |
-| `gmake stage` | Copy it into the host directory mounted as `MAGI80:` |
+| `gmake amiga` | Build `build/amiga/miga80`, an AmigaOS Hunk executable |
+| `gmake stage` | Copy it into the host directory mounted as `MIGA80:` |
 | `gmake inspect` | Generate size, symbol, disassembly, and link-map reports |
 | `gmake vamos-test` | Execute it with `vamos -C 20` and compare its output |
 | `gmake run` | Stage it and launch the Workbench 3.0 HD profile interactively |
-| `gmake fs-uae-smoke` | Build, stage, boot the local harness, execute from `MAGI80:`, and check the result |
+| `gmake fs-uae-smoke` | Build, stage, boot the local harness, execute from `MIGA80:`, and check the result |
 | `gmake c2p-test` | Compile the portable C99 converter natively and compare its output with byte-exact golden vectors |
 | `gmake c2p4-test` | Validate packed4/byte4 scalar, pair-LUT, and table-free mask32 contracts against canonical output |
 | `gmake graphics-reference-test` | Compile the portable three-layer compositor natively and verify canonical PLANAR/PIXEL/OBJECTS golden output |
@@ -773,7 +773,7 @@ The C99 reference C2P converters now compile natively with Apple Clang and pass 
 
 The following additional portable components should also compile natively with Apple Clang:
 
-- MAGI Lua lexer, parser, and type checker;
+- MIGA Lua lexer, parser, and type checker;
 - typed intermediate representation;
 - 68020 instruction encoder and relocation logic;
 - cartridge parser and serializer;
@@ -871,12 +871,12 @@ Before publishing a bootable ADF or distributing the toolchain, the project must
 
 1. whether the selected NDK material can be redistributed as part of a binary toolchain archive;
 2. whether any VASM, VLink, or VBCC distribution restriction affects the proposed toolchain package;
-3. which AmigaDOS boot files, if any, are required on the MAGI-80 floppy;
+3. which AmigaDOS boot files, if any, are required on the MIGA-80 floppy;
 4. whether those boot files may be redistributed;
 5. whether the public release must instead provide an installer that copies licensed files from the user's Workbench media;
 6. whether a compatible redistributable replacement can legally and technically satisfy the boot requirements.
 
-Compiler output and the MAGI-80 program are separate from permission to redistribute compiler components or AmigaOS system files. No public ADF should be produced until this gate is closed.
+Compiler output and the MIGA-80 program are separate from permission to redistribute compiler components or AmigaOS system files. No public ADF should be produced until this gate is closed.
 
 ## 14. Main Setup Risks
 
@@ -885,7 +885,7 @@ Compiler output and the MAGI-80 program are separate from permission to redistri
 | Homebrew GNU tools are not first in `PATH` | Toolchain build fails in confusing ways | Use a checked project environment script and print resolved tool paths |
 | Latest AmigaPorts branches change | Previously working builds become irreproducible | Record all commits and archive a validated prefix |
 | Python 3.14 is too new for `machine68k` | `vamos` cannot be installed | Keep the validated Python 3.13 `pipx` environment |
-| A comfortable emulator profile hides stock-machine failures | MAGI-80 works only with Fast RAM or faster CPU settings | Certify only explicit A1200, 2 MiB Chip, zero Fast RAM profiles |
+| A comfortable emulator profile hides stock-machine failures | MIGA-80 works only with Fast RAM or faster CPU settings | Certify only explicit A1200, 2 MiB Chip, zero Fast RAM profiles |
 | Selected libc pulls large dependencies | Executable exceeds the floppy or memory budget | Compare runtimes immediately and inspect every link map |
 | NDK headers allow calls newer than OS 3.0/3.1 | Runtime failure on a stock system | Audit library versions and test every smoke program on both OS versions |
 | Emulator success is treated as hardware proof | Timing and cache bugs escape | Keep real-A1200 gates for graphics, DMA, audio, takeover, and generated code |
@@ -904,10 +904,10 @@ The installation should be performed in small, independently verifiable steps:
 7. [x] Add, generate, inspect, and launch the stock-A1200 Kickstart 3.0 ROM-only profile.
 8. [x] Add the Kickstart 3.1 ROM-only template and all four HD/ADF templates.
 9. [ ] Prepare clean reference Workbench systems: the existing 3.0 HDF/profile works read-only; 3.1 is pending.
-10. [x] Complete the mounted-directory loop by staging and running a target executable from `MAGI80:`.
+10. [x] Complete the mounted-directory loop by staging and running a target executable from `MIGA80:`.
 11. [x] Compare C runtimes and freeze the initial target ABI on libnix/`-mcrt=nix20`; Kickstart 3.1 and real-hardware revalidation remain gates.
 12. [x] Generate and verify OFS and FFS test ADFs.
-13. [ ] Generate a MAGI-80 ADF profile and boot it under both target Kickstart versions.
+13. [ ] Generate a MIGA-80 ADF profile and boot it under both target Kickstart versions.
 14. [ ] Add the first AGA, input, and Paula smoke tests: the hosted AGA screen, four-layout historical C2P equivalence, and 24-case optimized C2P4 correctness/report protocol pass on FS-UAE/Kickstart 3.0; input, Paula, exclusive timing/display ownership, Kickstart 3.1, and authoritative hardware timing remain pending.
 15. [ ] Package and checksum the validated compiler prefix.
 16. [ ] Complete the version manifest with later-phase versions and archive checksums.

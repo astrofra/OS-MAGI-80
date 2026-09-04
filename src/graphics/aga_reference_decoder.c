@@ -9,11 +9,11 @@ static int storage_span(const void *storage, size_t stride,
     size_t extent;
 
     if (stride > (SIZE_MAX - row_bytes) /
-                     (MAGI80_GRAPHICS_REFERENCE_HEIGHT - 1U)) {
+                     (MIGA80_GRAPHICS_REFERENCE_HEIGHT - 1U)) {
         return 0;
     }
     last_row_offset =
-        stride * (MAGI80_GRAPHICS_REFERENCE_HEIGHT - 1U);
+        stride * (MIGA80_GRAPHICS_REFERENCE_HEIGHT - 1U);
     extent = last_row_offset + row_bytes;
     *begin = (uintptr_t)storage;
     if (*begin > UINTPTR_MAX - extent) {
@@ -29,8 +29,8 @@ static int spans_overlap(uintptr_t left_begin, uintptr_t left_end,
     return left_begin < right_end && right_begin < left_end;
 }
 
-static enum Magi80AgaReferenceStatus validate_arguments(
-    const uint8_t *planes[MAGI80_AGA_REFERENCE_PLANE_COUNT],
+static enum Miga80AgaReferenceStatus validate_arguments(
+    const uint8_t *planes[MIGA80_AGA_REFERENCE_PLANE_COUNT],
     size_t plane_stride,
     uint8_t *output,
     size_t output_stride)
@@ -40,55 +40,55 @@ static enum Magi80AgaReferenceStatus validate_arguments(
     size_t plane;
 
     if (planes == NULL || output == NULL) {
-        return MAGI80_AGA_REFERENCE_INVALID_ARGUMENT;
+        return MIGA80_AGA_REFERENCE_INVALID_ARGUMENT;
     }
-    if (plane_stride < MAGI80_AGA_REFERENCE_PLANE_ROW_BYTES ||
-        output_stride < MAGI80_GRAPHICS_REFERENCE_WIDTH) {
-        return MAGI80_AGA_REFERENCE_INVALID_STRIDE;
+    if (plane_stride < MIGA80_AGA_REFERENCE_PLANE_ROW_BYTES ||
+        output_stride < MIGA80_GRAPHICS_REFERENCE_WIDTH) {
+        return MIGA80_AGA_REFERENCE_INVALID_STRIDE;
     }
     if (!storage_span(output, output_stride,
-                      MAGI80_GRAPHICS_REFERENCE_WIDTH, &output_begin,
+                      MIGA80_GRAPHICS_REFERENCE_WIDTH, &output_begin,
                       &output_end)) {
-        return MAGI80_AGA_REFERENCE_INVALID_STRIDE;
+        return MIGA80_AGA_REFERENCE_INVALID_STRIDE;
     }
-    for (plane = 0U; plane < MAGI80_AGA_REFERENCE_PLANE_COUNT; ++plane) {
+    for (plane = 0U; plane < MIGA80_AGA_REFERENCE_PLANE_COUNT; ++plane) {
         uintptr_t plane_begin;
         uintptr_t plane_end;
 
         if (planes[plane] == NULL) {
-            return MAGI80_AGA_REFERENCE_INVALID_ARGUMENT;
+            return MIGA80_AGA_REFERENCE_INVALID_ARGUMENT;
         }
         if (!storage_span(planes[plane], plane_stride,
-                          MAGI80_AGA_REFERENCE_PLANE_ROW_BYTES,
+                          MIGA80_AGA_REFERENCE_PLANE_ROW_BYTES,
                           &plane_begin, &plane_end)) {
-            return MAGI80_AGA_REFERENCE_INVALID_STRIDE;
+            return MIGA80_AGA_REFERENCE_INVALID_STRIDE;
         }
         if (spans_overlap(plane_begin, plane_end, output_begin,
                           output_end)) {
-            return MAGI80_AGA_REFERENCE_INVALID_ARGUMENT;
+            return MIGA80_AGA_REFERENCE_INVALID_ARGUMENT;
         }
     }
-    return MAGI80_AGA_REFERENCE_OK;
+    return MIGA80_AGA_REFERENCE_OK;
 }
 
-enum Magi80AgaReferenceStatus magi80_aga_reference_decode_dual_playfield(
-    const uint8_t *planes[MAGI80_AGA_REFERENCE_PLANE_COUNT],
+enum Miga80AgaReferenceStatus miga80_aga_reference_decode_dual_playfield(
+    const uint8_t *planes[MIGA80_AGA_REFERENCE_PLANE_COUNT],
     size_t plane_stride,
     uint8_t *output,
     size_t output_stride)
 {
-    enum Magi80AgaReferenceStatus status =
+    enum Miga80AgaReferenceStatus status =
         validate_arguments(planes, plane_stride, output, output_stride);
     size_t y;
 
-    if (status != MAGI80_AGA_REFERENCE_OK) {
+    if (status != MIGA80_AGA_REFERENCE_OK) {
         return status;
     }
-    for (y = 0U; y < MAGI80_GRAPHICS_REFERENCE_HEIGHT; ++y) {
+    for (y = 0U; y < MIGA80_GRAPHICS_REFERENCE_HEIGHT; ++y) {
         size_t byte_x;
 
         for (byte_x = 0U;
-             byte_x < MAGI80_AGA_REFERENCE_PLANE_ROW_BYTES; ++byte_x) {
+             byte_x < MIGA80_AGA_REFERENCE_PLANE_ROW_BYTES; ++byte_x) {
             size_t pixel;
 
             for (pixel = 0U; pixel < 8U; ++pixel) {
@@ -112,11 +112,11 @@ enum Magi80AgaReferenceStatus magi80_aga_reference_decode_dual_playfield(
                 }
                 output[(y * output_stride) + (byte_x << 3) + pixel] =
                     front != 0U
-                        ? (uint8_t)(MAGI80_GRAPHICS_OVERLAY_COLOR_BASE +
+                        ? (uint8_t)(MIGA80_GRAPHICS_OVERLAY_COLOR_BASE +
                                     front)
                         : back;
             }
         }
     }
-    return MAGI80_AGA_REFERENCE_OK;
+    return MIGA80_AGA_REFERENCE_OK;
 }

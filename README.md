@@ -1,4 +1,4 @@
-# OS-MAGI-80
+# OS-MIGA-80
 
 Fantasy OS for the Amiga 1200
 
@@ -56,8 +56,9 @@ comparisons (`!=` aliases `~=`), and nested `if`/`then`/`else`/`end`. The typed
 IR carries up to 32 basic blocks. Assembly generation defaults to the value-IR
 `-O1` backend;
 `-O0` keeps the stack baseline for comparison. `-O1` removes dead assignments,
-creates typed join values, and uses bounded ABI frames when edge transfers or
-register pressure require them. See the [compiler
+creates typed join values, computes CFG-aware liveness, coalesces compatible
+`phi` slots, and uses bounded ABI frames when edge transfers or register
+pressure require them. See the [compiler
 bootstrap](documentation/MIGA-Lua-compiler-bootstrap.md)
 for its exact grammar, the [native ABI
 0.1](documentation/MIGA-Lua-native-ABI-v0.md) for the frozen register/stack

@@ -1,4 +1,4 @@
-# MAGI-80 Graphics Benchmark Report Format
+# MIGA-80 Graphics Benchmark Report Format
 
 **Status:** Version 1 schema and native validator implemented
 
@@ -127,7 +127,7 @@ case=byte4_160x128 backend=scalar_c99 workload=full_frame width=160 height=128 s
 result=pass
 ```
 
-The numbers above illustrate the syntax only; they are not MAGI-80 measurements.
+The numbers above illustrate the syntax only; they are not MIGA-80 measurements.
 
 ## 7. Validation
 

@@ -1,4 +1,4 @@
-# MAGI-80 Chunky Layout and C2P Benchmark
+# MIGA-80 Chunky Layout and C2P Benchmark
 
 **Status:** Historical two-layer Reference-C baseline retained and validated under FS-UAE 3.2.35 with Kickstart 3.0/39.106; superseded by the single-layer C2P4 matrix for current architecture decisions
 
@@ -6,7 +6,7 @@
 
 ## 1. Question
 
-MAGI-80 exposes two logical 16-color layers, but that does not determine their in-memory representation. The benchmark compares the cost of constructing and modifying candidate source layouts as well as converting them to the same eight AGA dual-playfield planes.
+MIGA-80 exposes two logical 16-color layers, but that does not determine their in-memory representation. The benchmark compares the cost of constructing and modifying candidate source layouts as well as converting them to the same eight AGA dual-playfield planes.
 
 This document records the original two-full-chunky-layer experiment. The three-layer architecture keeps the base playfield natively planar and converts only the optional four-bit `PIXEL` viewport; current evidence is documented in [Four-Plane C2P Reference and Benchmark](./c2p4-benchmark.md).
 
@@ -101,8 +101,8 @@ The source layout may be frozen only after the optimized matrix runs on real har
 - workloads dominated by `pset`, sprites, maps, fills, and scrolling;
 - full-frame and one-layer-dirty cases;
 - memory and scratch-space cost;
-- CPU time available for generated MAGI Lua code;
+- CPU time available for generated MIGA Lua code;
 - audio stability and missed-frame behavior;
 - whether a planar-native fast path can avoid conversion for high-level primitives without changing language semantics.
 
-Until then, neither packed4 nor byte4 is the selected MAGI-80 ABI. The historical `fb8` representation remains only a regression fixture for the initial screen smoke test.
+Until then, neither packed4 nor byte4 is the selected MIGA-80 ABI. The historical `fb8` representation remains only a regression fixture for the initial screen smoke test.

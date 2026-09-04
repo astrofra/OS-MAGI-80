@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate deterministic MAGI-80 RGB12 color-response comparison grids.
+"""Generate deterministic MIGA-80 RGB12 color-response comparison grids.
 
 The transforms are compact, inspectable working approximations for design review.
 They deliberately model only a static color response; grain, halation, scanlines,
@@ -207,8 +207,8 @@ def protan_vision_2009(rgb: RGB) -> RGB:
 
 def megadrive_1988(rgb: RGB) -> RGB:
     # Pull colors only part-way toward the console's 3-bit-per-channel RGB
-    # vocabulary. This evokes its stepped palette without collapsing MAGI-80
-    # from 4,096 logical inputs to 512 colors. The purple offset is a MAGI-80
+    # vocabulary. This evokes its stepped palette without collapsing MIGA-80
+    # from 4,096 logical inputs to 512 colors. The purple offset is a MIGA-80
     # art-direction choice, not a claim about the VDP DAC: a luminance bell
     # confines it to mid-tones and makes it vanish at black and white.
     quantized = tuple(round(channel * 7.0) / 7.0 for channel in rgb)
@@ -401,7 +401,7 @@ def write_png(path: Path, width: int, height: int, pixels: Iterable[tuple[int, i
     payload += png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
     payload += png_chunk(b"sRGB", b"\x00")
     payload += png_chunk(b"gAMA", struct.pack(">I", 45455))
-    payload += png_chunk(b"tEXt", b"Software\x00MAGI-80 deterministic palette generator")
+    payload += png_chunk(b"tEXt", b"Software\x00MIGA-80 deterministic palette generator")
     payload += png_chunk(b"IDAT", zlib.compress(bytes(rows), level=9))
     payload += png_chunk(b"IEND", b"")
     path.write_bytes(payload)

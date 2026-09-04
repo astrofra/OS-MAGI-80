@@ -1,8 +1,8 @@
-# MAGI-80 Graphics Architecture --- Performance-Oriented Design Notes
+# MIGA-80 Graphics Architecture --- Performance-Oriented Design Notes
 
 ## Purpose
 
-MAGI-80 should not behave like a generic chunky framebuffer awkwardly
+MIGA-80 should not behave like a generic chunky framebuffer awkwardly
 mapped onto an Amiga 1200. A more promising direction is to define a
 small **virtual graphics architecture whose layers deliberately map onto
 the strengths of AGA**.
@@ -20,7 +20,7 @@ The central principle is:
 
 ## 1. A Three-Layer Virtual GPU
 
-The proposed MAGI-80 display can be understood as three conceptually
+The proposed MIGA-80 display can be understood as three conceptually
 independent layers.
 
 ### Layer A --- Planar / Blitter Layer
@@ -50,7 +50,7 @@ Its implementation can use:
 -   bitplane pointer manipulation;
 -   hardware fine scrolling.
 
-This is the layer where MAGI-80 can exploit the Amiga rather than fight
+This is the layer where MIGA-80 can exploit the Amiga rather than fight
 it.
 
 ------------------------------------------------------------------------
@@ -81,7 +81,7 @@ A useful default could be:
 For example:
 
 ``` text
-MAGI-80 logical display: 256 × 256
+MIGA-80 logical display: 256 × 256
 
 ┌──────────────────────────────┐
 │      PLANAR / BLITTER        │
@@ -128,7 +128,7 @@ obj(1, ENEMY, 180, 80)
 The programmer should not normally manipulate physical Amiga sprite
 channels.
 
-Instead, MAGI-80 maintains a virtual object list and attempts to map it
+Instead, MIGA-80 maintains a virtual object list and attempts to map it
 onto AGA hardware sprites.
 
 Possible implementation strategies include:
@@ -168,7 +168,7 @@ Conceptually:
 -   16-colour attached sprites use a pair of channels.
 
 This makes a virtual object/tile layer plausible, especially at
-MAGI-80's modest 256-pixel logical width.
+MIGA-80's modest 256-pixel logical width.
 
 The important architectural decision is to expose **virtual objects**,
 not the physical sprite channels themselves. The runtime remains free to
@@ -228,7 +228,7 @@ to object/sprite coordinates.
 
 ## 6. Limited Scroll Margin Instead of Larger Drawing Areas
 
-A useful MAGI-80 constraint would be to guarantee only a small amount of
+A useful MIGA-80 constraint would be to guarantee only a small amount of
 hardware-assisted scrolling, for example **±16 or ±32 pixels**.
 
 The important distinction is:
@@ -261,7 +261,7 @@ column rather than rebuilding the entire screen.
 ## 7. C2P Strategy
 
 The chunky layer still requires chunky-to-planar conversion, but several
-factors make the MAGI-80 case more favourable than a conventional
+factors make the MIGA-80 case more favourable than a conventional
 full-screen 8-bit C2P.
 
 ### Reduced viewport
@@ -312,7 +312,7 @@ be measured rather than assumed.
 
 The best C2P optimization is not performing C2P.
 
-Because the MAGI-80 graphics API is abstract, high-level operations do
+Because the MIGA-80 graphics API is abstract, high-level operations do
 not necessarily have to modify a chunky framebuffer.
 
 For example:
@@ -330,7 +330,7 @@ can potentially have hardware-specific implementations.
 Depending on the target layer, an operation could become:
 
 ``` text
-MAGI graphics command
+MIGA graphics command
         │
         ├── planar native operation
         │       └── CPU / Blitter
@@ -380,7 +380,7 @@ renderer.
 
 ## 10. Frame-Rate Contract
 
-MAGI-80 should favour deterministic performance over an optimistic
+MIGA-80 should favour deterministic performance over an optimistic
 nominal frame rate.
 
 A sensible baseline is:
@@ -401,14 +401,14 @@ game tick            50 Hz
 
 This could become two explicit performance profiles:
 
-### MAGI-80 Standard
+### MIGA-80 Standard
 
 -   50 Hz PAL output;
 -   25 Hz simulation/rendering;
 -   predictable baseline on a stock target;
 -   all standard graphics features available within documented budgets.
 
-### MAGI-80 Turbo
+### MIGA-80 Turbo
 
 -   50 Hz PAL output;
 -   50 Hz simulation/rendering;
@@ -421,7 +421,7 @@ preferable to allowing simulation timing to become unpredictable.
 ### Optional Fast-RAM acceleration tier
 
 The Standard/Turbo timing profiles are independent from the machine's
-memory expansion. MAGI-80 should detect a second, transparent memory
+memory expansion. MIGA-80 should detect a second, transparent memory
 tier:
 
 -   `stock_chip_only` remains the compatibility and performance
@@ -503,17 +503,17 @@ Measure each case at both 25 Hz and 50 Hz targets.
 Raster bars or hardware counters should make the time consumed by
 drawing, C2P, Blitter work, and idle time immediately visible.
 
-This prototype determines the actual MAGI-80 graphics specification
+This prototype determines the actual MIGA-80 graphics specification
 before substantial work is invested in the compiler.
 
 ------------------------------------------------------------------------
 
-## 13. Resulting MAGI-80 Model
+## 13. Resulting MIGA-80 Model
 
 The resulting virtual GPU can be summarized as:
 
 ``` text
-                         MAGI-80 GPU
+                         MIGA-80 GPU
                               │
           ┌───────────────────┼───────────────────┐
           │                   │                   │
@@ -534,7 +534,7 @@ The resulting virtual GPU can be summarized as:
 
 This is more interesting than simply emulating a generic framebuffer.
 
-MAGI-80 becomes a deliberately constrained hybrid architecture
+MIGA-80 becomes a deliberately constrained hybrid architecture
 combining:
 
 -   Amiga planar graphics;

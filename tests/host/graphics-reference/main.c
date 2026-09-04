@@ -6,9 +6,9 @@
 #include "graphics/reference_compositor.h"
 
 #define OUTPUT_STRIDE 260U
-#define OUTPUT_BYTES (OUTPUT_STRIDE * MAGI80_GRAPHICS_REFERENCE_HEIGHT)
+#define OUTPUT_BYTES (OUTPUT_STRIDE * MIGA80_GRAPHICS_REFERENCE_HEIGHT)
 #define VISIBLE_BYTES                                                   \
-    (MAGI80_GRAPHICS_REFERENCE_WIDTH * MAGI80_GRAPHICS_REFERENCE_HEIGHT)
+    (MIGA80_GRAPHICS_REFERENCE_WIDTH * MIGA80_GRAPHICS_REFERENCE_HEIGHT)
 
 static uint8_t planar_full[VISIBLE_BYTES];
 static uint8_t output[OUTPUT_BYTES];
@@ -24,10 +24,10 @@ static int visible_outputs_match(const uint8_t *left, const uint8_t *right)
 {
     size_t y;
 
-    for (y = 0U; y < MAGI80_GRAPHICS_REFERENCE_HEIGHT; ++y) {
+    for (y = 0U; y < MIGA80_GRAPHICS_REFERENCE_HEIGHT; ++y) {
         if (memcmp(left + (y * OUTPUT_STRIDE),
                    right + (y * OUTPUT_STRIDE),
-                   MAGI80_GRAPHICS_REFERENCE_WIDTH) != 0) {
+                   MIGA80_GRAPHICS_REFERENCE_WIDTH) != 0) {
             return 0;
         }
     }
@@ -39,8 +39,8 @@ static int padding_is(const uint8_t *storage, uint8_t expected)
     size_t y;
     size_t x;
 
-    for (y = 0U; y < MAGI80_GRAPHICS_REFERENCE_HEIGHT; ++y) {
-        for (x = MAGI80_GRAPHICS_REFERENCE_WIDTH; x < OUTPUT_STRIDE; ++x) {
+    for (y = 0U; y < MIGA80_GRAPHICS_REFERENCE_HEIGHT; ++y) {
+        for (x = MIGA80_GRAPHICS_REFERENCE_WIDTH; x < OUTPUT_STRIDE; ++x) {
             if (storage[(y * OUTPUT_STRIDE) + x] != expected) {
                 return 0;
             }
@@ -49,7 +49,7 @@ static int padding_is(const uint8_t *storage, uint8_t expected)
     return 1;
 }
 
-static void set_surface(struct Magi80GraphicsReferenceSurface4 *surface,
+static void set_surface(struct Miga80GraphicsReferenceSurface4 *surface,
                         const uint8_t *pixels, size_t width, size_t height,
                         size_t stride)
 {
@@ -59,7 +59,7 @@ static void set_surface(struct Magi80GraphicsReferenceSurface4 *surface,
     surface->stride = stride;
 }
 
-static void set_view(struct Magi80GraphicsReferenceView4 *view,
+static void set_view(struct Miga80GraphicsReferenceView4 *view,
                      const uint8_t *pixels, size_t surface_width,
                      size_t surface_height, size_t stride, size_t source_x,
                      size_t source_y, size_t width, size_t height,
@@ -78,11 +78,11 @@ static void set_view(struct Magi80GraphicsReferenceView4 *view,
 }
 
 static void set_object(
-    struct Magi80GraphicsReferenceObject *object, const uint8_t *pixels,
+    struct Miga80GraphicsReferenceObject *object, const uint8_t *pixels,
     size_t surface_width, size_t surface_height, size_t stride,
     size_t source_x, size_t source_y, size_t width, size_t height,
     int32_t world_x, int32_t world_y, uint8_t priority,
-    enum Magi80GraphicsObjectBackendHint backend_hint)
+    enum Miga80GraphicsObjectBackendHint backend_hint)
 {
     memset(object, 0, sizeof(*object));
     set_surface(&object->surface, pixels, surface_width, surface_height,
@@ -99,8 +99,8 @@ static void set_object(
 }
 
 static void setup_golden_scene(
-    struct Magi80GraphicsReferenceScene *scene,
-    struct Magi80GraphicsReferenceObject objects[3])
+    struct Miga80GraphicsReferenceScene *scene,
+    struct Miga80GraphicsReferenceObject objects[3])
 {
     static uint8_t pixel[4][8];
     static uint8_t object_low[2][4];
@@ -151,23 +151,23 @@ static void setup_golden_scene(
     object_tie[0][0] = 0xe3U;
 
     set_view(&scene->planar, planar_full,
-             MAGI80_GRAPHICS_REFERENCE_WIDTH,
-             MAGI80_GRAPHICS_REFERENCE_HEIGHT,
-             MAGI80_GRAPHICS_REFERENCE_WIDTH, 0U, 0U,
-             MAGI80_GRAPHICS_REFERENCE_WIDTH,
-             MAGI80_GRAPHICS_REFERENCE_HEIGHT, 0, 0);
+             MIGA80_GRAPHICS_REFERENCE_WIDTH,
+             MIGA80_GRAPHICS_REFERENCE_HEIGHT,
+             MIGA80_GRAPHICS_REFERENCE_WIDTH, 0U, 0U,
+             MIGA80_GRAPHICS_REFERENCE_WIDTH,
+             MIGA80_GRAPHICS_REFERENCE_HEIGHT, 0, 0);
     set_view(&scene->pixel, &pixel[0][0], 6U, 4U, 8U, 0U, 0U, 6U, 4U,
              1, 1);
 
     set_object(&objects[0], &object_low[0][0], 3U, 2U, 4U, 0U, 0U,
                3U, 2U, 2, 2, 1U,
-               MAGI80_GRAPHICS_OBJECT_BACKEND_HARDWARE_SPRITE);
+               MIGA80_GRAPHICS_OBJECT_BACKEND_HARDWARE_SPRITE);
     set_object(&objects[1], &object_high[0][0], 2U, 3U, 3U, 0U, 0U,
                2U, 3U, 3, 1, 2U,
-               MAGI80_GRAPHICS_OBJECT_BACKEND_PLANAR_FALLBACK);
+               MIGA80_GRAPHICS_OBJECT_BACKEND_PLANAR_FALLBACK);
     set_object(&objects[2], &object_tie[0][0], 1U, 1U, 2U, 0U, 0U,
                1U, 1U, 3, 2, 2U,
-               MAGI80_GRAPHICS_OBJECT_BACKEND_AUTO);
+               MIGA80_GRAPHICS_OBJECT_BACKEND_AUTO);
     scene->objects = objects;
     scene->object_count = 3U;
 }
@@ -182,19 +182,19 @@ static int test_golden_composition(void)
         {1U, 26U, 1U, 27U, 1U, 28U, 1U, 1U},
         {1U, 1U, 1U, 1U, 1U, 1U, 1U, 1U}
     };
-    struct Magi80GraphicsReferenceScene scene;
-    struct Magi80GraphicsReferenceObject objects[3];
+    struct Miga80GraphicsReferenceScene scene;
+    struct Miga80GraphicsReferenceObject objects[3];
     size_t x;
     size_t y;
 
     setup_golden_scene(&scene, objects);
     memset(output, 0xcc, sizeof(output));
-    if (magi80_graphics_reference_compose(&scene, output, OUTPUT_STRIDE) !=
-        MAGI80_GRAPHICS_REFERENCE_OK) {
+    if (miga80_graphics_reference_compose(&scene, output, OUTPUT_STRIDE) !=
+        MIGA80_GRAPHICS_REFERENCE_OK) {
         return 0;
     }
-    for (y = 0U; y < MAGI80_GRAPHICS_REFERENCE_HEIGHT; ++y) {
-        for (x = 0U; x < MAGI80_GRAPHICS_REFERENCE_WIDTH; ++x) {
+    for (y = 0U; y < MIGA80_GRAPHICS_REFERENCE_HEIGHT; ++y) {
+        for (x = 0U; x < MIGA80_GRAPHICS_REFERENCE_WIDTH; ++x) {
             uint8_t wanted = y < 6U && x < 8U ? expected[y][x] : 1U;
 
             if (pixel_at(output, x, y) != wanted) {
@@ -207,26 +207,26 @@ static int test_golden_composition(void)
 
 static int test_backend_path_equivalence(void)
 {
-    struct Magi80GraphicsReferenceScene scene;
-    struct Magi80GraphicsReferenceObject objects[3];
+    struct Miga80GraphicsReferenceScene scene;
+    struct Miga80GraphicsReferenceObject objects[3];
 
     setup_golden_scene(&scene, objects);
     memset(output, 0xcc, sizeof(output));
-    if (magi80_graphics_reference_compose(&scene, output, OUTPUT_STRIDE) !=
-        MAGI80_GRAPHICS_REFERENCE_OK) {
+    if (miga80_graphics_reference_compose(&scene, output, OUTPUT_STRIDE) !=
+        MIGA80_GRAPHICS_REFERENCE_OK) {
         return 0;
     }
 
     objects[0].backend_hint =
-        MAGI80_GRAPHICS_OBJECT_BACKEND_PLANAR_FALLBACK;
+        MIGA80_GRAPHICS_OBJECT_BACKEND_PLANAR_FALLBACK;
     objects[1].backend_hint =
-        MAGI80_GRAPHICS_OBJECT_BACKEND_HARDWARE_SPRITE;
+        MIGA80_GRAPHICS_OBJECT_BACKEND_HARDWARE_SPRITE;
     objects[2].backend_hint =
-        MAGI80_GRAPHICS_OBJECT_BACKEND_HARDWARE_SPRITE;
+        MIGA80_GRAPHICS_OBJECT_BACKEND_HARDWARE_SPRITE;
     memset(output_second, 0xdd, sizeof(output_second));
-    if (magi80_graphics_reference_compose(
+    if (miga80_graphics_reference_compose(
             &scene, output_second, OUTPUT_STRIDE) !=
-            MAGI80_GRAPHICS_REFERENCE_OK ||
+            MIGA80_GRAPHICS_REFERENCE_OK ||
         !visible_outputs_match(output, output_second) ||
         !padding_is(output_second, 0xddU)) {
         return 0;
@@ -239,8 +239,8 @@ static int test_origins_clipping_and_camera(void)
     uint8_t planar[4][7];
     uint8_t pixel[3][7];
     uint8_t object_pixels[2][5];
-    struct Magi80GraphicsReferenceScene scene;
-    struct Magi80GraphicsReferenceObject object;
+    struct Miga80GraphicsReferenceScene scene;
+    struct Miga80GraphicsReferenceObject object;
     size_t x;
     size_t y;
 
@@ -273,33 +273,33 @@ static int test_origins_clipping_and_camera(void)
     set_view(&scene.pixel, &pixel[0][0], 5U, 3U, 7U, 1U, 1U, 4U, 2U,
              254, 0);
     set_object(&object, &object_pixels[0][0], 3U, 2U, 5U, 0U, 0U, 3U,
-               2U, 2, 2, 3U, MAGI80_GRAPHICS_OBJECT_BACKEND_AUTO);
+               2U, 2, 2, 3U, MIGA80_GRAPHICS_OBJECT_BACKEND_AUTO);
     scene.objects = &object;
     scene.object_count = 1U;
     scene.object_camera_x = 3;
     scene.object_camera_y = 1;
 
     memset(expected_visible, 0, sizeof(expected_visible));
-    expected_visible[0U * MAGI80_GRAPHICS_REFERENCE_WIDTH + 0U] = 12U;
-    expected_visible[0U * MAGI80_GRAPHICS_REFERENCE_WIDTH + 1U] = 13U;
-    expected_visible[0U * MAGI80_GRAPHICS_REFERENCE_WIDTH + 2U] = 14U;
-    expected_visible[1U * MAGI80_GRAPHICS_REFERENCE_WIDTH + 0U] = 17U;
-    expected_visible[1U * MAGI80_GRAPHICS_REFERENCE_WIDTH + 1U] = 18U;
-    expected_visible[1U * MAGI80_GRAPHICS_REFERENCE_WIDTH + 2U] = 3U;
-    expected_visible[2U * MAGI80_GRAPHICS_REFERENCE_WIDTH + 1U] = 20U;
-    expected_visible[0U * MAGI80_GRAPHICS_REFERENCE_WIDTH + 254U] = 21U;
-    expected_visible[1U * MAGI80_GRAPHICS_REFERENCE_WIDTH + 254U] = 24U;
-    expected_visible[1U * MAGI80_GRAPHICS_REFERENCE_WIDTH + 255U] = 25U;
+    expected_visible[0U * MIGA80_GRAPHICS_REFERENCE_WIDTH + 0U] = 12U;
+    expected_visible[0U * MIGA80_GRAPHICS_REFERENCE_WIDTH + 1U] = 13U;
+    expected_visible[0U * MIGA80_GRAPHICS_REFERENCE_WIDTH + 2U] = 14U;
+    expected_visible[1U * MIGA80_GRAPHICS_REFERENCE_WIDTH + 0U] = 17U;
+    expected_visible[1U * MIGA80_GRAPHICS_REFERENCE_WIDTH + 1U] = 18U;
+    expected_visible[1U * MIGA80_GRAPHICS_REFERENCE_WIDTH + 2U] = 3U;
+    expected_visible[2U * MIGA80_GRAPHICS_REFERENCE_WIDTH + 1U] = 20U;
+    expected_visible[0U * MIGA80_GRAPHICS_REFERENCE_WIDTH + 254U] = 21U;
+    expected_visible[1U * MIGA80_GRAPHICS_REFERENCE_WIDTH + 254U] = 24U;
+    expected_visible[1U * MIGA80_GRAPHICS_REFERENCE_WIDTH + 255U] = 25U;
 
     memset(output, 0xcc, sizeof(output));
-    if (magi80_graphics_reference_compose(&scene, output, OUTPUT_STRIDE) !=
-        MAGI80_GRAPHICS_REFERENCE_OK) {
+    if (miga80_graphics_reference_compose(&scene, output, OUTPUT_STRIDE) !=
+        MIGA80_GRAPHICS_REFERENCE_OK) {
         return 0;
     }
-    for (y = 0U; y < MAGI80_GRAPHICS_REFERENCE_HEIGHT; ++y) {
-        for (x = 0U; x < MAGI80_GRAPHICS_REFERENCE_WIDTH; ++x) {
+    for (y = 0U; y < MIGA80_GRAPHICS_REFERENCE_HEIGHT; ++y) {
+        for (x = 0U; x < MIGA80_GRAPHICS_REFERENCE_WIDTH; ++x) {
             if (pixel_at(output, x, y) !=
-                expected_visible[y * MAGI80_GRAPHICS_REFERENCE_WIDTH + x]) {
+                expected_visible[y * MIGA80_GRAPHICS_REFERENCE_WIDTH + x]) {
                 return 0;
             }
         }
@@ -310,30 +310,30 @@ static int test_origins_clipping_and_camera(void)
 static int test_argument_contract(void)
 {
     uint8_t source[4] = {0U};
-    struct Magi80GraphicsReferenceScene scene;
-    struct Magi80GraphicsReferenceObject object;
+    struct Miga80GraphicsReferenceScene scene;
+    struct Miga80GraphicsReferenceObject object;
 
     memset(&scene, 0, sizeof(scene));
     memset(output, 0x5a, sizeof(output));
-    if (magi80_graphics_reference_compose(NULL, output, OUTPUT_STRIDE) !=
-            MAGI80_GRAPHICS_REFERENCE_INVALID_ARGUMENT ||
-        magi80_graphics_reference_compose(&scene, NULL, OUTPUT_STRIDE) !=
-            MAGI80_GRAPHICS_REFERENCE_INVALID_ARGUMENT ||
-        magi80_graphics_reference_compose(
-            &scene, output, MAGI80_GRAPHICS_REFERENCE_WIDTH - 1U) !=
-            MAGI80_GRAPHICS_REFERENCE_INVALID_STRIDE) {
+    if (miga80_graphics_reference_compose(NULL, output, OUTPUT_STRIDE) !=
+            MIGA80_GRAPHICS_REFERENCE_INVALID_ARGUMENT ||
+        miga80_graphics_reference_compose(&scene, NULL, OUTPUT_STRIDE) !=
+            MIGA80_GRAPHICS_REFERENCE_INVALID_ARGUMENT ||
+        miga80_graphics_reference_compose(
+            &scene, output, MIGA80_GRAPHICS_REFERENCE_WIDTH - 1U) !=
+            MIGA80_GRAPHICS_REFERENCE_INVALID_STRIDE) {
         return 0;
     }
 
     scene.object_count = 1U;
-    if (magi80_graphics_reference_compose(&scene, output, OUTPUT_STRIDE) !=
-        MAGI80_GRAPHICS_REFERENCE_INVALID_ARGUMENT) {
+    if (miga80_graphics_reference_compose(&scene, output, OUTPUT_STRIDE) !=
+        MIGA80_GRAPHICS_REFERENCE_INVALID_ARGUMENT) {
         return 0;
     }
-    scene.object_count = MAGI80_GRAPHICS_REFERENCE_MAX_OBJECTS + 1U;
+    scene.object_count = MIGA80_GRAPHICS_REFERENCE_MAX_OBJECTS + 1U;
     scene.objects = &object;
-    if (magi80_graphics_reference_compose(&scene, output, OUTPUT_STRIDE) !=
-        MAGI80_GRAPHICS_REFERENCE_TOO_MANY_OBJECTS) {
+    if (miga80_graphics_reference_compose(&scene, output, OUTPUT_STRIDE) !=
+        MIGA80_GRAPHICS_REFERENCE_TOO_MANY_OBJECTS) {
         return 0;
     }
 
@@ -341,43 +341,43 @@ static int test_argument_contract(void)
     set_view(&scene.planar, source, 2U, 2U, 2U, 0U, 0U, 2U, 2U, 0,
              0);
     scene.planar.surface.pixels = NULL;
-    if (magi80_graphics_reference_compose(&scene, output, OUTPUT_STRIDE) !=
-        MAGI80_GRAPHICS_REFERENCE_INVALID_ARGUMENT) {
+    if (miga80_graphics_reference_compose(&scene, output, OUTPUT_STRIDE) !=
+        MIGA80_GRAPHICS_REFERENCE_INVALID_ARGUMENT) {
         return 0;
     }
     scene.planar.surface.pixels = source;
     scene.planar.surface.stride = 1U;
-    if (magi80_graphics_reference_compose(&scene, output, OUTPUT_STRIDE) !=
-        MAGI80_GRAPHICS_REFERENCE_INVALID_STRIDE) {
+    if (miga80_graphics_reference_compose(&scene, output, OUTPUT_STRIDE) !=
+        MIGA80_GRAPHICS_REFERENCE_INVALID_STRIDE) {
         return 0;
     }
     scene.planar.surface.stride = 2U;
     scene.planar.width = 0U;
-    if (magi80_graphics_reference_compose(&scene, output, OUTPUT_STRIDE) !=
-        MAGI80_GRAPHICS_REFERENCE_INVALID_DIMENSIONS) {
+    if (miga80_graphics_reference_compose(&scene, output, OUTPUT_STRIDE) !=
+        MIGA80_GRAPHICS_REFERENCE_INVALID_DIMENSIONS) {
         return 0;
     }
     scene.planar.width = 2U;
     scene.planar.source_x = 1U;
-    if (magi80_graphics_reference_compose(&scene, output, OUTPUT_STRIDE) !=
-        MAGI80_GRAPHICS_REFERENCE_INVALID_REGION) {
+    if (miga80_graphics_reference_compose(&scene, output, OUTPUT_STRIDE) !=
+        MIGA80_GRAPHICS_REFERENCE_INVALID_REGION) {
         return 0;
     }
 
     memset(&scene, 0, sizeof(scene));
     set_object(&object, source, 2U, 2U, 2U, 0U, 0U, 2U, 2U, 0, 0,
-               0U, MAGI80_GRAPHICS_OBJECT_BACKEND_AUTO);
+               0U, MIGA80_GRAPHICS_OBJECT_BACKEND_AUTO);
     scene.objects = &object;
     scene.object_count = 1U;
-    object.backend_hint = (enum Magi80GraphicsObjectBackendHint)99;
-    if (magi80_graphics_reference_compose(&scene, output, OUTPUT_STRIDE) !=
-        MAGI80_GRAPHICS_REFERENCE_INVALID_BACKEND_HINT) {
+    object.backend_hint = (enum Miga80GraphicsObjectBackendHint)99;
+    if (miga80_graphics_reference_compose(&scene, output, OUTPUT_STRIDE) !=
+        MIGA80_GRAPHICS_REFERENCE_INVALID_BACKEND_HINT) {
         return 0;
     }
-    object.backend_hint = MAGI80_GRAPHICS_OBJECT_BACKEND_AUTO;
-    object.width = MAGI80_GRAPHICS_REFERENCE_WIDTH + 1U;
-    if (magi80_graphics_reference_compose(&scene, output, OUTPUT_STRIDE) !=
-        MAGI80_GRAPHICS_REFERENCE_INVALID_DIMENSIONS) {
+    object.backend_hint = MIGA80_GRAPHICS_OBJECT_BACKEND_AUTO;
+    object.width = MIGA80_GRAPHICS_REFERENCE_WIDTH + 1U;
+    if (miga80_graphics_reference_compose(&scene, output, OUTPUT_STRIDE) !=
+        MIGA80_GRAPHICS_REFERENCE_INVALID_DIMENSIONS) {
         return 0;
     }
 

@@ -38,18 +38,18 @@ if ! /usr/bin/grep -q 'TYPE_LOADSEG' "$MIGA80_TEST_ROOT/hunk-validation.txt"; th
 fi
 
 MIGA80_VAMOS_OUTPUT="$(vamos -C 20 "$MIGA80_TEST_ROOT/main")"
-if [ "$MIGA80_VAMOS_OUTPUT" != 'MAGI-80 C99/68020 smoke test passed.' ]; then
+if [ "$MIGA80_VAMOS_OUTPUT" != 'MIGA-80 C99/68020 smoke test passed.' ]; then
   printf 'Unexpected vamos output: %s\n' "$MIGA80_VAMOS_OUTPUT" >&2
   exit 1
 fi
 
 xdftool -f "$MIGA80_TEST_ROOT/miga80-ofs.adf" \
-  create + format MAGI80OFS ofs \
+  create + format MIGA80OFS ofs \
   + write "$MIGA80_PROJECT_ROOT/tests/smoke/c99-runtime/main.c" SMOKE.C \
   + list >"$MIGA80_TEST_ROOT/ofs-list.txt"
 
 xdftool -f "$MIGA80_TEST_ROOT/miga80-ffs.adf" \
-  create + format MAGI80FFS ffs \
+  create + format MIGA80FFS ffs \
   + write "$MIGA80_PROJECT_ROOT/tests/smoke/c99-runtime/main.c" SMOKE.C \
   + list >"$MIGA80_TEST_ROOT/ffs-list.txt"
 

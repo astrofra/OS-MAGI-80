@@ -1,4 +1,4 @@
-# MAGI-80 Exclusive Graphics Benchmark Plan
+# MIGA-80 Exclusive Graphics Benchmark Plan
 
 **Status:** Report format 3 adds byte/word/long reads, read-modify-write loops, 68020 misalignment cases, and an optional Fast-assisted tier to the explicit DMA matrix; the 204-case stock and 260-case 2 MiB Fast configurations pass under FS-UAE; physical-hardware authority, transition stress, and runtime-frame timing remain pending
 
@@ -8,12 +8,12 @@
 
 The hosted FS-UAE graphics benchmark proves byte-exact output, target ABI execution, Chip-RAM allocation, report generation, and clean OS-managed teardown. It deliberately does not provide fine timing. AmigaOS remains scheduled, system interrupt handlers remain active, and every sample is preceded by `WaitTOF()` outside the measured bracket.
 
-The `exclusive_kernel_batch` successor now wraps both the raw Chip-RAM kernels and the real pair-LUT/mask32 68020 C2P4 kernels. It switches an Intuition-managed eight-plane dual-playfield screen between a blanked fixture and additive display/Copper/sprite/audio/blitter DMA profiles, while retaining the dedicated stack, interrupt masking, autonomous CIA timing, exact checksums, restoration checks, and machine-readable failure output. It does not yet replace the system Copper list, install the MAGI-80 runtime interrupt path, or model a complete runtime frame.
+The `exclusive_kernel_batch` successor now wraps both the raw Chip-RAM kernels and the real pair-LUT/mask32 68020 C2P4 kernels. It switches an Intuition-managed eight-plane dual-playfield screen between a blanked fixture and additive display/Copper/sprite/audio/blitter DMA profiles, while retaining the dedicated stack, interrupt masking, autonomous CIA timing, exact checksums, restoration checks, and machine-readable failure output. It does not yet replace the system Copper list, install the MIGA-80 runtime interrupt path, or model a complete runtime frame.
 
 The exclusive harness separates two questions:
 
 1. how fast a bounded kernel moves and transforms Chip-RAM data under a precisely declared DMA state;
-2. whether the complete MAGI-80 runtime frame meets its deadline with the interrupt and DMA load it will actually own.
+2. whether the complete MIGA-80 runtime frame meets its deadline with the interrupt and DMA load it will actually own.
 
 Graphics cases reuse the same canonical source data, destination decoder, checksums, case identifiers, and graphics report schema as the hosted benchmark. The raw-memory calibration uses a smaller dedicated report because it has no logical scene, draw stage, or planar output.
 
@@ -87,7 +87,7 @@ The program first creates a closed `RESULT.TXT` containing `result=running`, bef
 
 The format-3 ADF uses the same auto-detection path: 204 cases on a stock machine, or 260 when its complete Fast bundle can be allocated. Its stock PAL FS-UAE integration run booted the exact writable image, restored the hosted display, wrote and re-extracted a 193,963-byte report, and passed the strict validator. The controller allows ten minutes and polls a copied image every five seconds, so it does not hold every successful run until the deadline. The writer restores all owned resources first, returns to the text display, and feeds `FWrite()` through a 32 KiB `SetVBuf()` buffer so OFS receives only a few large flushes. This integration result remains non-authoritative for timing. The ADF is deliberately labelled `real_hardware_candidate`; only returned reports from declared physical machines can advance the real-hardware gate.
 
-The exact handoff, safety limit, observations, result-state meanings, return form, and extraction commands are in [MAGI-80 Physical A1200 Graphics Test](./physical-a1200-graphics-test.md).
+The exact handoff, safety limit, observations, result-state meanings, return form, and extraction commands are in [MIGA-80 Physical A1200 Graphics Test](./physical-a1200-graphics-test.md).
 
 ## 2. Why `Forbid()` and `Disable()` Are Not Run Modes
 
@@ -118,7 +118,7 @@ This is the primary mode for raw Chip-RAM calibration and isolated C2P compariso
 
 This mode measures the representative runtime:
 
-- MAGI-80 owns the Copper/display state and selected DMA channels;
+- MIGA-80 owns the Copper/display state and selected DMA channels;
 - a reviewed minimal interrupt path services the required VBlank/raster and, in later cases, Paula timing sources;
 - only explicitly enabled sources may reach the CPU;
 - handlers acknowledge their hardware requests, preserve the documented registers, and update bounded preallocated state only;
@@ -203,7 +203,7 @@ The report retains `timing_authority=real_hardware` only for a validated stock-m
 
 ```text
 timing_scope=exclusive_kernel_batch|exclusive_runtime_frame
-interrupt_mode=custom_intena_masked|masked_polled|magi80_level3
+interrupt_mode=custom_intena_masked|masked_polled|miga80_level3
 display_state=blanked|active
 minimum_chip_traffic_bytes=<unsigned-decimal>
 minimum_total_memory_traffic_bytes=<positive-decimal>

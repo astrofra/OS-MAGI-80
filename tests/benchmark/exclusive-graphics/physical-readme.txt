@@ -1,4 +1,4 @@
-MAGI-80 EXCLUSIVE GRAPHICS BENCHMARK - PHYSICAL TEST CANDIDATE
+MIGA-80 EXCLUSIVE GRAPHICS BENCHMARK - PHYSICAL TEST CANDIDATE
 
 Target: PAL Amiga 1200, stock 68EC020, 2 MiB Chip RAM, no Fast RAM and
 no accelerator. Kickstart 3.0 or 3.1 is accepted.
@@ -12,7 +12,7 @@ with the full report after cleanup. When measurements finish, the text screen
 returns and announces that the buffered report is being written. A successful
 run then prints:
 
-MAGI-80 BENCHMARK RESULT: PASS
+MIGA-80 BENCHMARK RESULT: PASS
 
 The full machine-readable report is saved as RESULT.TXT on this disk.
 Wait for the floppy LED to stop before ejecting or powering off.

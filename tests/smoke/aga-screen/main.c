@@ -22,21 +22,21 @@
 
 #include "graphics/c2p_reference.h"
 
-#define MAGI80_SCREEN_WIDTH 256U
-#define MAGI80_SCREEN_HEIGHT 256U
-#define MAGI80_SCREEN_DEPTH 8U
-#define MAGI80_DISPLAY_ID (PAL_MONITOR_ID | LORESDPF_KEY)
-#define MAGI80_PALETTE_COLORS 32U
-#define MAGI80_CHUNKY_BYTES (MAGI80_SCREEN_WIDTH * MAGI80_SCREEN_HEIGHT)
-#define MAGI80_MIN_PLANE_BYTES \
-    ((MAGI80_SCREEN_WIDTH * MAGI80_SCREEN_HEIGHT * MAGI80_SCREEN_DEPTH) / 8U)
-#define MAGI80_VISIBLE_FRAMES 50U
+#define MIGA80_SCREEN_WIDTH 256U
+#define MIGA80_SCREEN_HEIGHT 256U
+#define MIGA80_SCREEN_DEPTH 8U
+#define MIGA80_DISPLAY_ID (PAL_MONITOR_ID | LORESDPF_KEY)
+#define MIGA80_PALETTE_COLORS 32U
+#define MIGA80_CHUNKY_BYTES (MIGA80_SCREEN_WIDTH * MIGA80_SCREEN_HEIGHT)
+#define MIGA80_MIN_PLANE_BYTES \
+    ((MIGA80_SCREEN_WIDTH * MIGA80_SCREEN_HEIGHT * MIGA80_SCREEN_DEPTH) / 8U)
+#define MIGA80_VISIBLE_FRAMES 50U
 
 struct GfxBase *GfxBase = NULL;
 struct IntuitionBase *IntuitionBase = NULL;
 
-static ULONG palette[1U + (MAGI80_PALETTE_COLORS * 3U) + 1U];
-static ULONG palette_readback[MAGI80_PALETTE_COLORS * 3U];
+static ULONG palette[1U + (MIGA80_PALETTE_COLORS * 3U) + 1U];
+static ULONG palette_readback[MIGA80_PALETTE_COLORS * 3U];
 
 static int write_bytes(BPTR output, const char *text, size_t length)
 {
@@ -129,14 +129,14 @@ static void prepare_palette(void)
 {
     ULONG index;
 
-    palette[0] = MAGI80_PALETTE_COLORS << 16;
-    for (index = 0U; index < MAGI80_PALETTE_COLORS; ++index) {
+    palette[0] = MIGA80_PALETTE_COLORS << 16;
+    for (index = 0U; index < MIGA80_PALETTE_COLORS; ++index) {
         palette[1U + (index * 3U)] = expand_nibble(index);
         palette[2U + (index * 3U)] = expand_nibble(index * 5U);
         palette[3U + (index * 3U)] =
             expand_nibble(15U - (index & 0x0fU));
     }
-    palette[1U + (MAGI80_PALETTE_COLORS * 3U)] = 0U;
+    palette[1U + (MIGA80_PALETTE_COLORS * 3U)] = 0U;
 }
 
 static int verify_palette(struct ViewPort *view_port)
@@ -144,10 +144,10 @@ static int verify_palette(struct ViewPort *view_port)
     ULONG index;
 
     LoadRGB32(view_port, palette);
-    GetRGB32(view_port->ColorMap, 0U, MAGI80_PALETTE_COLORS,
+    GetRGB32(view_port->ColorMap, 0U, MIGA80_PALETTE_COLORS,
              palette_readback);
 
-    for (index = 0U; index < MAGI80_PALETTE_COLORS; ++index) {
+    for (index = 0U; index < MIGA80_PALETTE_COLORS; ++index) {
         if ((palette_readback[index * 3U] >> 28) != (index & 0x0fU) ||
             (palette_readback[1U + (index * 3U)] >> 28) !=
                 ((index * 5U) & 0x0fU) ||
@@ -181,8 +181,8 @@ static void prepare_chunky_pattern(uint8_t *chunky)
     ULONG x;
     ULONG y;
 
-    for (y = 0U; y < MAGI80_SCREEN_HEIGHT; ++y) {
-        for (x = 0U; x < MAGI80_SCREEN_WIDTH; ++x) {
+    for (y = 0U; y < MIGA80_SCREEN_HEIGHT; ++y) {
+        for (x = 0U; x < MIGA80_SCREEN_WIDTH; ++x) {
             UBYTE front = 0U;
 
             if (x >= 48U && x <= 207U && y >= 48U && y <= 79U) {
@@ -191,7 +191,7 @@ static void prepare_chunky_pattern(uint8_t *chunky)
             if (x >= 96U && x <= 159U && y >= 96U && y <= 159U) {
                 front = 15U;
             }
-            chunky[(y * MAGI80_SCREEN_WIDTH) + x] =
+            chunky[(y * MIGA80_SCREEN_WIDTH) + x] =
                 (uint8_t)((front << 4) | background_at(x, y));
         }
     }
@@ -200,16 +200,16 @@ static void prepare_chunky_pattern(uint8_t *chunky)
 static int convert_pattern(struct Screen *screen, const uint8_t *chunky)
 {
     struct BitMap *bitmap = screen->RastPort.BitMap;
-    uint8_t *planes[MAGI80_C2P_PLANE_COUNT];
+    uint8_t *planes[MIGA80_C2P_PLANE_COUNT];
     size_t plane;
 
-    for (plane = 0U; plane < MAGI80_C2P_PLANE_COUNT; ++plane) {
+    for (plane = 0U; plane < MIGA80_C2P_PLANE_COUNT; ++plane) {
         planes[plane] = (uint8_t *)bitmap->Planes[plane];
     }
-    return magi80_c2p_reference(chunky, MAGI80_SCREEN_WIDTH,
-                                MAGI80_SCREEN_HEIGHT, MAGI80_SCREEN_WIDTH,
+    return miga80_c2p_reference(chunky, MIGA80_SCREEN_WIDTH,
+                                MIGA80_SCREEN_HEIGHT, MIGA80_SCREEN_WIDTH,
                                 planes, (size_t)bitmap->BytesPerRow) ==
-           MAGI80_C2P_OK;
+           MIGA80_C2P_OK;
 }
 
 static int verify_pixel(struct RastPort *rast_port, ULONG x, ULONG y,
@@ -236,15 +236,15 @@ static int verify_bitmap(const struct Screen *screen)
     ULONG plane;
 
     if (bitmap == NULL ||
-        GetBitMapAttr(bitmap, BMA_WIDTH) < MAGI80_SCREEN_WIDTH ||
-        GetBitMapAttr(bitmap, BMA_HEIGHT) < MAGI80_SCREEN_HEIGHT ||
-        GetBitMapAttr(bitmap, BMA_DEPTH) != MAGI80_SCREEN_DEPTH ||
+        GetBitMapAttr(bitmap, BMA_WIDTH) < MIGA80_SCREEN_WIDTH ||
+        GetBitMapAttr(bitmap, BMA_HEIGHT) < MIGA80_SCREEN_HEIGHT ||
+        GetBitMapAttr(bitmap, BMA_DEPTH) != MIGA80_SCREEN_DEPTH ||
         (GetBitMapAttr(bitmap, BMA_FLAGS) &
          (BMF_DISPLAYABLE | BMF_STANDARD)) !=
             (BMF_DISPLAYABLE | BMF_STANDARD)) {
         return 0;
     }
-    for (plane = 0U; plane < MAGI80_SCREEN_DEPTH; ++plane) {
+    for (plane = 0U; plane < MIGA80_SCREEN_DEPTH; ++plane) {
         if (bitmap->Planes[plane] == NULL ||
             (TypeOfMem(bitmap->Planes[plane]) & MEMF_CHIP) == 0U) {
             return 0;
@@ -279,10 +279,10 @@ int main(void)
         {TAG_DONE, 0U}
     };
     struct TagItem screen_tags[] = {
-        {SA_DisplayID, MAGI80_DISPLAY_ID},
-        {SA_Width, MAGI80_SCREEN_WIDTH},
-        {SA_Height, MAGI80_SCREEN_HEIGHT},
-        {SA_Depth, MAGI80_SCREEN_DEPTH},
+        {SA_DisplayID, MIGA80_DISPLAY_ID},
+        {SA_Width, MIGA80_SCREEN_WIDTH},
+        {SA_Height, MIGA80_SCREEN_HEIGHT},
+        {SA_Depth, MIGA80_SCREEN_DEPTH},
         {SA_Type, CUSTOMSCREEN},
         {SA_Quiet, TRUE},
         {SA_ShowTitle, FALSE},
@@ -290,7 +290,7 @@ int main(void)
         {SA_Exclusive, TRUE},
         {SA_AutoScroll, FALSE},
         {SA_Interleaved, FALSE},
-        {SA_ColorMapEntries, MAGI80_PALETTE_COLORS},
+        {SA_ColorMapEntries, MIGA80_PALETTE_COLORS},
         {SA_FullPalette, TRUE},
         {SA_VideoControl, (ULONG)(APTR)video_control},
         {TAG_DONE, 0U}
@@ -333,17 +333,17 @@ int main(void)
         goto cleanup;
     }
 
-    display_handle = FindDisplayInfo(MAGI80_DISPLAY_ID);
+    display_handle = FindDisplayInfo(MIGA80_DISPLAY_ID);
     if (display_handle == NULL ||
         GetDisplayInfoData(display_handle, &display_info,
                            (ULONG)sizeof(display_info), DTAG_DISP,
-                           MAGI80_DISPLAY_ID) == 0U ||
+                           MIGA80_DISPLAY_ID) == 0U ||
         display_info.NotAvailable != 0U ||
         (display_info.PropertyFlags &
          (DIPF_IS_PAL | DIPF_IS_DUALPF)) !=
             (DIPF_IS_PAL | DIPF_IS_DUALPF) ||
         (display_info.PropertyFlags & DIPF_IS_PF2PRI) != 0U ||
-        ModeNotAvailable(MAGI80_DISPLAY_ID) != 0L) {
+        ModeNotAvailable(MIGA80_DISPLAY_ID) != 0L) {
         failure = "pal_aga_dualpf_mode";
         goto cleanup;
     }
@@ -356,12 +356,12 @@ int main(void)
     }
     chip_during = AvailMem(MEMF_CHIP);
 
-    if (screen->Width != (WORD)MAGI80_SCREEN_WIDTH ||
-        screen->Height != (WORD)MAGI80_SCREEN_HEIGHT) {
+    if (screen->Width != (WORD)MIGA80_SCREEN_WIDTH ||
+        screen->Height != (WORD)MIGA80_SCREEN_HEIGHT) {
         failure = "logical_screen_size";
         goto cleanup;
     }
-    if ((ULONG)GetVPModeID(&screen->ViewPort) != MAGI80_DISPLAY_ID ||
+    if ((ULONG)GetVPModeID(&screen->ViewPort) != MIGA80_DISPLAY_ID ||
         (screen->ViewPort.Modes & DUALPF) == 0U ||
         (screen->ViewPort.Modes & PFBA) != 0U ||
         screen->ViewPort.RasInfo == NULL ||
@@ -374,12 +374,12 @@ int main(void)
         goto cleanup;
     }
     if (chip_before <= chip_during ||
-        chip_before - chip_during < MAGI80_MIN_PLANE_BYTES) {
+        chip_before - chip_during < MIGA80_MIN_PLANE_BYTES) {
         failure = "chip_allocation_delta";
         goto cleanup;
     }
     if (screen->ViewPort.ColorMap == NULL ||
-        screen->ViewPort.ColorMap->Count < MAGI80_PALETTE_COLORS ||
+        screen->ViewPort.ColorMap->Count < MIGA80_PALETTE_COLORS ||
         !verify_palette_bases(screen->ViewPort.ColorMap)) {
         failure = "palette_banks";
         goto cleanup;
@@ -390,7 +390,7 @@ int main(void)
         failure = "palette_roundtrip";
         goto cleanup;
     }
-    chunky = (uint8_t *)AllocMem((ULONG)MAGI80_CHUNKY_BYTES, MEMF_PUBLIC);
+    chunky = (uint8_t *)AllocMem((ULONG)MIGA80_CHUNKY_BYTES, MEMF_PUBLIC);
     if (chunky == NULL) {
         failure = "alloc_chunky_buffer";
         goto cleanup;
@@ -404,14 +404,14 @@ int main(void)
         failure = "raster_pattern";
         goto cleanup;
     }
-    for (frame = 0U; frame < MAGI80_VISIBLE_FRAMES; ++frame) {
+    for (frame = 0U; frame < MIGA80_VISIBLE_FRAMES; ++frame) {
         WaitTOF();
     }
     completed = TRUE;
 
 cleanup:
     if (chunky != NULL) {
-        FreeMem(chunky, (ULONG)MAGI80_CHUNKY_BYTES);
+        FreeMem(chunky, (ULONG)MIGA80_CHUNKY_BYTES);
         chunky = NULL;
     }
     if (screen != NULL) {
@@ -429,7 +429,7 @@ cleanup:
 
     /* The first Intuition screen may populate persistent system caches.  A
        second identical cycle detects per-screen leakage without treating
-       those one-time allocations as a MAGI-80 leak. */
+       those one-time allocations as a MIGA-80 leak. */
     if (completed && failure == NULL) {
         screen = OpenScreenTagList(NULL, screen_tags);
         if (screen == NULL) {
@@ -437,7 +437,7 @@ cleanup:
         } else {
             chip_second_during = AvailMem(MEMF_CHIP);
             if (chip_after <= chip_second_during ||
-                chip_after - chip_second_during < MAGI80_MIN_PLANE_BYTES) {
+                chip_after - chip_second_during < MIGA80_MIN_PLANE_BYTES) {
                 failure = "repeat_chip_allocation_delta";
             }
             WaitTOF();

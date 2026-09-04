@@ -2,30 +2,30 @@
 
 set -euo pipefail
 
-MAGI80_PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MAGI80_LOCAL_CONFIG="${MAGI80_LOCAL_CONFIG:-$MAGI80_PROJECT_ROOT/config/fs-uae/local.env}"
-MAGI80_TEMPLATE_DIR="$MAGI80_PROJECT_ROOT/config/fs-uae"
-MAGI80_OUTPUT_DIR="${MAGI80_FS_UAE_OUTPUT_DIR:-$MAGI80_PROJECT_ROOT/build/fs-uae}"
+MIGA80_PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MIGA80_LOCAL_CONFIG="${MIGA80_LOCAL_CONFIG:-$MIGA80_PROJECT_ROOT/config/fs-uae/local.env}"
+MIGA80_TEMPLATE_DIR="$MIGA80_PROJECT_ROOT/config/fs-uae"
+MIGA80_OUTPUT_DIR="${MIGA80_FS_UAE_OUTPUT_DIR:-$MIGA80_PROJECT_ROOT/build/fs-uae}"
 
-if [ ! -f "$MAGI80_LOCAL_CONFIG" ]; then
-  printf 'Local FS-UAE configuration not found: %s\n' "$MAGI80_LOCAL_CONFIG" >&2
+if [ ! -f "$MIGA80_LOCAL_CONFIG" ]; then
+  printf 'Local FS-UAE configuration not found: %s\n' "$MIGA80_LOCAL_CONFIG" >&2
   printf 'Copy config/fs-uae/local.env.example to local.env and fill in local paths.\n' >&2
   exit 1
 fi
 
 # shellcheck disable=SC1090
-source "$MAGI80_LOCAL_CONFIG"
+source "$MIGA80_LOCAL_CONFIG"
 
-MAGI80_KICKSTART_30="${MAGI80_KICKSTART_30:-}"
-MAGI80_KICKSTART_31="${MAGI80_KICKSTART_31:-}"
-MAGI80_KICKSTART_30_SHA256="${MAGI80_KICKSTART_30_SHA256:-}"
-MAGI80_KICKSTART_31_SHA256="${MAGI80_KICKSTART_31_SHA256:-}"
-MAGI80_WORKBENCH_30="${MAGI80_WORKBENCH_30:-}"
-MAGI80_WORKBENCH_31="${MAGI80_WORKBENCH_31:-}"
-MAGI80_ADF="${MAGI80_ADF:-}"
-MAGI80_STAGING_DIR="${MAGI80_STAGING_DIR:-$MAGI80_PROJECT_ROOT/build/staging}"
+MIGA80_KICKSTART_30="${MIGA80_KICKSTART_30:-}"
+MIGA80_KICKSTART_31="${MIGA80_KICKSTART_31:-}"
+MIGA80_KICKSTART_30_SHA256="${MIGA80_KICKSTART_30_SHA256:-}"
+MIGA80_KICKSTART_31_SHA256="${MIGA80_KICKSTART_31_SHA256:-}"
+MIGA80_WORKBENCH_30="${MIGA80_WORKBENCH_30:-}"
+MIGA80_WORKBENCH_31="${MIGA80_WORKBENCH_31:-}"
+MIGA80_ADF="${MIGA80_ADF:-}"
+MIGA80_STAGING_DIR="${MIGA80_STAGING_DIR:-$MIGA80_PROJECT_ROOT/build/staging}"
 
-if [ -z "$MAGI80_KICKSTART_30" ] && [ -z "$MAGI80_KICKSTART_31" ]; then
+if [ -z "$MIGA80_KICKSTART_30" ] && [ -z "$MIGA80_KICKSTART_31" ]; then
   printf 'Configure at least one licensed stock A1200 Kickstart ROM.\n' >&2
   exit 1
 fi
@@ -112,23 +112,23 @@ render_media_profile() {
   fi
 
   if [ "$media_placeholder" = '@AMIGAOS_SYSTEM@' ]; then
-    /bin/mkdir -p "$MAGI80_STAGING_DIR"
+    /bin/mkdir -p "$MIGA80_STAGING_DIR"
     render_template \
-      "$MAGI80_TEMPLATE_DIR/$profile.fs-uae.in" \
-      "$MAGI80_OUTPUT_DIR/$profile.fs-uae" \
+      "$MIGA80_TEMPLATE_DIR/$profile.fs-uae.in" \
+      "$MIGA80_OUTPUT_DIR/$profile.fs-uae" \
       '@KICKSTART_ROM@' "$kickstart_file" \
       "$media_placeholder" "$media_path" \
-      '@PROJECT_STAGING@' "$MAGI80_STAGING_DIR"
+      '@PROJECT_STAGING@' "$MIGA80_STAGING_DIR"
   else
     render_template \
-      "$MAGI80_TEMPLATE_DIR/$profile.fs-uae.in" \
-      "$MAGI80_OUTPUT_DIR/$profile.fs-uae" \
+      "$MIGA80_TEMPLATE_DIR/$profile.fs-uae.in" \
+      "$MIGA80_OUTPUT_DIR/$profile.fs-uae" \
       '@KICKSTART_ROM@' "$kickstart_file" \
       "$media_placeholder" "$media_path"
   fi
 }
 
-/bin/mkdir -p "$MAGI80_OUTPUT_DIR"
+/bin/mkdir -p "$MIGA80_OUTPUT_DIR"
 
 # These files are generated and ignored. Clear this exact set first so that a
 # removed local ROM or media path cannot leave behind a misleading profile.
@@ -136,29 +136,29 @@ for profile in \
   a1200-pal-ks30-rom a1200-pal-ks31-rom \
   a1200-pal-ks30-hd a1200-pal-ks31-hd \
   a1200-pal-ks30-adf a1200-pal-ks31-adf; do
-  /bin/rm -f "$MAGI80_OUTPUT_DIR/$profile.fs-uae"
+  /bin/rm -f "$MIGA80_OUTPUT_DIR/$profile.fs-uae"
 done
 
-if [ -n "$MAGI80_KICKSTART_30" ]; then
-  validate_rom "$MAGI80_KICKSTART_30" "$MAGI80_KICKSTART_30_SHA256" '39.106'
+if [ -n "$MIGA80_KICKSTART_30" ]; then
+  validate_rom "$MIGA80_KICKSTART_30" "$MIGA80_KICKSTART_30_SHA256" '39.106'
   render_template \
-    "$MAGI80_TEMPLATE_DIR/a1200-pal-ks30-rom.fs-uae.in" \
-    "$MAGI80_OUTPUT_DIR/a1200-pal-ks30-rom.fs-uae" \
-    '@KICKSTART_ROM@' "$MAGI80_KICKSTART_30"
-  render_media_profile a1200-pal-ks30-hd "$MAGI80_KICKSTART_30" '@AMIGAOS_SYSTEM@' "$MAGI80_WORKBENCH_30"
-  render_media_profile a1200-pal-ks30-adf "$MAGI80_KICKSTART_30" '@MAGI80_ADF@' "$MAGI80_ADF"
+    "$MIGA80_TEMPLATE_DIR/a1200-pal-ks30-rom.fs-uae.in" \
+    "$MIGA80_OUTPUT_DIR/a1200-pal-ks30-rom.fs-uae" \
+    '@KICKSTART_ROM@' "$MIGA80_KICKSTART_30"
+  render_media_profile a1200-pal-ks30-hd "$MIGA80_KICKSTART_30" '@AMIGAOS_SYSTEM@' "$MIGA80_WORKBENCH_30"
+  render_media_profile a1200-pal-ks30-adf "$MIGA80_KICKSTART_30" '@MIGA80_ADF@' "$MIGA80_ADF"
 else
   printf 'SKIPPED   Kickstart 3.0 profiles (stock 39.106 ROM is not configured)\n'
 fi
 
-if [ -n "$MAGI80_KICKSTART_31" ]; then
-  validate_rom "$MAGI80_KICKSTART_31" "$MAGI80_KICKSTART_31_SHA256" '40.68'
+if [ -n "$MIGA80_KICKSTART_31" ]; then
+  validate_rom "$MIGA80_KICKSTART_31" "$MIGA80_KICKSTART_31_SHA256" '40.68'
   render_template \
-    "$MAGI80_TEMPLATE_DIR/a1200-pal-ks31-rom.fs-uae.in" \
-    "$MAGI80_OUTPUT_DIR/a1200-pal-ks31-rom.fs-uae" \
-    '@KICKSTART_ROM@' "$MAGI80_KICKSTART_31"
-  render_media_profile a1200-pal-ks31-hd "$MAGI80_KICKSTART_31" '@AMIGAOS_SYSTEM@' "$MAGI80_WORKBENCH_31"
-  render_media_profile a1200-pal-ks31-adf "$MAGI80_KICKSTART_31" '@MAGI80_ADF@' "$MAGI80_ADF"
+    "$MIGA80_TEMPLATE_DIR/a1200-pal-ks31-rom.fs-uae.in" \
+    "$MIGA80_OUTPUT_DIR/a1200-pal-ks31-rom.fs-uae" \
+    '@KICKSTART_ROM@' "$MIGA80_KICKSTART_31"
+  render_media_profile a1200-pal-ks31-hd "$MIGA80_KICKSTART_31" '@AMIGAOS_SYSTEM@' "$MIGA80_WORKBENCH_31"
+  render_media_profile a1200-pal-ks31-adf "$MIGA80_KICKSTART_31" '@MIGA80_ADF@' "$MIGA80_ADF"
 else
   printf 'SKIPPED   Kickstart 3.1 profiles (stock 40.068 ROM is not configured)\n'
 fi

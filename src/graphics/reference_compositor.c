@@ -2,57 +2,57 @@
 
 #include <string.h>
 
-static enum Magi80GraphicsReferenceStatus validate_surface_region(
-    const struct Magi80GraphicsReferenceSurface4 *surface,
+static enum Miga80GraphicsReferenceStatus validate_surface_region(
+    const struct Miga80GraphicsReferenceSurface4 *surface,
     size_t source_x,
     size_t source_y,
     size_t width,
     size_t height)
 {
     if (surface->pixels == NULL) {
-        return MAGI80_GRAPHICS_REFERENCE_INVALID_ARGUMENT;
+        return MIGA80_GRAPHICS_REFERENCE_INVALID_ARGUMENT;
     }
     if (surface->width == 0U || surface->height == 0U || width == 0U ||
-        height == 0U || width > MAGI80_GRAPHICS_REFERENCE_WIDTH ||
-        height > MAGI80_GRAPHICS_REFERENCE_HEIGHT) {
-        return MAGI80_GRAPHICS_REFERENCE_INVALID_DIMENSIONS;
+        height == 0U || width > MIGA80_GRAPHICS_REFERENCE_WIDTH ||
+        height > MIGA80_GRAPHICS_REFERENCE_HEIGHT) {
+        return MIGA80_GRAPHICS_REFERENCE_INVALID_DIMENSIONS;
     }
     if (surface->stride < surface->width ||
         surface->height > SIZE_MAX / surface->stride) {
-        return MAGI80_GRAPHICS_REFERENCE_INVALID_STRIDE;
+        return MIGA80_GRAPHICS_REFERENCE_INVALID_STRIDE;
     }
     if (source_x > surface->width || source_y > surface->height ||
         width > surface->width - source_x ||
         height > surface->height - source_y) {
-        return MAGI80_GRAPHICS_REFERENCE_INVALID_REGION;
+        return MIGA80_GRAPHICS_REFERENCE_INVALID_REGION;
     }
-    return MAGI80_GRAPHICS_REFERENCE_OK;
+    return MIGA80_GRAPHICS_REFERENCE_OK;
 }
 
-static enum Magi80GraphicsReferenceStatus validate_view(
-    const struct Magi80GraphicsReferenceView4 *view)
+static enum Miga80GraphicsReferenceStatus validate_view(
+    const struct Miga80GraphicsReferenceView4 *view)
 {
     if (view->enabled == 0U) {
-        return MAGI80_GRAPHICS_REFERENCE_OK;
+        return MIGA80_GRAPHICS_REFERENCE_OK;
     }
     return validate_surface_region(&view->surface, view->source_x,
                                    view->source_y, view->width, view->height);
 }
 
-static enum Magi80GraphicsReferenceStatus validate_object(
-    const struct Magi80GraphicsReferenceObject *object)
+static enum Miga80GraphicsReferenceStatus validate_object(
+    const struct Miga80GraphicsReferenceObject *object)
 {
-    enum Magi80GraphicsReferenceStatus status;
+    enum Miga80GraphicsReferenceStatus status;
 
     if (object->visible == 0U) {
-        return MAGI80_GRAPHICS_REFERENCE_OK;
+        return MIGA80_GRAPHICS_REFERENCE_OK;
     }
-    if (object->backend_hint != MAGI80_GRAPHICS_OBJECT_BACKEND_AUTO &&
+    if (object->backend_hint != MIGA80_GRAPHICS_OBJECT_BACKEND_AUTO &&
         object->backend_hint !=
-            MAGI80_GRAPHICS_OBJECT_BACKEND_HARDWARE_SPRITE &&
+            MIGA80_GRAPHICS_OBJECT_BACKEND_HARDWARE_SPRITE &&
         object->backend_hint !=
-            MAGI80_GRAPHICS_OBJECT_BACKEND_PLANAR_FALLBACK) {
-        return MAGI80_GRAPHICS_REFERENCE_INVALID_BACKEND_HINT;
+            MIGA80_GRAPHICS_OBJECT_BACKEND_PLANAR_FALLBACK) {
+        return MIGA80_GRAPHICS_REFERENCE_INVALID_BACKEND_HINT;
     }
     status = validate_surface_region(&object->surface, object->source_x,
                                      object->source_y, object->width,
@@ -60,51 +60,51 @@ static enum Magi80GraphicsReferenceStatus validate_object(
     return status;
 }
 
-static enum Magi80GraphicsReferenceStatus validate_scene(
-    const struct Magi80GraphicsReferenceScene *scene,
+static enum Miga80GraphicsReferenceStatus validate_scene(
+    const struct Miga80GraphicsReferenceScene *scene,
     const uint8_t *output,
     size_t output_stride)
 {
-    enum Magi80GraphicsReferenceStatus status;
+    enum Miga80GraphicsReferenceStatus status;
     size_t object_index;
 
     if (scene == NULL || output == NULL) {
-        return MAGI80_GRAPHICS_REFERENCE_INVALID_ARGUMENT;
+        return MIGA80_GRAPHICS_REFERENCE_INVALID_ARGUMENT;
     }
-    if (output_stride < MAGI80_GRAPHICS_REFERENCE_WIDTH ||
-        output_stride > SIZE_MAX / MAGI80_GRAPHICS_REFERENCE_HEIGHT) {
-        return MAGI80_GRAPHICS_REFERENCE_INVALID_STRIDE;
+    if (output_stride < MIGA80_GRAPHICS_REFERENCE_WIDTH ||
+        output_stride > SIZE_MAX / MIGA80_GRAPHICS_REFERENCE_HEIGHT) {
+        return MIGA80_GRAPHICS_REFERENCE_INVALID_STRIDE;
     }
-    if (scene->object_count > MAGI80_GRAPHICS_REFERENCE_MAX_OBJECTS) {
-        return MAGI80_GRAPHICS_REFERENCE_TOO_MANY_OBJECTS;
+    if (scene->object_count > MIGA80_GRAPHICS_REFERENCE_MAX_OBJECTS) {
+        return MIGA80_GRAPHICS_REFERENCE_TOO_MANY_OBJECTS;
     }
     if (scene->object_count != 0U && scene->objects == NULL) {
-        return MAGI80_GRAPHICS_REFERENCE_INVALID_ARGUMENT;
+        return MIGA80_GRAPHICS_REFERENCE_INVALID_ARGUMENT;
     }
     status = validate_view(&scene->planar);
-    if (status != MAGI80_GRAPHICS_REFERENCE_OK) {
+    if (status != MIGA80_GRAPHICS_REFERENCE_OK) {
         return status;
     }
     status = validate_view(&scene->pixel);
-    if (status != MAGI80_GRAPHICS_REFERENCE_OK) {
+    if (status != MIGA80_GRAPHICS_REFERENCE_OK) {
         return status;
     }
     for (object_index = 0U; object_index < scene->object_count;
          ++object_index) {
         status = validate_object(&scene->objects[object_index]);
-        if (status != MAGI80_GRAPHICS_REFERENCE_OK) {
+        if (status != MIGA80_GRAPHICS_REFERENCE_OK) {
             return status;
         }
     }
-    return MAGI80_GRAPHICS_REFERENCE_OK;
+    return MIGA80_GRAPHICS_REFERENCE_OK;
 }
 
 static uint8_t canonical_overlay_color(uint8_t source)
 {
-    return (uint8_t)(MAGI80_GRAPHICS_OVERLAY_COLOR_BASE + source);
+    return (uint8_t)(MIGA80_GRAPHICS_OVERLAY_COLOR_BASE + source);
 }
 
-static void draw_view(const struct Magi80GraphicsReferenceView4 *view,
+static void draw_view(const struct Miga80GraphicsReferenceView4 *view,
                       uint8_t *output, size_t output_stride, int overlay)
 {
     size_t local_y;
@@ -119,7 +119,7 @@ static void draw_view(const struct Magi80GraphicsReferenceView4 *view,
         size_t local_x;
 
         if (display_y < 0 ||
-            display_y >= MAGI80_GRAPHICS_REFERENCE_HEIGHT) {
+            display_y >= MIGA80_GRAPHICS_REFERENCE_HEIGHT) {
             continue;
         }
         source_row = view->surface.pixels +
@@ -132,7 +132,7 @@ static void draw_view(const struct Magi80GraphicsReferenceView4 *view,
             uint8_t source;
 
             if (display_x < 0 ||
-                display_x >= MAGI80_GRAPHICS_REFERENCE_WIDTH) {
+                display_x >= MIGA80_GRAPHICS_REFERENCE_WIDTH) {
                 continue;
             }
             source = (uint8_t)(source_row[local_x] & 0x0fU);
@@ -149,7 +149,7 @@ static void draw_view(const struct Magi80GraphicsReferenceView4 *view,
 }
 
 static void draw_object(
-    const struct Magi80GraphicsReferenceObject *object,
+    const struct Miga80GraphicsReferenceObject *object,
     int32_t camera_x,
     int32_t camera_y,
     uint8_t *output,
@@ -166,7 +166,7 @@ static void draw_object(
         size_t local_x;
 
         if (display_y < 0 ||
-            display_y >= MAGI80_GRAPHICS_REFERENCE_HEIGHT) {
+            display_y >= MIGA80_GRAPHICS_REFERENCE_HEIGHT) {
             continue;
         }
         source_row = object->surface.pixels +
@@ -180,7 +180,7 @@ static void draw_object(
             uint8_t source;
 
             if (display_x < 0 ||
-                display_x >= MAGI80_GRAPHICS_REFERENCE_WIDTH) {
+                display_x >= MIGA80_GRAPHICS_REFERENCE_WIDTH) {
                 continue;
             }
             source = (uint8_t)(source_row[local_x] & 0x0fU);
@@ -192,23 +192,23 @@ static void draw_object(
     }
 }
 
-enum Magi80GraphicsReferenceStatus magi80_graphics_reference_compose(
-    const struct Magi80GraphicsReferenceScene *scene,
+enum Miga80GraphicsReferenceStatus miga80_graphics_reference_compose(
+    const struct Miga80GraphicsReferenceScene *scene,
     uint8_t *output,
     size_t output_stride)
 {
-    enum Magi80GraphicsReferenceStatus status;
+    enum Miga80GraphicsReferenceStatus status;
     size_t y;
     unsigned int priority;
 
     status = validate_scene(scene, output, output_stride);
-    if (status != MAGI80_GRAPHICS_REFERENCE_OK) {
+    if (status != MIGA80_GRAPHICS_REFERENCE_OK) {
         return status;
     }
 
-    for (y = 0U; y < MAGI80_GRAPHICS_REFERENCE_HEIGHT; ++y) {
+    for (y = 0U; y < MIGA80_GRAPHICS_REFERENCE_HEIGHT; ++y) {
         memset(output + (y * output_stride), 0,
-               MAGI80_GRAPHICS_REFERENCE_WIDTH);
+               MIGA80_GRAPHICS_REFERENCE_WIDTH);
     }
     draw_view(&scene->planar, output, output_stride, 0);
     draw_view(&scene->pixel, output, output_stride, 1);
@@ -218,7 +218,7 @@ enum Magi80GraphicsReferenceStatus magi80_graphics_reference_compose(
 
         for (object_index = 0U; object_index < scene->object_count;
              ++object_index) {
-            const struct Magi80GraphicsReferenceObject *object =
+            const struct Miga80GraphicsReferenceObject *object =
                 &scene->objects[object_index];
 
             if (object->visible != 0U &&
@@ -228,5 +228,5 @@ enum Magi80GraphicsReferenceStatus magi80_graphics_reference_compose(
             }
         }
     }
-    return MAGI80_GRAPHICS_REFERENCE_OK;
+    return MIGA80_GRAPHICS_REFERENCE_OK;
 }

@@ -31,8 +31,8 @@
 #define BENCH_STACK_UPPER_GUARD 0xa5U
 #define BENCH_ALL_CUSTOM_INTERRUPTS 0x7fffU
 
-#ifndef MAGI80_BENCHMARK_ENVIRONMENT
-#define MAGI80_BENCHMARK_ENVIRONMENT "fs_uae_a1200_pal"
+#ifndef MIGA80_BENCHMARK_ENVIRONMENT
+#define MIGA80_BENCHMARK_ENVIRONMENT "fs_uae_a1200_pal"
 #endif
 
 struct Device *TimerBase = NULL;
@@ -63,7 +63,7 @@ struct BenchmarkCase {
     const char *operation_name;
     const char *access_width;
     enum BenchmarkOperation operation;
-    Magi80ChipRamKernel kernel;
+    Miga80ChipRamKernel kernel;
     ULONG seed;
     ULONG traffic_multiplier;
 };
@@ -82,17 +82,17 @@ struct BenchmarkResult {
 
 static const struct BenchmarkCase benchmark_cases[BENCH_CASE_COUNT] = {
     {"write_byte", "write", "byte", OP_WRITE_BYTE,
-     magi80_chipram_write_byte, 0x00000012U, 1U},
+     miga80_chipram_write_byte, 0x00000012U, 1U},
     {"write_word", "write", "word", OP_WRITE_WORD,
-     magi80_chipram_write_word, 0x00003456U, 1U},
+     miga80_chipram_write_word, 0x00003456U, 1U},
     {"write_long", "write", "long", OP_WRITE_LONG,
-     magi80_chipram_write_long, 0x89abcdefU, 1U},
+     miga80_chipram_write_long, 0x89abcdefU, 1U},
     {"write_long4", "write", "long_unrolled4", OP_WRITE_LONG4,
-     magi80_chipram_write_long4, 0x13579bdfU, 1U},
+     miga80_chipram_write_long4, 0x13579bdfU, 1U},
     {"copy_long4", "copy", "long_unrolled4", OP_COPY_LONG4,
-     magi80_chipram_copy_long4, 0U, 2U},
+     miga80_chipram_copy_long4, 0U, 2U},
     {"read_long4", "read", "long_unrolled4", OP_READ_LONG4,
-     magi80_chipram_read_long4, 0U, 1U}
+     miga80_chipram_read_long4, 0U, 1U}
 };
 
 static struct timerequest timer_request;
@@ -361,7 +361,7 @@ static int run_exclusive_suite(void)
     int success = 1;
 
     dedicated_stack_pointer_offset =
-        magi80_current_stack_pointer() -
+        miga80_current_stack_pointer() -
         (ULONG)(uintptr_t)(stack_allocation + BENCH_STACK_GUARD_BYTES +
                            BENCH_STACK_BOUNDARY_RESERVE_BYTES);
     progress_phase = PHASE_EXCLUSIVE_ENTER;
@@ -468,7 +468,7 @@ static int write_header(BPTR output)
 
     return write_text(output, "chipram_benchmark_format=1\n") &&
            write_text(output, "environment=") &&
-           write_text(output, MAGI80_BENCHMARK_ENVIRONMENT) &&
+           write_text(output, MIGA80_BENCHMARK_ENVIRONMENT) &&
            write_text(output, "\n") &&
            write_text(output, "timing_authority=protocol_only\n") &&
            write_text(output,

@@ -1,4 +1,4 @@
-# MAGI-80 Reference Chunky-to-Planar Converter
+# MIGA-80 Reference Chunky-to-Planar Converter
 
 **Status:** Portable C99 implementation and native golden-vector suite passing on macOS; the same source is validated against an Intuition-managed AGA screen under FS-UAE 3.2.35 and Kickstart 3.0/39.106
 

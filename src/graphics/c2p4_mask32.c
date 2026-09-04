@@ -1,34 +1,34 @@
 #include "graphics/c2p4_reference.h"
 
-static enum Magi80C2P4Status validate_mask32_conversion(
+static enum Miga80C2P4Status validate_mask32_conversion(
     const uint8_t *chunky,
     size_t width,
     size_t height,
     size_t chunky_stride,
     size_t required_chunky_bytes,
-    uint8_t *planes[MAGI80_C2P4_PLANE_COUNT],
+    uint8_t *planes[MIGA80_C2P4_PLANE_COUNT],
     size_t plane_stride)
 {
     size_t plane;
 
     if (chunky == NULL || planes == NULL) {
-        return MAGI80_C2P4_INVALID_ARGUMENT;
+        return MIGA80_C2P4_INVALID_ARGUMENT;
     }
-    for (plane = 0U; plane < MAGI80_C2P4_PLANE_COUNT; ++plane) {
+    for (plane = 0U; plane < MIGA80_C2P4_PLANE_COUNT; ++plane) {
         if (planes[plane] == NULL) {
-            return MAGI80_C2P4_INVALID_ARGUMENT;
+            return MIGA80_C2P4_INVALID_ARGUMENT;
         }
     }
     if (width == 0U || height == 0U || (width & 31U) != 0U) {
-        return MAGI80_C2P4_INVALID_DIMENSIONS;
+        return MIGA80_C2P4_INVALID_DIMENSIONS;
     }
     if (chunky_stride < required_chunky_bytes ||
         plane_stride < (width >> 3) ||
         height > SIZE_MAX / chunky_stride ||
         height > SIZE_MAX / plane_stride) {
-        return MAGI80_C2P4_INVALID_STRIDE;
+        return MIGA80_C2P4_INVALID_STRIDE;
     }
-    return MAGI80_C2P4_OK;
+    return MIGA80_C2P4_OK;
 }
 
 static uint32_t load_be32(const uint8_t *source)
@@ -67,7 +67,7 @@ static void merge_bits(uint32_t *left, uint32_t *right,
     *right ^= exchanged << shift;
 }
 
-static void transpose32x4(uint32_t words[MAGI80_C2P4_PLANE_COUNT])
+static void transpose32x4(uint32_t words[MIGA80_C2P4_PLANE_COUNT])
 {
     /* Packed-nibble-specific five-pass transpose. */
     merge_bits(&words[0], &words[1], 8U, UINT32_C(0x00ff00ff));
@@ -83,9 +83,9 @@ static void transpose32x4(uint32_t words[MAGI80_C2P4_PLANE_COUNT])
 }
 
 static void store_transposed_block(
-    uint8_t *planes[MAGI80_C2P4_PLANE_COUNT],
+    uint8_t *planes[MIGA80_C2P4_PLANE_COUNT],
     size_t destination_offset,
-    const uint32_t words[MAGI80_C2P4_PLANE_COUNT])
+    const uint32_t words[MIGA80_C2P4_PLANE_COUNT])
 {
     /* The merge network ends in register order 3, 1, 2, 0. */
     store_be32(planes[0] + destination_offset, words[3]);
@@ -94,20 +94,20 @@ static void store_transposed_block(
     store_be32(planes[3] + destination_offset, words[0]);
 }
 
-enum Magi80C2P4Status magi80_c2p4_mask32_packed4(
+enum Miga80C2P4Status miga80_c2p4_mask32_packed4(
     const uint8_t *chunky,
     size_t width,
     size_t height,
     size_t chunky_stride,
-    uint8_t *planes[MAGI80_C2P4_PLANE_COUNT],
+    uint8_t *planes[MIGA80_C2P4_PLANE_COUNT],
     size_t plane_stride)
 {
-    enum Magi80C2P4Status status = validate_mask32_conversion(
+    enum Miga80C2P4Status status = validate_mask32_conversion(
         chunky, width, height, chunky_stride, width >> 1, planes,
         plane_stride);
     size_t y;
 
-    if (status != MAGI80_C2P4_OK) {
+    if (status != MIGA80_C2P4_OK) {
         return status;
     }
     for (y = 0U; y < height; ++y) {
@@ -116,7 +116,7 @@ enum Magi80C2P4Status magi80_c2p4_mask32_packed4(
 
         for (block = 0U; block < (width >> 5); ++block) {
             const uint8_t *source = source_row + (block << 4);
-            uint32_t words[MAGI80_C2P4_PLANE_COUNT];
+            uint32_t words[MIGA80_C2P4_PLANE_COUNT];
 
             words[0] = load_be32(source);
             words[1] = load_be32(source + 4U);
@@ -127,23 +127,23 @@ enum Magi80C2P4Status magi80_c2p4_mask32_packed4(
                                              (block << 2), words);
         }
     }
-    return MAGI80_C2P4_OK;
+    return MIGA80_C2P4_OK;
 }
 
-enum Magi80C2P4Status magi80_c2p4_mask32_byte4(
+enum Miga80C2P4Status miga80_c2p4_mask32_byte4(
     const uint8_t *chunky,
     size_t width,
     size_t height,
     size_t chunky_stride,
-    uint8_t *planes[MAGI80_C2P4_PLANE_COUNT],
+    uint8_t *planes[MIGA80_C2P4_PLANE_COUNT],
     size_t plane_stride)
 {
-    enum Magi80C2P4Status status = validate_mask32_conversion(
+    enum Miga80C2P4Status status = validate_mask32_conversion(
         chunky, width, height, chunky_stride, width, planes,
         plane_stride);
     size_t y;
 
-    if (status != MAGI80_C2P4_OK) {
+    if (status != MIGA80_C2P4_OK) {
         return status;
     }
     for (y = 0U; y < height; ++y) {
@@ -152,7 +152,7 @@ enum Magi80C2P4Status magi80_c2p4_mask32_byte4(
 
         for (block = 0U; block < (width >> 5); ++block) {
             const uint8_t *source = source_row + (block << 5);
-            uint32_t words[MAGI80_C2P4_PLANE_COUNT];
+            uint32_t words[MIGA80_C2P4_PLANE_COUNT];
 
             words[0] = pack_byte4_group(source);
             words[1] = pack_byte4_group(source + 8U);
@@ -163,5 +163,5 @@ enum Magi80C2P4Status magi80_c2p4_mask32_byte4(
                                              (block << 2), words);
         }
     }
-    return MAGI80_C2P4_OK;
+    return MIGA80_C2P4_OK;
 }

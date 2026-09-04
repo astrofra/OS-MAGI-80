@@ -59,8 +59,8 @@
 	or.l \work,\target
 	.endm
 
-	.globl _magi80_c2p4_mask32_m68k_packed4_core
-_magi80_c2p4_mask32_m68k_packed4_core:
+	.globl _miga80_c2p4_mask32_m68k_packed4_core
+_miga80_c2p4_mask32_m68k_packed4_core:
 	movem.l d2-d7/a2-a6,-(sp)
 	move.l 48(sp),a0
 	move.l 56(sp),d6
@@ -92,8 +92,8 @@ _magi80_c2p4_mask32_m68k_packed4_core:
 	rts
 
 	.align 2
-	.globl _magi80_c2p4_mask32_m68k_byte4_core
-_magi80_c2p4_mask32_m68k_byte4_core:
+	.globl _miga80_c2p4_mask32_m68k_byte4_core
+_miga80_c2p4_mask32_m68k_byte4_core:
 	movem.l d2-d7/a2-a6,-(sp)
 	move.l 48(sp),a0
 	move.l 56(sp),d6
@@ -128,8 +128,8 @@ _magi80_c2p4_mask32_m68k_byte4_core:
 	rts
 
 	.align 2
-	.globl _magi80_c2p4_pair_lut_m68k_packed4_core
-_magi80_c2p4_pair_lut_m68k_packed4_core:
+	.globl _miga80_c2p4_pair_lut_m68k_packed4_core
+_miga80_c2p4_pair_lut_m68k_packed4_core:
 	movem.l d2-d7/a2-a6,-(sp)
 	move.l 48(sp),a0
 	move.l 52(sp),d6
@@ -185,8 +185,8 @@ _magi80_c2p4_pair_lut_m68k_packed4_core:
 	rts
 
 	.align 2
-	.globl _magi80_c2p4_pair_lut_m68k_byte4_core
-_magi80_c2p4_pair_lut_m68k_byte4_core:
+	.globl _miga80_c2p4_pair_lut_m68k_byte4_core
+_miga80_c2p4_pair_lut_m68k_byte4_core:
 	movem.l d2-d7/a2-a6,-(sp)
 	move.l 48(sp),a0
 	move.l 52(sp),d6

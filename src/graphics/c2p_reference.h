@@ -1,29 +1,29 @@
-#ifndef MAGI80_GRAPHICS_C2P_REFERENCE_H
-#define MAGI80_GRAPHICS_C2P_REFERENCE_H
+#ifndef MIGA80_GRAPHICS_C2P_REFERENCE_H
+#define MIGA80_GRAPHICS_C2P_REFERENCE_H
 
 #include <stddef.h>
 #include <stdint.h>
 
 enum {
-    MAGI80_C2P_PLANE_COUNT = 8
+    MIGA80_C2P_PLANE_COUNT = 8
 };
 
-enum Magi80C2PStatus {
-    MAGI80_C2P_OK = 0,
-    MAGI80_C2P_INVALID_ARGUMENT,
-    MAGI80_C2P_INVALID_DIMENSIONS,
-    MAGI80_C2P_INVALID_STRIDE
+enum Miga80C2PStatus {
+    MIGA80_C2P_OK = 0,
+    MIGA80_C2P_INVALID_ARGUMENT,
+    MIGA80_C2P_INVALID_DIMENSIONS,
+    MIGA80_C2P_INVALID_STRIDE
 };
 
-enum Magi80C2PLayout {
-    MAGI80_C2P_LAYOUT_FB8 = 0,
-    MAGI80_C2P_LAYOUT_PACKED4_X2,
-    MAGI80_C2P_LAYOUT_BYTE4_X2,
-    MAGI80_C2P_LAYOUT_FRONT_BYTE4_BACK_PACKED4
+enum Miga80C2PLayout {
+    MIGA80_C2P_LAYOUT_FB8 = 0,
+    MIGA80_C2P_LAYOUT_PACKED4_X2,
+    MIGA80_C2P_LAYOUT_BYTE4_X2,
+    MIGA80_C2P_LAYOUT_FRONT_BYTE4_BACK_PACKED4
 };
 
 /*
- * Convert combined MAGI-80 pixels to an Amiga dual-playfield bitmap.
+ * Convert combined MIGA-80 pixels to an Amiga dual-playfield bitmap.
  *
  * Each chunky byte is 0xFB: F is the four-bit FRONT pixel and B is the
  * four-bit BACK pixel.  The destination order is the hardware bitplane
@@ -37,12 +37,12 @@ enum Magi80C2PLayout {
  * plane must provide height rows of at least plane_stride bytes; the source
  * must provide height rows of at least chunky_stride bytes.
  */
-enum Magi80C2PStatus magi80_c2p_reference(
+enum Miga80C2PStatus miga80_c2p_reference(
     const uint8_t *chunky,
     size_t width,
     size_t height,
     size_t chunky_stride,
-    uint8_t *planes[MAGI80_C2P_PLANE_COUNT],
+    uint8_t *planes[MIGA80_C2P_PLANE_COUNT],
     size_t plane_stride);
 
 /*
@@ -50,28 +50,28 @@ enum Magi80C2PStatus magi80_c2p_reference(
  * the high nibble and odd x coordinates use the low nibble of each source
  * byte.  Each source row therefore contains width / 2 meaningful bytes.
  */
-enum Magi80C2PStatus magi80_c2p_reference_packed4_x2(
+enum Miga80C2PStatus miga80_c2p_reference_packed4_x2(
     const uint8_t *front,
     const uint8_t *back,
     size_t width,
     size_t height,
     size_t front_stride,
     size_t back_stride,
-    uint8_t *planes[MAGI80_C2P_PLANE_COUNT],
+    uint8_t *planes[MIGA80_C2P_PLANE_COUNT],
     size_t plane_stride);
 
 /*
  * Convert two byte-per-pixel layers.  Only the low nibble of each source byte
  * is significant.  Each source row contains width meaningful bytes.
  */
-enum Magi80C2PStatus magi80_c2p_reference_byte4_x2(
+enum Miga80C2PStatus miga80_c2p_reference_byte4_x2(
     const uint8_t *front,
     const uint8_t *back,
     size_t width,
     size_t height,
     size_t front_stride,
     size_t back_stride,
-    uint8_t *planes[MAGI80_C2P_PLANE_COUNT],
+    uint8_t *planes[MIGA80_C2P_PLANE_COUNT],
     size_t plane_stride);
 
 /*
@@ -79,14 +79,14 @@ enum Magi80C2PStatus magi80_c2p_reference_byte4_x2(
  * four-bit.  This candidate favors direct writes to a dynamic foreground
  * while retaining a compact background.
  */
-enum Magi80C2PStatus magi80_c2p_reference_front_byte4_back_packed4(
+enum Miga80C2PStatus miga80_c2p_reference_front_byte4_back_packed4(
     const uint8_t *front,
     const uint8_t *back,
     size_t width,
     size_t height,
     size_t front_stride,
     size_t back_stride,
-    uint8_t *planes[MAGI80_C2P_PLANE_COUNT],
+    uint8_t *planes[MIGA80_C2P_PLANE_COUNT],
     size_t plane_stride);
 
 #endif

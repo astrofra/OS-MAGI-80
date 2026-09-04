@@ -28,7 +28,7 @@
 #define BENCH_SCREEN_PIXELS (BENCH_SCREEN_WIDTH * BENCH_SCREEN_HEIGHT)
 #define BENCH_SCREEN_PLANE_BYTES (BENCH_SCREEN_PIXELS / 8U)
 #define BENCH_DISPLAY_BYTES \
-    (BENCH_SCREEN_PLANE_BYTES * MAGI80_AGA_REFERENCE_PLANE_COUNT)
+    (BENCH_SCREEN_PLANE_BYTES * MIGA80_AGA_REFERENCE_PLANE_COUNT)
 #define BENCH_DISPLAY_ID (PAL_MONITOR_ID | LORESDPF_KEY)
 #define BENCH_SAMPLES 3U
 #define BENCH_PROFILE_COUNT 3U
@@ -37,12 +37,12 @@
 #define BENCH_CASE_COUNT \
     (BENCH_PROFILE_COUNT * BENCH_LAYOUT_COUNT * BENCH_BACKEND_COUNT)
 
-#ifndef MAGI80_BENCHMARK_ENVIRONMENT
-#define MAGI80_BENCHMARK_ENVIRONMENT "fs_uae_a1200_pal"
+#ifndef MIGA80_BENCHMARK_ENVIRONMENT
+#define MIGA80_BENCHMARK_ENVIRONMENT "fs_uae_a1200_pal"
 #endif
 
-#ifndef MAGI80_BENCHMARK_TIMING_AUTHORITY
-#define MAGI80_BENCHMARK_TIMING_AUTHORITY "protocol_only"
+#ifndef MIGA80_BENCHMARK_TIMING_AUTHORITY
+#define MIGA80_BENCHMARK_TIMING_AUTHORITY "protocol_only"
 #endif
 
 struct GfxBase *GfxBase = NULL;
@@ -115,7 +115,7 @@ static const enum CpuBackend benchmark_backends[BENCH_BACKEND_COUNT] = {
     BACKEND_PAIR_LUT_M68K_BLIT
 };
 
-static uint32_t pair_lut[MAGI80_C2P4_PAIR_LUT_ENTRIES];
+static uint32_t pair_lut[MIGA80_C2P4_PAIR_LUT_ENTRIES];
 
 static int write_bytes(BPTR output, const char *text, size_t length)
 {
@@ -325,25 +325,25 @@ static ULONG median_ticks(ULONG values[BENCH_SAMPLES])
 }
 
 static void clear_front_planes(
-    uint8_t *physical_planes[MAGI80_AGA_REFERENCE_PLANE_COUNT],
+    uint8_t *physical_planes[MIGA80_AGA_REFERENCE_PLANE_COUNT],
     size_t plane_stride)
 {
     size_t logical_plane;
 
     for (logical_plane = 0U;
-         logical_plane < MAGI80_C2P4_PLANE_COUNT; ++logical_plane) {
+         logical_plane < MIGA80_C2P4_PLANE_COUNT; ++logical_plane) {
         memset(physical_planes[logical_plane << 1], 0,
                plane_stride * BENCH_SCREEN_HEIGHT);
     }
 }
 
-static enum Magi80C2P4Status convert_source(
+static enum Miga80C2P4Status convert_source(
     const uint8_t *source,
     enum SourceLayout layout,
     enum CpuBackend backend,
     ULONG width,
     ULONG height,
-    uint8_t *planes[MAGI80_C2P4_PLANE_COUNT],
+    uint8_t *planes[MIGA80_C2P4_PLANE_COUNT],
     size_t plane_stride)
 {
     size_t source_stride =
@@ -351,48 +351,48 @@ static enum Magi80C2P4Status convert_source(
 
     if (backend == BACKEND_SCALAR_C99) {
         if (layout == SOURCE_PACKED4) {
-            return magi80_c2p4_reference_packed4(
+            return miga80_c2p4_reference_packed4(
                 source, width, height, source_stride, planes,
                 plane_stride);
         }
-        return magi80_c2p4_reference_byte4(
+        return miga80_c2p4_reference_byte4(
             source, width, height, source_stride, planes, plane_stride);
     }
     if (backend == BACKEND_MASK32_M68K) {
         if (layout == SOURCE_PACKED4) {
-            return magi80_c2p4_mask32_m68k_packed4(
+            return miga80_c2p4_mask32_m68k_packed4(
                 source, width, height, source_stride, planes,
                 plane_stride);
         }
-        return magi80_c2p4_mask32_m68k_byte4(
+        return miga80_c2p4_mask32_m68k_byte4(
             source, width, height, source_stride, planes, plane_stride);
     }
     if (layout == SOURCE_PACKED4) {
         if (backend == BACKEND_PAIR_LUT_C99) {
-            return magi80_c2p4_lookup_packed4(
+            return miga80_c2p4_lookup_packed4(
                 source, width, height, source_stride, planes, plane_stride,
                 pair_lut);
         }
-        return magi80_c2p4_pair_lut_m68k_packed4(
+        return miga80_c2p4_pair_lut_m68k_packed4(
             source, width, height, source_stride, planes, plane_stride,
             pair_lut);
     }
     if (backend == BACKEND_PAIR_LUT_C99) {
-        return magi80_c2p4_lookup_byte4(
+        return miga80_c2p4_lookup_byte4(
             source, width, height, source_stride, planes, plane_stride,
             pair_lut);
     }
-    return magi80_c2p4_pair_lut_m68k_byte4(
+    return miga80_c2p4_pair_lut_m68k_byte4(
         source, width, height, source_stride, planes, plane_stride,
         pair_lut);
 }
 
 static int prepare_planar_base(
     uint8_t *planar_source,
-    uint8_t *physical_planes[MAGI80_AGA_REFERENCE_PLANE_COUNT],
+    uint8_t *physical_planes[MIGA80_AGA_REFERENCE_PLANE_COUNT],
     size_t plane_stride)
 {
-    uint8_t *back_planes[MAGI80_C2P4_PLANE_COUNT];
+    uint8_t *back_planes[MIGA80_C2P4_PLANE_COUNT];
     ULONG x;
     ULONG y;
     size_t plane;
@@ -403,13 +403,13 @@ static int prepare_planar_base(
                 planar_color(x, y);
         }
     }
-    for (plane = 0U; plane < MAGI80_C2P4_PLANE_COUNT; ++plane) {
+    for (plane = 0U; plane < MIGA80_C2P4_PLANE_COUNT; ++plane) {
         back_planes[plane] = physical_planes[(plane << 1) + 1U];
     }
-    return magi80_c2p4_reference_byte4(
+    return miga80_c2p4_reference_byte4(
                planar_source, BENCH_SCREEN_WIDTH, BENCH_SCREEN_HEIGHT,
                BENCH_SCREEN_WIDTH, back_planes, plane_stride) ==
-           MAGI80_C2P4_OK;
+           MIGA80_C2P4_OK;
 }
 
 static int verify_case(
@@ -420,13 +420,13 @@ static int verify_case(
     uint8_t *oracle_front,
     uint8_t *canonical_expected,
     uint8_t *canonical_actual,
-    uint8_t *physical_planes[MAGI80_AGA_REFERENCE_PLANE_COUNT],
+    uint8_t *physical_planes[MIGA80_AGA_REFERENCE_PLANE_COUNT],
     size_t plane_stride,
     ULONG *oracle_checksum,
     ULONG *canonical_checksum)
 {
-    struct Magi80GraphicsReferenceScene scene;
-    const uint8_t *read_planes[MAGI80_AGA_REFERENCE_PLANE_COUNT];
+    struct Miga80GraphicsReferenceScene scene;
+    const uint8_t *read_planes[MIGA80_AGA_REFERENCE_PLANE_COUNT];
     ULONG origin_x = (BENCH_SCREEN_WIDTH - profile->width) / 2U;
     ULONG origin_y = (BENCH_SCREEN_HEIGHT - profile->height) / 2U;
     size_t plane;
@@ -451,17 +451,17 @@ static int verify_case(
     scene.pixel.screen_y = (int32_t)origin_y;
     scene.pixel.enabled = 1U;
 
-    if (magi80_graphics_reference_compose(
+    if (miga80_graphics_reference_compose(
             &scene, canonical_expected, BENCH_SCREEN_WIDTH) !=
-        MAGI80_GRAPHICS_REFERENCE_OK) {
+        MIGA80_GRAPHICS_REFERENCE_OK) {
         return 0;
     }
-    for (plane = 0U; plane < MAGI80_AGA_REFERENCE_PLANE_COUNT; ++plane) {
+    for (plane = 0U; plane < MIGA80_AGA_REFERENCE_PLANE_COUNT; ++plane) {
         read_planes[plane] = physical_planes[plane];
     }
-    if (magi80_aga_reference_decode_dual_playfield(
+    if (miga80_aga_reference_decode_dual_playfield(
             read_planes, plane_stride, canonical_actual,
-            BENCH_SCREEN_WIDTH) != MAGI80_AGA_REFERENCE_OK ||
+            BENCH_SCREEN_WIDTH) != MIGA80_AGA_REFERENCE_OK ||
         memcmp(canonical_expected, canonical_actual,
                BENCH_SCREEN_PIXELS) != 0) {
         return 0;
@@ -480,7 +480,7 @@ static int run_case(
     uint8_t *oracle_front,
     uint8_t *canonical_expected,
     uint8_t *canonical_actual,
-    uint8_t *physical_planes[MAGI80_AGA_REFERENCE_PLANE_COUNT],
+    uint8_t *physical_planes[MIGA80_AGA_REFERENCE_PLANE_COUNT],
     size_t plane_stride,
     struct BenchmarkResult *result)
 {
@@ -491,7 +491,7 @@ static int run_case(
     ULONG origin_x = (BENCH_SCREEN_WIDTH - profile->width) / 2U;
     ULONG origin_y = (BENCH_SCREEN_HEIGHT - profile->height) / 2U;
     uint8_t *source = NULL;
-    uint8_t *front_planes[MAGI80_C2P4_PLANE_COUNT];
+    uint8_t *front_planes[MIGA80_C2P4_PLANE_COUNT];
     ULONG source_ticks[BENCH_SAMPLES];
     ULONG draw_ticks[BENCH_SAMPLES];
     ULONG conversion_ticks[BENCH_SAMPLES];
@@ -507,7 +507,7 @@ static int run_case(
             : 0U;
     ULONG scratch_bytes =
         backend == BACKEND_PAIR_LUT_M68K_BLIT
-            ? plane_bytes * MAGI80_C2P4_PLANE_COUNT
+            ? plane_bytes * MIGA80_C2P4_PLANE_COUNT
             : 0U;
     size_t conversion_plane_stride =
         scratch_bytes != 0U ? (size_t)(profile->width >> 3) : plane_stride;
@@ -534,7 +534,7 @@ static int run_case(
         }
     }
     clear_front_planes(physical_planes, plane_stride);
-    for (plane = 0U; plane < MAGI80_C2P4_PLANE_COUNT; ++plane) {
+    for (plane = 0U; plane < MIGA80_C2P4_PLANE_COUNT; ++plane) {
         if (scratch != NULL) {
             front_planes[plane] = scratch + (plane * plane_bytes);
         } else {
@@ -544,12 +544,12 @@ static int run_case(
         }
     }
     if (scratch != NULL) {
-        InitBitMap(&source_bitmap, MAGI80_C2P4_PLANE_COUNT,
+        InitBitMap(&source_bitmap, MIGA80_C2P4_PLANE_COUNT,
                    (LONG)profile->width, (LONG)profile->height);
-        InitBitMap(&destination_bitmap, MAGI80_C2P4_PLANE_COUNT,
+        InitBitMap(&destination_bitmap, MIGA80_C2P4_PLANE_COUNT,
                    BENCH_SCREEN_WIDTH, BENCH_SCREEN_HEIGHT);
         destination_bitmap.BytesPerRow = (UWORD)plane_stride;
-        for (plane = 0U; plane < MAGI80_C2P4_PLANE_COUNT; ++plane) {
+        for (plane = 0U; plane < MIGA80_C2P4_PLANE_COUNT; ++plane) {
             source_bitmap.Planes[plane] = (PLANEPTR)front_planes[plane];
             destination_bitmap.Planes[plane] =
                 (PLANEPTR)physical_planes[plane << 1];
@@ -582,7 +582,7 @@ static int run_case(
         (void)ReadEClock(&phase_start);
         if (convert_source(source, layout, backend, profile->width,
                            profile->height, front_planes,
-                           conversion_plane_stride) != MAGI80_C2P4_OK) {
+                           conversion_plane_stride) != MIGA80_C2P4_OK) {
             goto cleanup;
         }
         (void)ReadEClock(&phase_end);
@@ -597,7 +597,7 @@ static int run_case(
                           (LONG)origin_x, (LONG)origin_y,
                           (LONG)profile->width, (LONG)profile->height,
                           0xc0U, 0x0fU, NULL) !=
-                (LONG)MAGI80_C2P4_PLANE_COUNT) {
+                (LONG)MIGA80_C2P4_PLANE_COUNT) {
                 goto cleanup;
             }
             (void)ReadEClock(&wait_start);
@@ -678,10 +678,10 @@ static int run_case(
     result->minimum_chip_traffic_bytes =
         source_bytes +
         (layout == SOURCE_PACKED4 ? psets * 2U : psets) +
-        source_bytes + (plane_bytes * MAGI80_C2P4_PLANE_COUNT) +
+        source_bytes + (plane_bytes * MIGA80_C2P4_PLANE_COUNT) +
         lookup_traffic_bytes +
         (scratch_bytes != 0U
-             ? 2U * plane_bytes * MAGI80_C2P4_PLANE_COUNT
+             ? 2U * plane_bytes * MIGA80_C2P4_PLANE_COUNT
              : 0U);
     if (!verify_case(source, layout, profile, planar_source, oracle_front,
                      canonical_expected, canonical_actual, physical_planes,
@@ -771,9 +771,9 @@ static int write_report_header(BPTR output, ULONG eclock_hz, ULONG overhead)
     if (!write_text(output,
                     "graphics_benchmark_format=1\n"
                     "benchmark=c2p4\n"
-                    "environment=" MAGI80_BENCHMARK_ENVIRONMENT "\n"
+                    "environment=" MIGA80_BENCHMARK_ENVIRONMENT "\n"
                     "timing_authority="
-                    MAGI80_BENCHMARK_TIMING_AUTHORITY "\n"
+                    MIGA80_BENCHMARK_TIMING_AUTHORITY "\n"
                     "timing_source=eclock\n"
                     "eclock_hz=") ||
         !write_decimal(output, eclock_hz) ||
@@ -805,7 +805,7 @@ int main(void)
         {SA_DisplayID, BENCH_DISPLAY_ID},
         {SA_Width, BENCH_SCREEN_WIDTH},
         {SA_Height, BENCH_SCREEN_HEIGHT},
-        {SA_Depth, MAGI80_AGA_REFERENCE_PLANE_COUNT},
+        {SA_Depth, MIGA80_AGA_REFERENCE_PLANE_COUNT},
         {SA_Type, CUSTOMSCREEN},
         {SA_Quiet, TRUE},
         {SA_ShowTitle, FALSE},
@@ -821,7 +821,7 @@ int main(void)
     struct timerequest timer_request = {0};
     struct Screen *screen = NULL;
     struct BitMap *bitmap = NULL;
-    uint8_t *physical_planes[MAGI80_AGA_REFERENCE_PLANE_COUNT];
+    uint8_t *physical_planes[MIGA80_AGA_REFERENCE_PLANE_COUNT];
     uint8_t *planar_source = NULL;
     uint8_t *oracle_front = NULL;
     uint8_t *canonical_expected = NULL;
@@ -878,11 +878,11 @@ int main(void)
     }
     bitmap = screen->RastPort.BitMap;
     if (bitmap == NULL || bitmap->BytesPerRow < BENCH_SCREEN_WIDTH / 8U ||
-        bitmap->Depth != MAGI80_AGA_REFERENCE_PLANE_COUNT) {
+        bitmap->Depth != MIGA80_AGA_REFERENCE_PLANE_COUNT) {
         failure = "screen_bitmap_layout";
         goto cleanup;
     }
-    for (plane = 0U; plane < MAGI80_AGA_REFERENCE_PLANE_COUNT; ++plane) {
+    for (plane = 0U; plane < MIGA80_AGA_REFERENCE_PLANE_COUNT; ++plane) {
         if (bitmap->Planes[plane] == NULL ||
             (TypeOfMem(bitmap->Planes[plane]) & MEMF_CHIP) == 0U) {
             failure = "screen_chip_planes";
@@ -904,7 +904,7 @@ int main(void)
         failure = "allocate_validation_buffers";
         goto cleanup;
     }
-    magi80_c2p4_build_pair_lut(pair_lut);
+    miga80_c2p4_build_pair_lut(pair_lut);
     if (!prepare_planar_base(planar_source, physical_planes,
                              (size_t)bitmap->BytesPerRow)) {
         failure = "prepare_planar_base";

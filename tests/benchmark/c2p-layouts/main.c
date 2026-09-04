@@ -235,7 +235,7 @@ static ULONG timer_overhead(void)
     return minimum;
 }
 
-static ULONG checksum_planes(uint8_t *planes[MAGI80_C2P_PLANE_COUNT],
+static ULONG checksum_planes(uint8_t *planes[MIGA80_C2P_PLANE_COUNT],
                              size_t plane_stride)
 {
     ULONG checksum = 0x6d616769UL;
@@ -243,7 +243,7 @@ static ULONG checksum_planes(uint8_t *planes[MAGI80_C2P_PLANE_COUNT],
     size_t y;
     size_t x;
 
-    for (plane = 0U; plane < MAGI80_C2P_PLANE_COUNT; ++plane) {
+    for (plane = 0U; plane < MIGA80_C2P_PLANE_COUNT; ++plane) {
         for (y = 0U; y < BENCH_HEIGHT; ++y) {
             const uint8_t *row = planes[plane] + (y * plane_stride);
 
@@ -257,38 +257,38 @@ static ULONG checksum_planes(uint8_t *planes[MAGI80_C2P_PLANE_COUNT],
     return checksum;
 }
 
-static ULONG source_bytes_for_layout(enum Magi80C2PLayout layout)
+static ULONG source_bytes_for_layout(enum Miga80C2PLayout layout)
 {
     switch (layout) {
-    case MAGI80_C2P_LAYOUT_FB8:
+    case MIGA80_C2P_LAYOUT_FB8:
         return BENCH_PIXELS;
-    case MAGI80_C2P_LAYOUT_PACKED4_X2:
+    case MIGA80_C2P_LAYOUT_PACKED4_X2:
         return BENCH_PIXELS;
-    case MAGI80_C2P_LAYOUT_BYTE4_X2:
+    case MIGA80_C2P_LAYOUT_BYTE4_X2:
         return BENCH_PIXELS * 2U;
-    case MAGI80_C2P_LAYOUT_FRONT_BYTE4_BACK_PACKED4:
+    case MIGA80_C2P_LAYOUT_FRONT_BYTE4_BACK_PACKED4:
         return BENCH_PIXELS + BENCH_PACKED_BYTES;
     }
     return 0U;
 }
 
-static const char *name_for_layout(enum Magi80C2PLayout layout)
+static const char *name_for_layout(enum Miga80C2PLayout layout)
 {
     switch (layout) {
-    case MAGI80_C2P_LAYOUT_FB8:
+    case MIGA80_C2P_LAYOUT_FB8:
         return "fb8";
-    case MAGI80_C2P_LAYOUT_PACKED4_X2:
+    case MIGA80_C2P_LAYOUT_PACKED4_X2:
         return "packed4_x2";
-    case MAGI80_C2P_LAYOUT_BYTE4_X2:
+    case MIGA80_C2P_LAYOUT_BYTE4_X2:
         return "byte4_x2";
-    case MAGI80_C2P_LAYOUT_FRONT_BYTE4_BACK_PACKED4:
+    case MIGA80_C2P_LAYOUT_FRONT_BYTE4_BACK_PACKED4:
         return "front_byte4_back_packed4";
     }
     return "invalid";
 }
 
-static int run_layout(enum Magi80C2PLayout layout,
-                      uint8_t *planes[MAGI80_C2P_PLANE_COUNT],
+static int run_layout(enum Miga80C2PLayout layout,
+                      uint8_t *planes[MIGA80_C2P_PLANE_COUNT],
                       size_t plane_stride, struct BenchmarkResult *result)
 {
     struct EClockVal start;
@@ -297,22 +297,22 @@ static int run_layout(enum Magi80C2PLayout layout,
     uint8_t *back = NULL;
     ULONG first_size;
     ULONG second_size = 0U;
-    enum Magi80C2PStatus c2p_status = MAGI80_C2P_INVALID_ARGUMENT;
+    enum Miga80C2PStatus c2p_status = MIGA80_C2P_INVALID_ARGUMENT;
     int success = 0;
 
     switch (layout) {
-    case MAGI80_C2P_LAYOUT_FB8:
+    case MIGA80_C2P_LAYOUT_FB8:
         first_size = BENCH_PIXELS;
         break;
-    case MAGI80_C2P_LAYOUT_PACKED4_X2:
+    case MIGA80_C2P_LAYOUT_PACKED4_X2:
         first_size = BENCH_PACKED_BYTES;
         second_size = BENCH_PACKED_BYTES;
         break;
-    case MAGI80_C2P_LAYOUT_BYTE4_X2:
+    case MIGA80_C2P_LAYOUT_BYTE4_X2:
         first_size = BENCH_PIXELS;
         second_size = BENCH_PIXELS;
         break;
-    case MAGI80_C2P_LAYOUT_FRONT_BYTE4_BACK_PACKED4:
+    case MIGA80_C2P_LAYOUT_FRONT_BYTE4_BACK_PACKED4:
         first_size = BENCH_PIXELS;
         second_size = BENCH_PACKED_BYTES;
         break;
@@ -335,16 +335,16 @@ static int run_layout(enum Magi80C2PLayout layout,
     WaitTOF();
     (void)ReadEClock(&start);
     switch (layout) {
-    case MAGI80_C2P_LAYOUT_FB8:
+    case MIGA80_C2P_LAYOUT_FB8:
         build_fb8(front_or_combined);
         break;
-    case MAGI80_C2P_LAYOUT_PACKED4_X2:
+    case MIGA80_C2P_LAYOUT_PACKED4_X2:
         build_packed4_x2(front_or_combined, back);
         break;
-    case MAGI80_C2P_LAYOUT_BYTE4_X2:
+    case MIGA80_C2P_LAYOUT_BYTE4_X2:
         build_byte4_x2(front_or_combined, back);
         break;
-    case MAGI80_C2P_LAYOUT_FRONT_BYTE4_BACK_PACKED4:
+    case MIGA80_C2P_LAYOUT_FRONT_BYTE4_BACK_PACKED4:
         build_front_byte4_back_packed4(front_or_combined, back);
         break;
     }
@@ -353,9 +353,9 @@ static int run_layout(enum Magi80C2PLayout layout,
 
     WaitTOF();
     (void)ReadEClock(&start);
-    if (layout == MAGI80_C2P_LAYOUT_FB8) {
+    if (layout == MIGA80_C2P_LAYOUT_FB8) {
         front_psets_fb8(front_or_combined);
-    } else if (layout == MAGI80_C2P_LAYOUT_PACKED4_X2) {
+    } else if (layout == MIGA80_C2P_LAYOUT_PACKED4_X2) {
         front_psets_packed4(front_or_combined);
     } else {
         front_psets_byte4(front_or_combined);
@@ -366,30 +366,30 @@ static int run_layout(enum Magi80C2PLayout layout,
     WaitTOF();
     (void)ReadEClock(&start);
     switch (layout) {
-    case MAGI80_C2P_LAYOUT_FB8:
-        c2p_status = magi80_c2p_reference(
+    case MIGA80_C2P_LAYOUT_FB8:
+        c2p_status = miga80_c2p_reference(
             front_or_combined, BENCH_WIDTH, BENCH_HEIGHT, BENCH_WIDTH,
             planes, plane_stride);
         break;
-    case MAGI80_C2P_LAYOUT_PACKED4_X2:
-        c2p_status = magi80_c2p_reference_packed4_x2(
+    case MIGA80_C2P_LAYOUT_PACKED4_X2:
+        c2p_status = miga80_c2p_reference_packed4_x2(
             front_or_combined, back, BENCH_WIDTH, BENCH_HEIGHT,
             BENCH_WIDTH / 2U, BENCH_WIDTH / 2U, planes, plane_stride);
         break;
-    case MAGI80_C2P_LAYOUT_BYTE4_X2:
-        c2p_status = magi80_c2p_reference_byte4_x2(
+    case MIGA80_C2P_LAYOUT_BYTE4_X2:
+        c2p_status = miga80_c2p_reference_byte4_x2(
             front_or_combined, back, BENCH_WIDTH, BENCH_HEIGHT, BENCH_WIDTH,
             BENCH_WIDTH, planes, plane_stride);
         break;
-    case MAGI80_C2P_LAYOUT_FRONT_BYTE4_BACK_PACKED4:
-        c2p_status = magi80_c2p_reference_front_byte4_back_packed4(
+    case MIGA80_C2P_LAYOUT_FRONT_BYTE4_BACK_PACKED4:
+        c2p_status = miga80_c2p_reference_front_byte4_back_packed4(
             front_or_combined, back, BENCH_WIDTH, BENCH_HEIGHT, BENCH_WIDTH,
             BENCH_WIDTH / 2U, planes, plane_stride);
         break;
     }
     (void)ReadEClock(&end);
     result->c2p_ticks = elapsed_ticks(&start, &end);
-    if (c2p_status != MAGI80_C2P_OK) {
+    if (c2p_status != MIGA80_C2P_OK) {
         goto cleanup;
     }
 
@@ -440,7 +440,7 @@ int main(void)
         {SA_DisplayID, BENCH_DISPLAY_ID},
         {SA_Width, BENCH_WIDTH},
         {SA_Height, BENCH_HEIGHT},
-        {SA_Depth, MAGI80_C2P_PLANE_COUNT},
+        {SA_Depth, MIGA80_C2P_PLANE_COUNT},
         {SA_Type, CUSTOMSCREEN},
         {SA_Quiet, TRUE},
         {SA_ShowTitle, FALSE},
@@ -456,7 +456,7 @@ int main(void)
     struct timerequest timer_request = {0};
     struct Screen *screen = NULL;
     struct BitMap *bitmap;
-    uint8_t *planes[MAGI80_C2P_PLANE_COUNT];
+    uint8_t *planes[MIGA80_C2P_PLANE_COUNT];
     struct BenchmarkResult results[4];
     BPTR output = Output();
     ULONG chip_revision;
@@ -505,11 +505,11 @@ int main(void)
     }
     bitmap = screen->RastPort.BitMap;
     if (bitmap == NULL || bitmap->BytesPerRow < (BENCH_WIDTH / 8U) ||
-        bitmap->Depth != MAGI80_C2P_PLANE_COUNT) {
+        bitmap->Depth != MIGA80_C2P_PLANE_COUNT) {
         failure = "screen_bitmap_layout";
         goto cleanup;
     }
-    for (plane = 0U; plane < MAGI80_C2P_PLANE_COUNT; ++plane) {
+    for (plane = 0U; plane < MIGA80_C2P_PLANE_COUNT; ++plane) {
         if (bitmap->Planes[plane] == NULL ||
             (TypeOfMem(bitmap->Planes[plane]) & MEMF_CHIP) == 0U) {
             failure = "screen_chip_planes";
@@ -519,7 +519,7 @@ int main(void)
     }
 
     for (layout = 0U; layout < 4U; ++layout) {
-        if (!run_layout((enum Magi80C2PLayout)layout, planes,
+        if (!run_layout((enum Miga80C2PLayout)layout, planes,
                         (size_t)bitmap->BytesPerRow, &results[layout])) {
             failure = "layout_execution";
             goto cleanup;

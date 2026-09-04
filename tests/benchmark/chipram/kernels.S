@@ -1,13 +1,13 @@
 	.text
 	.align 2
 
-	.globl _magi80_current_stack_pointer
-_magi80_current_stack_pointer:
+	.globl _miga80_current_stack_pointer
+_miga80_current_stack_pointer:
 	move.l sp,d0
 	rts
 
-	.globl _magi80_chipram_write_byte
-_magi80_chipram_write_byte:
+	.globl _miga80_chipram_write_byte
+_miga80_chipram_write_byte:
 	move.l 4(sp),a0
 	move.l 12(sp),d0
 	move.l 16(sp),d1
@@ -19,8 +19,8 @@ _magi80_chipram_write_byte:
 	rts
 
 	.align 2
-	.globl _magi80_chipram_write_word
-_magi80_chipram_write_word:
+	.globl _miga80_chipram_write_word
+_miga80_chipram_write_word:
 	move.l 4(sp),a0
 	move.l 12(sp),d0
 	move.l 16(sp),d1
@@ -33,8 +33,8 @@ _magi80_chipram_write_word:
 	rts
 
 	.align 2
-	.globl _magi80_chipram_write_long
-_magi80_chipram_write_long:
+	.globl _miga80_chipram_write_long
+_miga80_chipram_write_long:
 	move.l 4(sp),a0
 	move.l 12(sp),d0
 	move.l 16(sp),d1
@@ -47,8 +47,8 @@ _magi80_chipram_write_long:
 	rts
 
 	.align 2
-	.globl _magi80_chipram_write_long4
-_magi80_chipram_write_long4:
+	.globl _miga80_chipram_write_long4
+_miga80_chipram_write_long4:
 	move.l 4(sp),a0
 	move.l 12(sp),d0
 	move.l 16(sp),d1
@@ -64,8 +64,8 @@ _magi80_chipram_write_long4:
 	rts
 
 	.align 2
-	.globl _magi80_chipram_copy_long4
-_magi80_chipram_copy_long4:
+	.globl _miga80_chipram_copy_long4
+_miga80_chipram_copy_long4:
 	move.l 4(sp),a0
 	move.l 8(sp),a1
 	move.l 12(sp),d0
@@ -81,8 +81,8 @@ _magi80_chipram_copy_long4:
 	rts
 
 	.align 2
-	.globl _magi80_chipram_read_long4
-_magi80_chipram_read_long4:
+	.globl _miga80_chipram_read_long4
+_miga80_chipram_read_long4:
 	movem.l d2-d3,-(sp)
 	move.l 16(sp),a0
 	move.l 20(sp),d2
@@ -103,8 +103,8 @@ _magi80_chipram_read_long4:
 	rts
 
 	.align 2
-	.globl _magi80_chipram_read_byte
-_magi80_chipram_read_byte:
+	.globl _miga80_chipram_read_byte
+_miga80_chipram_read_byte:
 	move.l d2,-(sp)
 	move.l 12(sp),a0
 	move.l 16(sp),d2
@@ -119,8 +119,8 @@ _magi80_chipram_read_byte:
 	rts
 
 	.align 2
-	.globl _magi80_chipram_read_word
-_magi80_chipram_read_word:
+	.globl _miga80_chipram_read_word
+_miga80_chipram_read_word:
 	move.l d2,-(sp)
 	move.l 12(sp),a0
 	move.l 16(sp),d2
@@ -136,8 +136,8 @@ _magi80_chipram_read_word:
 	rts
 
 	.align 2
-	.globl _magi80_chipram_read_long
-_magi80_chipram_read_long:
+	.globl _miga80_chipram_read_long
+_miga80_chipram_read_long:
 	move.l d2,-(sp)
 	move.l 12(sp),a0
 	move.l 16(sp),d2
@@ -152,8 +152,8 @@ _magi80_chipram_read_long:
 	rts
 
 	.align 2
-	.globl _magi80_chipram_rmw_add_byte
-_magi80_chipram_rmw_add_byte:
+	.globl _miga80_chipram_rmw_add_byte
+_miga80_chipram_rmw_add_byte:
 	move.l 4(sp),a0
 	move.l 12(sp),d0
 	move.l 16(sp),d1
@@ -165,8 +165,8 @@ _magi80_chipram_rmw_add_byte:
 	rts
 
 	.align 2
-	.globl _magi80_chipram_rmw_add_word
-_magi80_chipram_rmw_add_word:
+	.globl _miga80_chipram_rmw_add_word
+_miga80_chipram_rmw_add_word:
 	move.l 4(sp),a0
 	move.l 12(sp),d0
 	move.l 16(sp),d1
@@ -179,8 +179,8 @@ _magi80_chipram_rmw_add_word:
 	rts
 
 	.align 2
-	.globl _magi80_chipram_rmw_add_long
-_magi80_chipram_rmw_add_long:
+	.globl _miga80_chipram_rmw_add_long
+_miga80_chipram_rmw_add_long:
 	move.l 4(sp),a0
 	move.l 12(sp),d0
 	move.l 16(sp),d1
@@ -193,8 +193,8 @@ _magi80_chipram_rmw_add_long:
 	rts
 
 	.align 2
-	.globl _magi80_chipram_rmw_add_long4
-_magi80_chipram_rmw_add_long4:
+	.globl _miga80_chipram_rmw_add_long4
+_miga80_chipram_rmw_add_long4:
 	move.l 4(sp),a0
 	move.l 12(sp),d0
 	move.l 16(sp),d1

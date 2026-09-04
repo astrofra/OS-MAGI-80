@@ -1,4 +1,4 @@
-# MAGI-80 validated macOS cross-toolchain
+# MIGA-80 validated macOS cross-toolchain
 # Generated after a successful full build and C99/68020 smoke test.
 
 manifest_format=1
@@ -99,13 +99,15 @@ miga80c_amiga_o1_renderer_identity=pass
 miga80c_amiga_o1_locals_renderer_identity=pass
 miga80c_amiga_o1_spill_renderer_identity=pass
 miga80c_amiga_o1_conditionals_renderer_identity=pass
-miga80c_amiga_bootstrap_bytes_os=40700
+miga80c_amiga_bootstrap_bytes_os=43052
 miga80c_typed_scalar_frontend=pass_i32_bool_explicit
 miga80c_typed_scalar_locals=pass_i32_bool_16_locals_32_statements
 miga80c_typed_ir_oracle=pass
 miga80c_typed_ir_cfg=pass_19_blocks
 miga80c_value_ir_o1=pass
 miga80c_value_ir_phi=pass
+miga80c_cfg_liveness=pass_fixed_point_edge_phi_uses
+miga80c_phi_slot_coalescing=pass_6_values_2_slots
 miga80c_gnu_m68k_renderer=pass
 miga80c_musashi_differential=pass_66_o0_o1_bool_if_locals_spill_executions
 miga80c_o1_spill_frame=pass_3_slots_36_stack_bytes
@@ -117,9 +119,9 @@ miga80c_o1_arithmetic_stack_bytes=4
 miga80c_o1_locals_code_bytes=28
 miga80c_o1_locals_instructions=12
 miga80c_o1_locals_stack_bytes=4
-miga80c_o1_conditionals_code_bytes=388
-miga80c_o1_conditionals_instructions=64
-miga80c_o1_conditionals_stack_bytes=44
+miga80c_o1_conditionals_code_bytes=380
+miga80c_o1_conditionals_instructions=63
+miga80c_o1_conditionals_stack_bytes=24
 c99_compile=pass
 amiga_hunk_link=pass
 amigaos_dos_api_link=pass

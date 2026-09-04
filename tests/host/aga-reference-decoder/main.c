@@ -7,15 +7,15 @@
 #include "graphics/c2p_reference.h"
 #include "graphics/reference_compositor.h"
 
-#define FRAME_WIDTH MAGI80_GRAPHICS_REFERENCE_WIDTH
-#define FRAME_HEIGHT MAGI80_GRAPHICS_REFERENCE_HEIGHT
+#define FRAME_WIDTH MIGA80_GRAPHICS_REFERENCE_WIDTH
+#define FRAME_HEIGHT MIGA80_GRAPHICS_REFERENCE_HEIGHT
 #define FRAME_BYTES (FRAME_WIDTH * FRAME_HEIGHT)
 #define PLANE_BYTES (FRAME_BYTES / 8U)
 #define PADDED_PLANE_STRIDE 34U
 #define PADDED_OUTPUT_STRIDE 260U
 
-static uint8_t plane_storage[MAGI80_AGA_REFERENCE_PLANE_COUNT][PLANE_BYTES];
-static uint8_t padded_plane_storage[MAGI80_AGA_REFERENCE_PLANE_COUNT]
+static uint8_t plane_storage[MIGA80_AGA_REFERENCE_PLANE_COUNT][PLANE_BYTES];
+static uint8_t padded_plane_storage[MIGA80_AGA_REFERENCE_PLANE_COUNT]
                                    [PADDED_PLANE_STRIDE * FRAME_HEIGHT];
 static uint8_t front[FRAME_BYTES];
 static uint8_t back[FRAME_BYTES];
@@ -24,13 +24,13 @@ static uint8_t canonical_actual[FRAME_BYTES];
 static uint8_t padded_output[PADDED_OUTPUT_STRIDE * FRAME_HEIGHT];
 
 static void set_plane_pointers(
-    const uint8_t *read_planes[MAGI80_AGA_REFERENCE_PLANE_COUNT],
-    uint8_t *write_planes[MAGI80_AGA_REFERENCE_PLANE_COUNT],
-    uint8_t storage[MAGI80_AGA_REFERENCE_PLANE_COUNT][PLANE_BYTES])
+    const uint8_t *read_planes[MIGA80_AGA_REFERENCE_PLANE_COUNT],
+    uint8_t *write_planes[MIGA80_AGA_REFERENCE_PLANE_COUNT],
+    uint8_t storage[MIGA80_AGA_REFERENCE_PLANE_COUNT][PLANE_BYTES])
 {
     size_t plane;
 
-    for (plane = 0U; plane < MAGI80_AGA_REFERENCE_PLANE_COUNT; ++plane) {
+    for (plane = 0U; plane < MIGA80_AGA_REFERENCE_PLANE_COUNT; ++plane) {
         read_planes[plane] = storage[plane];
         write_planes[plane] = storage[plane];
     }
@@ -38,26 +38,26 @@ static void set_plane_pointers(
 
 static int test_single_byte_golden(void)
 {
-    static const uint8_t source_byte[MAGI80_AGA_REFERENCE_PLANE_COUNT] = {
+    static const uint8_t source_byte[MIGA80_AGA_REFERENCE_PLANE_COUNT] = {
         0x8aU, 0x45U, 0x91U, 0x26U, 0xa2U, 0x15U, 0xc1U, 0x0eU
     };
     static const uint8_t expected[8] = {
         30U, 23U, 19U, 17U, 16U, 15U, 20U, 25U
     };
-    const uint8_t *read_planes[MAGI80_AGA_REFERENCE_PLANE_COUNT];
-    uint8_t *write_planes[MAGI80_AGA_REFERENCE_PLANE_COUNT];
+    const uint8_t *read_planes[MIGA80_AGA_REFERENCE_PLANE_COUNT];
+    uint8_t *write_planes[MIGA80_AGA_REFERENCE_PLANE_COUNT];
     size_t plane;
     size_t pixel;
 
     memset(plane_storage, 0, sizeof(plane_storage));
     memset(canonical_actual, 0xcc, sizeof(canonical_actual));
     set_plane_pointers(read_planes, write_planes, plane_storage);
-    for (plane = 0U; plane < MAGI80_AGA_REFERENCE_PLANE_COUNT; ++plane) {
+    for (plane = 0U; plane < MIGA80_AGA_REFERENCE_PLANE_COUNT; ++plane) {
         plane_storage[plane][0] = source_byte[plane];
     }
-    if (magi80_aga_reference_decode_dual_playfield(
+    if (miga80_aga_reference_decode_dual_playfield(
             read_planes, FRAME_WIDTH / 8U, canonical_actual,
-            FRAME_WIDTH) != MAGI80_AGA_REFERENCE_OK ||
+            FRAME_WIDTH) != MIGA80_AGA_REFERENCE_OK ||
         memcmp(canonical_actual, expected, sizeof(expected)) != 0) {
         return 0;
     }
@@ -71,9 +71,9 @@ static int test_single_byte_golden(void)
 
 static int test_compositor_c2p_decoder_differential(void)
 {
-    const uint8_t *read_planes[MAGI80_AGA_REFERENCE_PLANE_COUNT];
-    uint8_t *write_planes[MAGI80_AGA_REFERENCE_PLANE_COUNT];
-    struct Magi80GraphicsReferenceScene scene;
+    const uint8_t *read_planes[MIGA80_AGA_REFERENCE_PLANE_COUNT];
+    uint8_t *write_planes[MIGA80_AGA_REFERENCE_PLANE_COUNT];
+    struct Miga80GraphicsReferenceScene scene;
     size_t x;
     size_t y;
 
@@ -111,16 +111,16 @@ static int test_compositor_c2p_decoder_differential(void)
 
     memset(plane_storage, 0xcc, sizeof(plane_storage));
     set_plane_pointers(read_planes, write_planes, plane_storage);
-    if (magi80_graphics_reference_compose(
+    if (miga80_graphics_reference_compose(
             &scene, canonical_expected, FRAME_WIDTH) !=
-            MAGI80_GRAPHICS_REFERENCE_OK ||
-        magi80_c2p_reference_byte4_x2(
+            MIGA80_GRAPHICS_REFERENCE_OK ||
+        miga80_c2p_reference_byte4_x2(
             front, back, FRAME_WIDTH, FRAME_HEIGHT, FRAME_WIDTH,
             FRAME_WIDTH, write_planes, FRAME_WIDTH / 8U) !=
-            MAGI80_C2P_OK ||
-        magi80_aga_reference_decode_dual_playfield(
+            MIGA80_C2P_OK ||
+        miga80_aga_reference_decode_dual_playfield(
             read_planes, FRAME_WIDTH / 8U, canonical_actual,
-            FRAME_WIDTH) != MAGI80_AGA_REFERENCE_OK) {
+            FRAME_WIDTH) != MIGA80_AGA_REFERENCE_OK) {
         return 0;
     }
     return memcmp(canonical_actual, canonical_expected, FRAME_BYTES) == 0;
@@ -128,14 +128,14 @@ static int test_compositor_c2p_decoder_differential(void)
 
 static int test_strides_and_padding(void)
 {
-    const uint8_t *read_planes[MAGI80_AGA_REFERENCE_PLANE_COUNT];
+    const uint8_t *read_planes[MIGA80_AGA_REFERENCE_PLANE_COUNT];
     size_t plane;
     size_t x;
     size_t y;
 
     memset(padded_plane_storage, 0x5a, sizeof(padded_plane_storage));
     memset(padded_output, 0xcc, sizeof(padded_output));
-    for (plane = 0U; plane < MAGI80_AGA_REFERENCE_PLANE_COUNT; ++plane) {
+    for (plane = 0U; plane < MIGA80_AGA_REFERENCE_PLANE_COUNT; ++plane) {
         read_planes[plane] = padded_plane_storage[plane];
         for (y = 0U; y < FRAME_HEIGHT; ++y) {
             memset(padded_plane_storage[plane] +
@@ -146,9 +146,9 @@ static int test_strides_and_padding(void)
     padded_plane_storage[1][0] = 0x80U;
     padded_plane_storage[0][PADDED_PLANE_STRIDE] = 0x80U;
 
-    if (magi80_aga_reference_decode_dual_playfield(
+    if (miga80_aga_reference_decode_dual_playfield(
             read_planes, PADDED_PLANE_STRIDE, padded_output,
-            PADDED_OUTPUT_STRIDE) != MAGI80_AGA_REFERENCE_OK) {
+            PADDED_OUTPUT_STRIDE) != MIGA80_AGA_REFERENCE_OK) {
         return 0;
     }
     for (y = 0U; y < FRAME_HEIGHT; ++y) {
@@ -170,7 +170,7 @@ static int test_strides_and_padding(void)
                 return 0;
             }
         }
-        for (plane = 0U; plane < MAGI80_AGA_REFERENCE_PLANE_COUNT;
+        for (plane = 0U; plane < MIGA80_AGA_REFERENCE_PLANE_COUNT;
              ++plane) {
             if (padded_plane_storage[plane]
                                     [(y * PADDED_PLANE_STRIDE) + 32U] !=
@@ -187,45 +187,45 @@ static int test_strides_and_padding(void)
 
 static int test_argument_contract(void)
 {
-    const uint8_t *read_planes[MAGI80_AGA_REFERENCE_PLANE_COUNT];
-    uint8_t *write_planes[MAGI80_AGA_REFERENCE_PLANE_COUNT];
+    const uint8_t *read_planes[MIGA80_AGA_REFERENCE_PLANE_COUNT];
+    uint8_t *write_planes[MIGA80_AGA_REFERENCE_PLANE_COUNT];
     size_t byte_index;
 
     memset(plane_storage, 0, sizeof(plane_storage));
     memset(canonical_actual, 0x5a, sizeof(canonical_actual));
     set_plane_pointers(read_planes, write_planes, plane_storage);
 
-    if (magi80_aga_reference_decode_dual_playfield(
+    if (miga80_aga_reference_decode_dual_playfield(
             NULL, FRAME_WIDTH / 8U, canonical_actual, FRAME_WIDTH) !=
-            MAGI80_AGA_REFERENCE_INVALID_ARGUMENT ||
-        magi80_aga_reference_decode_dual_playfield(
+            MIGA80_AGA_REFERENCE_INVALID_ARGUMENT ||
+        miga80_aga_reference_decode_dual_playfield(
             read_planes, FRAME_WIDTH / 8U, NULL, FRAME_WIDTH) !=
-            MAGI80_AGA_REFERENCE_INVALID_ARGUMENT ||
-        magi80_aga_reference_decode_dual_playfield(
+            MIGA80_AGA_REFERENCE_INVALID_ARGUMENT ||
+        miga80_aga_reference_decode_dual_playfield(
             read_planes, (FRAME_WIDTH / 8U) - 1U, canonical_actual,
-            FRAME_WIDTH) != MAGI80_AGA_REFERENCE_INVALID_STRIDE ||
-        magi80_aga_reference_decode_dual_playfield(
+            FRAME_WIDTH) != MIGA80_AGA_REFERENCE_INVALID_STRIDE ||
+        miga80_aga_reference_decode_dual_playfield(
             read_planes, FRAME_WIDTH / 8U, canonical_actual,
-            FRAME_WIDTH - 1U) != MAGI80_AGA_REFERENCE_INVALID_STRIDE) {
+            FRAME_WIDTH - 1U) != MIGA80_AGA_REFERENCE_INVALID_STRIDE) {
         return 0;
     }
 
     read_planes[3] = NULL;
-    if (magi80_aga_reference_decode_dual_playfield(
+    if (miga80_aga_reference_decode_dual_playfield(
             read_planes, FRAME_WIDTH / 8U, canonical_actual,
-            FRAME_WIDTH) != MAGI80_AGA_REFERENCE_INVALID_ARGUMENT) {
+            FRAME_WIDTH) != MIGA80_AGA_REFERENCE_INVALID_ARGUMENT) {
         return 0;
     }
     read_planes[3] = plane_storage[3];
-    if (magi80_aga_reference_decode_dual_playfield(
+    if (miga80_aga_reference_decode_dual_playfield(
             read_planes, FRAME_WIDTH / 8U, plane_storage[0],
-            FRAME_WIDTH) != MAGI80_AGA_REFERENCE_INVALID_ARGUMENT ||
-        magi80_aga_reference_decode_dual_playfield(
+            FRAME_WIDTH) != MIGA80_AGA_REFERENCE_INVALID_ARGUMENT ||
+        miga80_aga_reference_decode_dual_playfield(
             read_planes, SIZE_MAX, canonical_actual, FRAME_WIDTH) !=
-            MAGI80_AGA_REFERENCE_INVALID_STRIDE ||
-        magi80_aga_reference_decode_dual_playfield(
+            MIGA80_AGA_REFERENCE_INVALID_STRIDE ||
+        miga80_aga_reference_decode_dual_playfield(
             read_planes, FRAME_WIDTH / 8U, canonical_actual, SIZE_MAX) !=
-            MAGI80_AGA_REFERENCE_INVALID_STRIDE) {
+            MIGA80_AGA_REFERENCE_INVALID_STRIDE) {
         return 0;
     }
     for (byte_index = 0U; byte_index < FRAME_BYTES; ++byte_index) {

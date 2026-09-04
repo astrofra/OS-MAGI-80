@@ -1,1 +1,1 @@
-PASS  compiler bool/if CFG, locals, value IR, O0/O1, and spill frames
+PASS  compiler CFG liveness, phi-slot coalescing, O0/O1, and spill frames

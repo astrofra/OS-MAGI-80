@@ -24,7 +24,7 @@ lock_value()
 commit=$(lock_value musashi_commit)
 expected_sha256=$(lock_value musashi_archive_sha256)
 archive_url="https://github.com/kstenerud/Musashi/archive/${commit}.tar.gz"
-stamp="$destination/.magi80-source-revision"
+stamp="$destination/.miga80-source-revision"
 
 if [ -f "$stamp" ] && [ "$(sed -n '1p' "$stamp")" = "$commit" ]; then
     printf '%s\n%s\n' "$commit" "$expected_sha256" >"$stamp"
@@ -38,7 +38,7 @@ if [ -e "$destination" ]; then
     exit 1
 fi
 
-work_dir=$(mktemp -d "${TMPDIR:-/tmp}/magi80-musashi.XXXXXX")
+work_dir=$(mktemp -d "${TMPDIR:-/tmp}/miga80-musashi.XXXXXX")
 trap 'rm -rf "$work_dir"' EXIT HUP INT TERM
 archive="$work_dir/musashi.tar.gz"
 source_dir="$work_dir/source"
@@ -68,7 +68,7 @@ fi
 mkdir -p "$source_dir" "$(dirname -- "$destination")"
 tar -xzf "$archive" -C "$source_dir" --strip-components=1
 printf '%s\n%s\n' "$commit" "$expected_sha256" \
-    >"$source_dir/.magi80-source-revision"
+    >"$source_dir/.miga80-source-revision"
 mv "$source_dir" "$destination"
 
 printf 'Fetched Musashi %s\n' "$commit"

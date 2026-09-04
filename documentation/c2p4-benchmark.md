@@ -1,4 +1,4 @@
-# MAGI-80 Four-Plane C2P Reference and Benchmark
+# MIGA-80 Four-Plane C2P Reference and Benchmark
 
 **Status:** Reference, pair-LUT C99/68020, table-free mask32 C99/68020, staged blitter-publication control, and the report-format-3 exclusive display/DMA/memory wrapper implemented; native, 204-case stock FS-UAE, and 260-case Fast-assisted FS-UAE protocols pass
 
@@ -24,7 +24,7 @@ All viewports are centered at byte-aligned x coordinates in the 256 × 256 displ
 
 The four output pointers have this logical order:
 
-| C2P4 destination | AGA destination in MAGI-80 | Source color bit |
+| C2P4 destination | AGA destination in MIGA-80 | Source color bit |
 | ---: | --- | ---: |
 | 0 | BPL1 / PF1 | 0 |
 | 1 | BPL3 / PF1 | 1 |
@@ -167,7 +167,7 @@ This tranche does not yet select packed4, byte4, or any backend. The next C2P4 w
 4. implement a genuine CPU/blitter merge split such as a C2P4 adaptation of CPU3BLIT1, with explicit intermediate layout and direct-register ownership documented;
 5. add aligned dirty-rectangle and no-change workloads;
 6. add double-buffered or Copper-safe publication rather than direct writes to the visible PF1 planes;
-7. add the minimal MAGI-80 Level-3 VBlank/raster path, exception capture and visible persistent phase marker needed for `exclusive_runtime_frame`;
+7. add the minimal MIGA-80 Level-3 VBlank/raster path, exception capture and visible persistent phase marker needed for `exclusive_runtime_frame`;
 8. stress hosted-to-exclusive restoration and forced failures, then repeat with representative native-planar, sprite, blitter, and Paula traffic;
 9. run longer distributions on a stock 2 MiB PAL A1200 and freeze only the smallest profile/layout contract that meets headroom.
 

@@ -1,4 +1,4 @@
-# MAGI-80 Three-Layer Graphics Reference Compositor
+# MIGA-80 Three-Layer Graphics Reference Compositor
 
 **Status:** Initial portable C99 oracle implemented; native golden and sanitizer tests pass on macOS
 
@@ -6,7 +6,7 @@
 
 ## 1. Purpose
 
-The reference compositor defines what a MAGI-80 frame means without depending on AGA bitplanes, C2P layout, blitter commands, Copper scheduling, or physical sprite allocation. Future native-planar, chunky-conversion, hardware-sprite, and fallback paths must reproduce its visible output.
+The reference compositor defines what a MIGA-80 frame means without depending on AGA bitplanes, C2P layout, blitter commands, Copper scheduling, or physical sprite allocation. Future native-planar, chunky-conversion, hardware-sprite, and fallback paths must reproduce its visible output.
 
 It deliberately optimizes for clarity and testability rather than speed. It is not a candidate runtime renderer.
 

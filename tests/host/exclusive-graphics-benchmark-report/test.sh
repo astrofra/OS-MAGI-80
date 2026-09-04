@@ -2,14 +2,14 @@
 
 set -euo pipefail
 
-MAGI80_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
-MAGI80_VALIDATOR="$MAGI80_ROOT/scripts/validate-exclusive-graphics-benchmark-report.sh"
-MAGI80_VALID="$MAGI80_ROOT/tests/host/exclusive-graphics-benchmark-report/valid.txt"
-MAGI80_VALID_V2="$MAGI80_ROOT/tests/host/exclusive-graphics-benchmark-report/valid-v2.txt"
-MAGI80_TEMP=$(mktemp -d "${TMPDIR:-/tmp}/magi80-exclusive-report.XXXXXX")
-trap 'rm -rf "$MAGI80_TEMP"' EXIT
-MAGI80_VALID_V3="$MAGI80_TEMP/valid-v3.txt"
-MAGI80_VALID_V3_FAST="$MAGI80_TEMP/valid-v3-fast.txt"
+MIGA80_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
+MIGA80_VALIDATOR="$MIGA80_ROOT/scripts/validate-exclusive-graphics-benchmark-report.sh"
+MIGA80_VALID="$MIGA80_ROOT/tests/host/exclusive-graphics-benchmark-report/valid.txt"
+MIGA80_VALID_V2="$MIGA80_ROOT/tests/host/exclusive-graphics-benchmark-report/valid-v2.txt"
+MIGA80_TEMP=$(mktemp -d "${TMPDIR:-/tmp}/miga80-exclusive-report.XXXXXX")
+trap 'rm -rf "$MIGA80_TEMP"' EXIT
+MIGA80_VALID_V3="$MIGA80_TEMP/valid-v3.txt"
+MIGA80_VALID_V3_FAST="$MIGA80_TEMP/valid-v3-fast.txt"
 
 /usr/bin/awk '
 NR == 1 {
@@ -65,7 +65,7 @@ $0 == "case_count=7" {
     print "baseline_case_count=204"
   }
 }
-' "$MAGI80_VALID_V2" >"$MAGI80_VALID_V3"
+' "$MIGA80_VALID_V2" >"$MIGA80_VALID_V3"
 
 /usr/bin/awk '
 $0 == "available_fast_bytes_before_setup=0" {
@@ -109,31 +109,31 @@ $0 == "result=pass" {
   }
 }
 { print }
-' "$MAGI80_VALID_V3" >"$MAGI80_VALID_V3_FAST"
+' "$MIGA80_VALID_V3" >"$MIGA80_VALID_V3_FAST"
 
-"$MAGI80_VALIDATOR" "$MAGI80_VALID" >/dev/null
-"$MAGI80_VALIDATOR" "$MAGI80_VALID_V2" >/dev/null
-"$MAGI80_VALIDATOR" "$MAGI80_VALID_V3" >/dev/null
-"$MAGI80_VALIDATOR" "$MAGI80_VALID_V3_FAST" >/dev/null
+"$MIGA80_VALIDATOR" "$MIGA80_VALID" >/dev/null
+"$MIGA80_VALIDATOR" "$MIGA80_VALID_V2" >/dev/null
+"$MIGA80_VALIDATOR" "$MIGA80_VALID_V3" >/dev/null
+"$MIGA80_VALIDATOR" "$MIGA80_VALID_V3_FAST" >/dev/null
 
 /usr/bin/sed '43s/sprite_dma=inactive/sprite_dma=active/' \
-  "$MAGI80_VALID" >"$MAGI80_TEMP/invalid-dma.txt"
-if "$MAGI80_VALIDATOR" "$MAGI80_TEMP/invalid-dma.txt" >/dev/null 2>&1; then
+  "$MIGA80_VALID" >"$MIGA80_TEMP/invalid-dma.txt"
+if "$MIGA80_VALIDATOR" "$MIGA80_TEMP/invalid-dma.txt" >/dev/null 2>&1; then
   printf 'FAIL exclusive graphics report accepted a mismatched DMA profile\n'
   exit 1
 fi
 
 /usr/bin/sed '43s/actual_checksum=123456/actual_checksum=654321/' \
-  "$MAGI80_VALID" >"$MAGI80_TEMP/invalid-checksum.txt"
-if "$MAGI80_VALIDATOR" "$MAGI80_TEMP/invalid-checksum.txt" \
+  "$MIGA80_VALID" >"$MIGA80_TEMP/invalid-checksum.txt"
+if "$MIGA80_VALIDATOR" "$MIGA80_TEMP/invalid-checksum.txt" \
     >/dev/null 2>&1; then
   printf 'FAIL exclusive graphics report accepted a checksum mismatch\n'
   exit 1
 fi
 
 /usr/bin/sed '43s/maximum_ticks=1020/maximum_ticks=2000000/' \
-  "$MAGI80_VALID" >"$MAGI80_TEMP/invalid-timer.txt"
-if "$MAGI80_VALIDATOR" "$MAGI80_TEMP/invalid-timer.txt" \
+  "$MIGA80_VALID" >"$MIGA80_TEMP/invalid-timer.txt"
+if "$MIGA80_VALIDATOR" "$MIGA80_TEMP/invalid-timer.txt" \
     >/dev/null 2>&1; then
   printf 'FAIL exclusive graphics report accepted an implausible timer sample\n'
   exit 1
@@ -141,8 +141,8 @@ fi
 
 /usr/bin/sed \
   's/blitter_busy_at_kernel_end_samples=3/blitter_busy_at_kernel_end_samples=2/' \
-  "$MAGI80_VALID_V2" >"$MAGI80_TEMP/invalid-blitter-span.txt"
-if "$MAGI80_VALIDATOR" "$MAGI80_TEMP/invalid-blitter-span.txt" \
+  "$MIGA80_VALID_V2" >"$MIGA80_TEMP/invalid-blitter-span.txt"
+if "$MIGA80_VALIDATOR" "$MIGA80_TEMP/invalid-blitter-span.txt" \
     >/dev/null 2>&1; then
   printf 'FAIL exclusive graphics report accepted an incomplete blitter load\n'
   exit 1
@@ -150,8 +150,8 @@ fi
 
 /usr/bin/sed \
   's/exclusive_timer_resource=ciaa/exclusive_timer_resource=timer.device/' \
-  "$MAGI80_VALID_V2" >"$MAGI80_TEMP/invalid-exclusive-timer.txt"
-if "$MAGI80_VALIDATOR" "$MAGI80_TEMP/invalid-exclusive-timer.txt" \
+  "$MIGA80_VALID_V2" >"$MIGA80_TEMP/invalid-exclusive-timer.txt"
+if "$MIGA80_VALIDATOR" "$MIGA80_TEMP/invalid-exclusive-timer.txt" \
     >/dev/null 2>&1; then
   printf 'FAIL exclusive graphics report accepted an unreserved timer source\n'
   exit 1
@@ -164,16 +164,16 @@ fi
   changed = 1
 }
 { print }
-' "$MAGI80_VALID_V3" >"$MAGI80_TEMP/invalid-total-traffic.txt"
-if "$MAGI80_VALIDATOR" "$MAGI80_TEMP/invalid-total-traffic.txt" \
+' "$MIGA80_VALID_V3" >"$MIGA80_TEMP/invalid-total-traffic.txt"
+if "$MIGA80_VALIDATOR" "$MIGA80_TEMP/invalid-total-traffic.txt" \
     >/dev/null 2>&1; then
   printf 'FAIL exclusive graphics report accepted bad total traffic\n'
   exit 1
 fi
 
 /usr/bin/sed 's/fast_matrix=not_present/fast_matrix=active/' \
-  "$MAGI80_VALID_V3" >"$MAGI80_TEMP/invalid-fast-matrix.txt"
-if "$MAGI80_VALIDATOR" "$MAGI80_TEMP/invalid-fast-matrix.txt" \
+  "$MIGA80_VALID_V3" >"$MIGA80_TEMP/invalid-fast-matrix.txt"
+if "$MIGA80_VALIDATOR" "$MIGA80_TEMP/invalid-fast-matrix.txt" \
     >/dev/null 2>&1; then
   printf 'FAIL exclusive graphics report accepted inconsistent Fast metadata\n'
   exit 1

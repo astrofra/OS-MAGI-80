@@ -1,25 +1,25 @@
-#ifndef MAGI80_GRAPHICS_REFERENCE_COMPOSITOR_H
-#define MAGI80_GRAPHICS_REFERENCE_COMPOSITOR_H
+#ifndef MIGA80_GRAPHICS_REFERENCE_COMPOSITOR_H
+#define MIGA80_GRAPHICS_REFERENCE_COMPOSITOR_H
 
 #include <stddef.h>
 #include <stdint.h>
 
 enum {
-    MAGI80_GRAPHICS_REFERENCE_WIDTH = 256,
-    MAGI80_GRAPHICS_REFERENCE_HEIGHT = 256,
-    MAGI80_GRAPHICS_REFERENCE_MAX_OBJECTS = 256,
-    MAGI80_GRAPHICS_PLANAR_COLOR_COUNT = 16,
-    MAGI80_GRAPHICS_OVERLAY_COLOR_BASE = 15
+    MIGA80_GRAPHICS_REFERENCE_WIDTH = 256,
+    MIGA80_GRAPHICS_REFERENCE_HEIGHT = 256,
+    MIGA80_GRAPHICS_REFERENCE_MAX_OBJECTS = 256,
+    MIGA80_GRAPHICS_PLANAR_COLOR_COUNT = 16,
+    MIGA80_GRAPHICS_OVERLAY_COLOR_BASE = 15
 };
 
-enum Magi80GraphicsReferenceStatus {
-    MAGI80_GRAPHICS_REFERENCE_OK = 0,
-    MAGI80_GRAPHICS_REFERENCE_INVALID_ARGUMENT,
-    MAGI80_GRAPHICS_REFERENCE_INVALID_DIMENSIONS,
-    MAGI80_GRAPHICS_REFERENCE_INVALID_STRIDE,
-    MAGI80_GRAPHICS_REFERENCE_INVALID_REGION,
-    MAGI80_GRAPHICS_REFERENCE_TOO_MANY_OBJECTS,
-    MAGI80_GRAPHICS_REFERENCE_INVALID_BACKEND_HINT
+enum Miga80GraphicsReferenceStatus {
+    MIGA80_GRAPHICS_REFERENCE_OK = 0,
+    MIGA80_GRAPHICS_REFERENCE_INVALID_ARGUMENT,
+    MIGA80_GRAPHICS_REFERENCE_INVALID_DIMENSIONS,
+    MIGA80_GRAPHICS_REFERENCE_INVALID_STRIDE,
+    MIGA80_GRAPHICS_REFERENCE_INVALID_REGION,
+    MIGA80_GRAPHICS_REFERENCE_TOO_MANY_OBJECTS,
+    MIGA80_GRAPHICS_REFERENCE_INVALID_BACKEND_HINT
 };
 
 /*
@@ -27,14 +27,14 @@ enum Magi80GraphicsReferenceStatus {
  * it but deliberately ignores it when producing pixels: hardware sprites and
  * planar fallback must have identical logical output.
  */
-enum Magi80GraphicsObjectBackendHint {
-    MAGI80_GRAPHICS_OBJECT_BACKEND_AUTO = 0,
-    MAGI80_GRAPHICS_OBJECT_BACKEND_HARDWARE_SPRITE,
-    MAGI80_GRAPHICS_OBJECT_BACKEND_PLANAR_FALLBACK
+enum Miga80GraphicsObjectBackendHint {
+    MIGA80_GRAPHICS_OBJECT_BACKEND_AUTO = 0,
+    MIGA80_GRAPHICS_OBJECT_BACKEND_HARDWARE_SPRITE,
+    MIGA80_GRAPHICS_OBJECT_BACKEND_PLANAR_FALLBACK
 };
 
 /* Only the low nibble of each source pixel is significant. */
-struct Magi80GraphicsReferenceSurface4 {
+struct Miga80GraphicsReferenceSurface4 {
     const uint8_t *pixels;
     size_t width;
     size_t height;
@@ -45,8 +45,8 @@ struct Magi80GraphicsReferenceSurface4 {
  * A view selects a rectangle from a source surface and places it on the
  * 256x256 logical display.  A negative screen position clips the view.
  */
-struct Magi80GraphicsReferenceView4 {
-    struct Magi80GraphicsReferenceSurface4 surface;
+struct Miga80GraphicsReferenceView4 {
+    struct Miga80GraphicsReferenceSurface4 surface;
     size_t source_x;
     size_t source_y;
     size_t width;
@@ -56,8 +56,8 @@ struct Magi80GraphicsReferenceView4 {
     uint8_t enabled;
 };
 
-struct Magi80GraphicsReferenceObject {
-    struct Magi80GraphicsReferenceSurface4 surface;
+struct Miga80GraphicsReferenceObject {
+    struct Miga80GraphicsReferenceSurface4 surface;
     size_t source_x;
     size_t source_y;
     size_t width;
@@ -66,13 +66,13 @@ struct Magi80GraphicsReferenceObject {
     int32_t world_y;
     uint8_t priority;
     uint8_t visible;
-    enum Magi80GraphicsObjectBackendHint backend_hint;
+    enum Miga80GraphicsObjectBackendHint backend_hint;
 };
 
-struct Magi80GraphicsReferenceScene {
-    struct Magi80GraphicsReferenceView4 planar;
-    struct Magi80GraphicsReferenceView4 pixel;
-    const struct Magi80GraphicsReferenceObject *objects;
+struct Miga80GraphicsReferenceScene {
+    struct Miga80GraphicsReferenceView4 planar;
+    struct Miga80GraphicsReferenceView4 pixel;
+    const struct Miga80GraphicsReferenceObject *objects;
     size_t object_count;
     int32_t object_camera_x;
     int32_t object_camera_y;
@@ -88,8 +88,8 @@ struct Magi80GraphicsReferenceScene {
  * Output row padding is preserved.  All input is validated before output is
  * modified.  Input surfaces and output storage must not overlap.
  */
-enum Magi80GraphicsReferenceStatus magi80_graphics_reference_compose(
-    const struct Magi80GraphicsReferenceScene *scene,
+enum Miga80GraphicsReferenceStatus miga80_graphics_reference_compose(
+    const struct Miga80GraphicsReferenceScene *scene,
     uint8_t *output,
     size_t output_stride);
 

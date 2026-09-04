@@ -4,9 +4,9 @@ set -euo pipefail
 export LC_ALL=C
 export LANG=C
 
-MAGI80_REPORT="${1:-}"
+MIGA80_REPORT="${1:-}"
 
-if [ "$#" -ne 1 ] || [ ! -f "$MAGI80_REPORT" ]; then
+if [ "$#" -ne 1 ] || [ ! -f "$MIGA80_REPORT" ]; then
   printf 'Usage: %s graphics-benchmark-report\n' "$0" >&2
   exit 1
 fi
@@ -244,6 +244,6 @@ END {
   }
   if (failed) exit 1
 }
-' "$MAGI80_REPORT"
+' "$MIGA80_REPORT"
 
 printf 'PASS graphics benchmark report schema and invariants\n'

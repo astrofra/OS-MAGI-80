@@ -349,6 +349,12 @@ static int test_bool_comparisons_and_cfg(void)
     static const uint32_t false_arguments[] = {7U, 20U, 0U};
     static const char bool_source[] =
         "function ordered(a: i32, b: i32): bool return a < b end";
+    static const char coalesced_source[] =
+        "function coalesced(a: i32, b: i32, flag: bool): i32 "
+        "local x: i32 = a "
+        "if flag then x = a + 1 else x = b - 1 end "
+        "if flag then x = x + 2 else x = x - 3 end "
+        "return x end";
     struct miga80_ir_function ir;
     struct miga80_value_function value_ir;
     struct miga80_diagnostic diagnostic;
@@ -423,7 +429,32 @@ static int test_bool_comparisons_and_cfg(void)
         result != 1U) {
         return 0;
     }
-    return 1;
+    if (!compile_source(coalesced_source, &ir, &diagnostic) ||
+        !miga80_build_value_ir(&ir, &value_ir, &diagnostic)) {
+        return 0;
+    }
+    phi_count = 0U;
+    for (index = 0U; index < value_ir.value_count; ++index) {
+        if (value_ir.values[index].live &&
+            value_ir.values[index].opcode == MIGA80_VALUE_PHI) {
+            ++phi_count;
+        }
+    }
+    if (phi_count != 2U || (assembly = tmpfile()) == NULL) {
+        return 0;
+    }
+    emitted = miga80_emit_gnu_m68k_o1(assembly, &value_ir, &diagnostic);
+    rewind(assembly);
+    assembly_size =
+        fread(assembly_text, 1U, sizeof(assembly_text) - 1U, assembly);
+    assembly_text[assembly_size] = '\0';
+    if (ferror(assembly) ||
+        strstr(assembly_text, "link.w  %a6,#-4") == NULL ||
+        strstr(assembly_text, "link.w  %a6,#-8") != NULL) {
+        emitted = 0;
+    }
+    closed = fclose(assembly);
+    return emitted && closed == 0;
 }
 
 static int test_spill_frame(void)
@@ -533,6 +564,6 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    printf("PASS  compiler bool/if CFG, locals, value IR, O0/O1, and spill frames\n");
+    printf("PASS  compiler CFG liveness, phi-slot coalescing, O0/O1, and spill frames\n");
     return 0;
 }

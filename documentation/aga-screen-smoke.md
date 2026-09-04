@@ -1,4 +1,4 @@
-# MAGI-80 Hosted AGA Screen Smoke Test
+# MIGA-80 Hosted AGA Screen Smoke Test
 
 **Status:** Passing under FS-UAE 3.2.35 with the stock PAL A1200 profile and Kickstart 3.0/39.106 on 2026-09-02
 
@@ -6,7 +6,7 @@
 
 ## 1. Purpose and Boundary
 
-This smoke test proves that the selected C99/libnix ABI can use the documented AmigaOS 3.0 graphics stack to create the display shape required by MAGI-80 and feed it with the portable reference converter:
+This smoke test proves that the selected C99/libnix ABI can use the documented AmigaOS 3.0 graphics stack to create the display shape required by MIGA-80 and feed it with the portable reference converter:
 
 - a 256 × 256 PAL low-resolution screen;
 - eight displayable bitplanes in Chip RAM;
@@ -19,7 +19,7 @@ It deliberately remains a hosted, cooperative test. Intuition and `graphics.libr
 
 ## 2. Provisional Display Mapping
 
-| MAGI-80 layer | AGA playfield | Hardware bitplanes | Priority | Color base |
+| MIGA-80 layer | AGA playfield | Hardware bitplanes | Priority | Color base |
 |---|---|---|---|---:|
 | `FRONT` | PF1 | BPL1, BPL3, BPL5, BPL7 | In front | 0 |
 | `BACK` | PF2 | BPL2, BPL4, BPL6, BPL8 | Behind | 16 |
@@ -48,7 +48,7 @@ The executable fails with a named stage unless all of the following hold:
 6. all eight bitmap planes are non-null, displayable, and in Chip RAM.
 7. opening the screen consumes at least the expected 65,536 plane bytes.
 8. PF1/PF2 palette bases read back as 0 and 16.
-9. all 32 palette entries round-trip at the MAGI-80 four-bit component precision.
+9. all 32 palette entries round-trip at the MIGA-80 four-bit component precision.
 10. a 65,536-byte chunky framebuffer is allocated and the reference converter accepts the real plane layout and row stride.
 11. converted background and foreground pixels preserve the other playfield's bits at five probe positions.
 12. the pattern remains displayed for 50 PAL frames.
@@ -82,7 +82,7 @@ build/reports/aga-screen-disassembly.txt
 
 The validated executable is a 7,816-byte Hunk file containing 5,164 bytes of text, 208 bytes of data, and 824 bytes of BSS. It introduces no `stdio`, C allocator, or floating-point dependency; the framebuffer is explicitly managed through Exec `AllocMem()` and `FreeMem()`.
 
-The generic FS-UAE runner temporarily stages this executable, compares its redirected AmigaDOS output with `tests/smoke/aga-screen/expected.txt`, and restores the previously staged MAGI-80 executable even on failure or interruption.
+The generic FS-UAE runner temporarily stages this executable, compares its redirected AmigaDOS output with `tests/smoke/aga-screen/expected.txt`, and restores the previously staged MIGA-80 executable even on failure or interruption.
 
 ## 6. What This Does Not Prove
 
@@ -90,7 +90,7 @@ This result does not itself validate:
 
 - the optimized C2P4 candidates or their frame cost on real hardware;
 - double buffering and safe VBlank plane-pointer swaps;
-- direct AGA register values, fetch mode, modulo, or a MAGI-80 Copper list;
+- direct AGA register values, fetch mode, modulo, or a MIGA-80 Copper list;
 - hosted-to-exclusive takeover and restoration;
 - visual output against a captured golden image;
 - Kickstart 3.1 behavior;

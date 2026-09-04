@@ -113,7 +113,7 @@ else
   MIGA80_GXX_COMMAND="g++"
 fi
 
-printf 'MAGI-80 host toolchain check\n'
+printf 'MIGA-80 host toolchain check\n'
 printf 'Host:     %s %s (%s)\n' "$(/usr/bin/sw_vers -productName)" "$(/usr/bin/sw_vers -productVersion)" "$(/usr/bin/uname -m)"
 printf 'Homebrew: %s\n' "$MIGA80_BREW_PREFIX"
 printf 'SDK:      %s\n' "$(/usr/bin/xcrun --show-sdk-path 2>/dev/null || printf 'not found')"

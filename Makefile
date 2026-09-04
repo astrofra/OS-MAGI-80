@@ -1,14 +1,14 @@
 SHELL := /bin/bash
 
-MAGI80_TOOLCHAIN_PREFIX ?= $(HOME)/.local/m68k-amigaos
-MAGI80_PIPX_BIN ?= $(HOME)/.local/bin
+MIGA80_TOOLCHAIN_PREFIX ?= $(HOME)/.local/m68k-amigaos
+MIGA80_PIPX_BIN ?= $(HOME)/.local/bin
 
-TARGET_CC := $(MAGI80_TOOLCHAIN_PREFIX)/bin/m68k-amigaos-gcc
-TARGET_SIZE := $(MAGI80_TOOLCHAIN_PREFIX)/bin/m68k-amigaos-size
-TARGET_NM := $(MAGI80_TOOLCHAIN_PREFIX)/bin/m68k-amigaos-nm
-TARGET_OBJDUMP := $(MAGI80_TOOLCHAIN_PREFIX)/bin/m68k-amigaos-objdump
-TARGET_AS := $(MAGI80_TOOLCHAIN_PREFIX)/bin/m68k-amigaos-as
-TARGET_OBJCOPY := $(MAGI80_TOOLCHAIN_PREFIX)/bin/m68k-amigaos-objcopy
+TARGET_CC := $(MIGA80_TOOLCHAIN_PREFIX)/bin/m68k-amigaos-gcc
+TARGET_SIZE := $(MIGA80_TOOLCHAIN_PREFIX)/bin/m68k-amigaos-size
+TARGET_NM := $(MIGA80_TOOLCHAIN_PREFIX)/bin/m68k-amigaos-nm
+TARGET_OBJDUMP := $(MIGA80_TOOLCHAIN_PREFIX)/bin/m68k-amigaos-objdump
+TARGET_AS := $(MIGA80_TOOLCHAIN_PREFIX)/bin/m68k-amigaos-as
+TARGET_OBJCOPY := $(MIGA80_TOOLCHAIN_PREFIX)/bin/m68k-amigaos-objcopy
 TARGET_RUNTIME := -mcrt=nix20
 HOST_CC ?= cc
 
@@ -17,9 +17,9 @@ PROJECT_CPPFLAGS := -Isrc
 AMIGA_BUILD_DIR := build/amiga
 REPORT_DIR := build/reports
 STAGING_DIR := build/staging
-AMIGA_PROGRAM := $(AMIGA_BUILD_DIR)/magi80
-AMIGA_MAP := $(AMIGA_BUILD_DIR)/magi80.map
-STAGED_PROGRAM := $(STAGING_DIR)/magi80
+AMIGA_PROGRAM := $(AMIGA_BUILD_DIR)/miga80
+AMIGA_MAP := $(AMIGA_BUILD_DIR)/miga80.map
+STAGED_PROGRAM := $(STAGING_DIR)/miga80
 SMOKE_BUILD_DIR := build/smoke
 AGA_SCREEN_BUILD_DIR := $(SMOKE_BUILD_DIR)/aga-screen
 AGA_SCREEN_SOURCE := tests/smoke/aga-screen/main.c
@@ -32,7 +32,7 @@ C2P_REFERENCE_SOURCES := $(C2P_REFERENCE_SOURCE) $(C2P_REFERENCE_LAYOUTS_SOURCE)
 C2P_REFERENCE_HEADER := src/graphics/c2p_reference.h
 HOST_BUILD_DIR := build/host
 MUSASHI_DEP_DIR := build/deps/musashi
-MUSASHI_READY := $(MUSASHI_DEP_DIR)/.magi80-source-revision
+MUSASHI_READY := $(MUSASHI_DEP_DIR)/.miga80-source-revision
 COMPILER_ABI_SOURCE := compiler/abi/abi.c
 COMPILER_ABI_HEADER := compiler/abi/abi.h
 MIGA68K_TEST_BUILD_DIR := $(HOST_BUILD_DIR)/miga68k-test
@@ -231,9 +231,9 @@ EXCLUSIVE_GRAPHICS_ADF_TESTER := \
 	scripts/test-exclusive-graphics-adf-fs-uae.sh
 DISTRIBUTION_DIR := build/distribution
 EXCLUSIVE_GRAPHICS_TEST_ADF := \
-	$(DISTRIBUTION_DIR)/magi80-exclusive-graphics-test.adf
+	$(DISTRIBUTION_DIR)/miga80-exclusive-graphics-test.adf
 EXCLUSIVE_GRAPHICS_TEST_ADF_MANIFEST := \
-	$(DISTRIBUTION_DIR)/magi80-exclusive-graphics-test.manifest.txt
+	$(DISTRIBUTION_DIR)/miga80-exclusive-graphics-test.manifest.txt
 
 TARGET_CFLAGS := \
 	-std=c99 \
@@ -302,14 +302,14 @@ $(STAGED_PROGRAM): $(AMIGA_PROGRAM)
 
 inspect: $(AMIGA_PROGRAM)
 	@mkdir -p $(REPORT_DIR)
-	$(TARGET_SIZE) $(AMIGA_PROGRAM) | tee $(REPORT_DIR)/magi80-size.txt
-	$(TARGET_NM) --print-size --size-sort $(AMIGA_PROGRAM) >$(REPORT_DIR)/magi80-symbols.txt
-	$(TARGET_OBJDUMP) -dr $(AMIGA_PROGRAM) >$(REPORT_DIR)/magi80-disassembly.txt
+	$(TARGET_SIZE) $(AMIGA_PROGRAM) | tee $(REPORT_DIR)/miga80-size.txt
+	$(TARGET_NM) --print-size --size-sort $(AMIGA_PROGRAM) >$(REPORT_DIR)/miga80-symbols.txt
+	$(TARGET_OBJDUMP) -dr $(AMIGA_PROGRAM) >$(REPORT_DIR)/miga80-disassembly.txt
 
 vamos-test: $(AMIGA_PROGRAM)
 	@mkdir -p $(REPORT_DIR)
-	PATH="$(MAGI80_PIPX_BIN):$$PATH" vamos -C 20 $(AMIGA_PROGRAM) >$(REPORT_DIR)/magi80-vamos.txt
-	diff -u tests/smoke/hosted-bootstrap/expected.txt $(REPORT_DIR)/magi80-vamos.txt
+	PATH="$(MIGA80_PIPX_BIN):$$PATH" vamos -C 20 $(AMIGA_PROGRAM) >$(REPORT_DIR)/miga80-vamos.txt
+	diff -u tests/smoke/hosted-bootstrap/expected.txt $(REPORT_DIR)/miga80-vamos.txt
 
 run: stage
 	./scripts/run-fs-uae.sh a1200-pal-ks30-hd
@@ -406,33 +406,33 @@ compiler-amiga-test: $(MIGA80C_AMIGA_PROGRAM) $(MIGA80C_PROGRAM) \
 	@mkdir -p $(REPORT_DIR)
 	$(TARGET_SIZE) $(MIGA80C_AMIGA_PROGRAM) | \
 		tee $(MIGA80C_AMIGA_SIZE_REPORT)
-	PATH="$(MAGI80_PIPX_BIN):$$PATH" vamos -C 20 -- \
+	PATH="$(MIGA80_PIPX_BIN):$$PATH" vamos -C 20 -- \
 		$(MIGA80C_AMIGA_PROGRAM) $(COMPILER_PIPELINE_SOURCE) \
 		--eval 7 5 2 >$(MIGA80C_AMIGA_REPORT)
 	diff -u $(MIGA80C_AMIGA_EXPECTED) $(MIGA80C_AMIGA_REPORT)
 	$(MIGA80C_PROGRAM) $(COMPILER_PIPELINE_SOURCE) -O1 -S \
 		-o $(MIGA80C_AMIGA_HOST_ASSEMBLY)
-	PATH="$(MAGI80_PIPX_BIN):$$PATH" vamos -C 20 -- \
+	PATH="$(MIGA80_PIPX_BIN):$$PATH" vamos -C 20 -- \
 		$(MIGA80C_AMIGA_PROGRAM) $(COMPILER_PIPELINE_SOURCE) -O1 -S \
 		-o $(MIGA80C_AMIGA_TARGET_ASSEMBLY)
 	cmp $(MIGA80C_AMIGA_HOST_ASSEMBLY) $(MIGA80C_AMIGA_TARGET_ASSEMBLY)
 	$(COMPILER_TEST_PROGRAM) --emit-spill-fixture \
 		>$(MIGA80C_AMIGA_HOST_SPILL_ASSEMBLY)
-	PATH="$(MAGI80_PIPX_BIN):$$PATH" vamos -C 20 -- \
+	PATH="$(MIGA80_PIPX_BIN):$$PATH" vamos -C 20 -- \
 		$(MIGA80C_AMIGA_SPILL_TEST) --emit-spill-fixture \
 		>$(MIGA80C_AMIGA_TARGET_SPILL_ASSEMBLY)
 	cmp $(MIGA80C_AMIGA_HOST_SPILL_ASSEMBLY) \
 		$(MIGA80C_AMIGA_TARGET_SPILL_ASSEMBLY)
 	$(MIGA80C_PROGRAM) $(COMPILER_LOCALS_PIPELINE_SOURCE) -O1 -S \
 		-o $(MIGA80C_AMIGA_HOST_LOCALS_ASSEMBLY)
-	PATH="$(MAGI80_PIPX_BIN):$$PATH" vamos -C 20 -- \
+	PATH="$(MIGA80_PIPX_BIN):$$PATH" vamos -C 20 -- \
 		$(MIGA80C_AMIGA_PROGRAM) $(COMPILER_LOCALS_PIPELINE_SOURCE) -O1 -S \
 		-o $(MIGA80C_AMIGA_TARGET_LOCALS_ASSEMBLY)
 	cmp $(MIGA80C_AMIGA_HOST_LOCALS_ASSEMBLY) \
 		$(MIGA80C_AMIGA_TARGET_LOCALS_ASSEMBLY)
 	$(MIGA80C_PROGRAM) $(COMPILER_CONDITIONALS_PIPELINE_SOURCE) -O1 -S \
 		-o $(MIGA80C_AMIGA_HOST_CONDITIONALS_ASSEMBLY)
-	PATH="$(MAGI80_PIPX_BIN):$$PATH" vamos -C 20 -- \
+	PATH="$(MIGA80_PIPX_BIN):$$PATH" vamos -C 20 -- \
 		$(MIGA80C_AMIGA_PROGRAM) $(COMPILER_CONDITIONALS_PIPELINE_SOURCE) \
 		-O1 -S -o $(MIGA80C_AMIGA_TARGET_CONDITIONALS_ASSEMBLY)
 	cmp $(MIGA80C_AMIGA_HOST_CONDITIONALS_ASSEMBLY) \
@@ -651,7 +651,7 @@ c2p4-benchmark-inspect: $(C2P4_BENCHMARK_PROGRAM)
 		>$(REPORT_DIR)/c2p4-disassembly.txt
 
 c2p4-benchmark-fs-uae: stage c2p4-benchmark-inspect
-	MAGI80_FS_UAE_TIMEOUT_SECONDS=360 \
+	MIGA80_FS_UAE_TIMEOUT_SECONDS=360 \
 		./scripts/test-fs-uae-runtime.sh $(C2P4_BENCHMARK_PROGRAM) -
 	@mkdir -p $(REPORT_DIR)
 	cp $(STAGING_DIR)/fs-uae-smoke.out $(C2P4_BENCHMARK_REPORT)
@@ -677,7 +677,7 @@ chipram-benchmark-inspect: $(CHIPRAM_BENCHMARK_PROGRAM)
 		>$(REPORT_DIR)/chipram-disassembly.txt
 
 chipram-benchmark-fs-uae: stage chipram-benchmark-inspect
-	MAGI80_FS_UAE_TIMEOUT_SECONDS=60 \
+	MIGA80_FS_UAE_TIMEOUT_SECONDS=60 \
 		./scripts/test-fs-uae-runtime.sh $(CHIPRAM_BENCHMARK_PROGRAM) -
 	@mkdir -p $(REPORT_DIR)
 	cp $(STAGING_DIR)/fs-uae-smoke.out $(CHIPRAM_BENCHMARK_REPORT)
@@ -705,7 +705,7 @@ exclusive-graphics-benchmark-inspect: $(EXCLUSIVE_GRAPHICS_PROGRAM)
 
 exclusive-graphics-benchmark-fs-uae: stage \
 		exclusive-graphics-benchmark-inspect
-	MAGI80_FS_UAE_TIMEOUT_SECONDS=600 \
+	MIGA80_FS_UAE_TIMEOUT_SECONDS=600 \
 		./scripts/test-fs-uae-runtime.sh $(EXCLUSIVE_GRAPHICS_PROGRAM) -
 	@mkdir -p $(REPORT_DIR)
 	cp $(STAGING_DIR)/fs-uae-smoke.out $(EXCLUSIVE_GRAPHICS_REPORT)
@@ -713,8 +713,8 @@ exclusive-graphics-benchmark-fs-uae: stage \
 
 exclusive-graphics-benchmark-fs-uae-fast: stage \
 		exclusive-graphics-benchmark-inspect
-	MAGI80_FS_UAE_TIMEOUT_SECONDS=600 \
-	MAGI80_FS_UAE_FAST_MEMORY_KIB=2048 \
+	MIGA80_FS_UAE_TIMEOUT_SECONDS=600 \
+	MIGA80_FS_UAE_FAST_MEMORY_KIB=2048 \
 		./scripts/test-fs-uae-runtime.sh $(EXCLUSIVE_GRAPHICS_PROGRAM) -
 	@mkdir -p $(REPORT_DIR)
 	cp $(STAGING_DIR)/fs-uae-smoke.out $(EXCLUSIVE_GRAPHICS_FAST_REPORT)
@@ -725,9 +725,9 @@ $(EXCLUSIVE_GRAPHICS_PHYSICAL_PROGRAM): $(EXCLUSIVE_GRAPHICS_SOURCE) \
 		$(C2P4_TARGET_SOURCES) $(C2P4_HEADER) Makefile
 	@mkdir -p $(EXCLUSIVE_GRAPHICS_PHYSICAL_BUILD_DIR)
 	$(TARGET_CC) $(PROJECT_CPPFLAGS) $(C2P_BENCHMARK_CFLAGS) \
-		-DMAGI80_BENCHMARK_ENVIRONMENT=\"physical_a1200_pal_candidate\" \
-		-DMAGI80_BENCHMARK_AUTHORITY=\"real_hardware_candidate\" \
-		-DMAGI80_BENCHMARK_REPORT_PATH=\"MAGI80BENCH:RESULT.TXT\" \
+		-DMIGA80_BENCHMARK_ENVIRONMENT=\"physical_a1200_pal_candidate\" \
+		-DMIGA80_BENCHMARK_AUTHORITY=\"real_hardware_candidate\" \
+		-DMIGA80_BENCHMARK_REPORT_PATH=\"MIGA80BENCH:RESULT.TXT\" \
 		$(EXCLUSIVE_GRAPHICS_SOURCE) $(CHIPRAM_BENCHMARK_ASM_SOURCE) \
 		$(C2P4_TARGET_SOURCES) \
 		-Wl,-Map,$(EXCLUSIVE_GRAPHICS_PHYSICAL_MAP) -o $@ \
@@ -752,7 +752,7 @@ exclusive-graphics-test-adf-inspect: $(EXCLUSIVE_GRAPHICS_TEST_ADF)
 exclusive-graphics-test-adf-fs-uae: $(EXCLUSIVE_GRAPHICS_TEST_ADF) \
 		$(EXCLUSIVE_GRAPHICS_ADF_TESTER) \
 		$(EXCLUSIVE_GRAPHICS_REPORT_VALIDATOR)
-	MAGI80_FS_UAE_TIMEOUT_SECONDS=600 \
+	MIGA80_FS_UAE_TIMEOUT_SECONDS=600 \
 		$(EXCLUSIVE_GRAPHICS_ADF_TESTER) $(EXCLUSIVE_GRAPHICS_TEST_ADF)
 
 runtime-compare:

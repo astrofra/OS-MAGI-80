@@ -69,10 +69,11 @@ The implementation has four bounded, host-buildable layers:
    wrapping and implementation-independent signed comparisons.
 3. `-O1` renames locals to values within the acyclic CFG and creates typed
    `phi` values at two-predecessor joins. It folds and simplifies constants,
-   removes dead values and overwritten assignments, computes conservative
-   liveness, linearly allocates `D0-D7`, and replans with bounded spill slots
-   when register pressure or edge transfers require it. Cyclic value flow for
-   `while` remains deliberately rejected. Calls will need an explicit
+   removes dead values and overwritten assignments, solves bounded CFG
+   `live-in`/`live-out` sets with edge-specific `phi` uses, and allocates
+   `D0-D7` per block. Non-overlapping `phi` live regions reuse stack slots,
+   while source/destination conflicts at a join remain separated. Cyclic value
+   flow for `while` remains deliberately rejected. Calls will need an explicit
    side-effect rule before value renaming crosses them.
 4. The development backend renders GNU m68k assembly. `-O0` retains fixed `A6`
    parameter/local slots and expression-stack temporaries as a baseline. The

@@ -132,16 +132,16 @@
     (DMAF_AUDIO | DMAF_SPRITE | DMAF_BLITTER | DMAF_COPPER | \
      DMAF_RASTER | DMAF_BLITHOG)
 
-#ifndef MAGI80_BENCHMARK_ENVIRONMENT
-#define MAGI80_BENCHMARK_ENVIRONMENT "fs_uae_a1200_pal"
+#ifndef MIGA80_BENCHMARK_ENVIRONMENT
+#define MIGA80_BENCHMARK_ENVIRONMENT "fs_uae_a1200_pal"
 #endif
 
-#ifndef MAGI80_BENCHMARK_AUTHORITY
-#define MAGI80_BENCHMARK_AUTHORITY "protocol_only"
+#ifndef MIGA80_BENCHMARK_AUTHORITY
+#define MIGA80_BENCHMARK_AUTHORITY "protocol_only"
 #endif
 
-#ifndef MAGI80_BENCHMARK_REPORT_PATH
-#define MAGI80_BENCHMARK_REPORT_PATH NULL
+#ifndef MIGA80_BENCHMARK_REPORT_PATH
+#define MIGA80_BENCHMARK_REPORT_PATH NULL
 #endif
 
 struct GfxBase *GfxBase = NULL;
@@ -199,7 +199,7 @@ struct RawKernel {
     const char *operation_name;
     const char *access_width;
     enum RawOperation operation;
-    Magi80ChipRamKernel kernel;
+    Miga80ChipRamKernel kernel;
     ULONG seed;
     ULONG traffic_multiplier;
     UBYTE source_traffic_multiplier;
@@ -286,76 +286,76 @@ static const UBYTE
 
 static const struct RawKernel raw_kernels[BENCH_RAW_KERNEL_COUNT] = {
     {"write_byte", "write", "byte", RAW_WRITE_BYTE,
-     magi80_chipram_write_byte, 0x00000012U, 1U, 0U, 0U, 0U},
+     miga80_chipram_write_byte, 0x00000012U, 1U, 0U, 0U, 0U},
     {"write_word", "write", "word", RAW_WRITE_WORD,
-     magi80_chipram_write_word, 0x00003456U, 1U, 0U, 0U, 0U},
+     miga80_chipram_write_word, 0x00003456U, 1U, 0U, 0U, 0U},
     {"write_long", "write", "long", RAW_WRITE_LONG,
-     magi80_chipram_write_long, 0x89abcdefU, 1U, 0U, 0U, 0U},
+     miga80_chipram_write_long, 0x89abcdefU, 1U, 0U, 0U, 0U},
     {"write_long4", "write", "long_unrolled4", RAW_WRITE_LONG4,
-     magi80_chipram_write_long4, 0x13579bdfU, 1U, 0U, 0U, 0U},
+     miga80_chipram_write_long4, 0x13579bdfU, 1U, 0U, 0U, 0U},
     {"copy_long4", "copy", "long_unrolled4", RAW_COPY_LONG4,
-     magi80_chipram_copy_long4, 0U, 2U, 1U, 0U, 0U},
+     miga80_chipram_copy_long4, 0U, 2U, 1U, 0U, 0U},
     {"read_long4", "read", "long_unrolled4", RAW_READ_LONG4,
-     magi80_chipram_read_long4, 0U, 1U, 1U, 0U, 0U},
+     miga80_chipram_read_long4, 0U, 1U, 1U, 0U, 0U},
     {"read_byte", "read", "byte", RAW_READ_BYTE,
-     magi80_chipram_read_byte, 0U, 1U, 1U, 0U, 0U},
+     miga80_chipram_read_byte, 0U, 1U, 1U, 0U, 0U},
     {"read_word", "read", "word", RAW_READ_WORD,
-     magi80_chipram_read_word, 0U, 1U, 1U, 0U, 0U},
+     miga80_chipram_read_word, 0U, 1U, 1U, 0U, 0U},
     {"read_long", "read", "long", RAW_READ_LONG,
-     magi80_chipram_read_long, 0U, 1U, 1U, 0U, 0U},
+     miga80_chipram_read_long, 0U, 1U, 1U, 0U, 0U},
     {"rmw_add_byte", "read_modify_write", "byte", RAW_RMW_ADD_BYTE,
-     magi80_chipram_rmw_add_byte, 0x00000003U, 2U, 0U, 0U, 0U},
+     miga80_chipram_rmw_add_byte, 0x00000003U, 2U, 0U, 0U, 0U},
     {"rmw_add_word", "read_modify_write", "word", RAW_RMW_ADD_WORD,
-     magi80_chipram_rmw_add_word, 0x00000103U, 2U, 0U, 0U, 0U},
+     miga80_chipram_rmw_add_word, 0x00000103U, 2U, 0U, 0U, 0U},
     {"rmw_add_long", "read_modify_write", "long", RAW_RMW_ADD_LONG,
-     magi80_chipram_rmw_add_long, 0x01020305U, 2U, 0U, 0U, 0U},
+     miga80_chipram_rmw_add_long, 0x01020305U, 2U, 0U, 0U, 0U},
     {"rmw_add_long4", "read_modify_write", "long_unrolled4",
-     RAW_RMW_ADD_LONG4, magi80_chipram_rmw_add_long4, 0x01020305U,
+     RAW_RMW_ADD_LONG4, miga80_chipram_rmw_add_long4, 0x01020305U,
      2U, 0U, 0U, 0U},
     {"write_word_dst_plus1", "write", "word", RAW_WRITE_WORD,
-     magi80_chipram_write_word, 0x00003456U, 1U, 0U, 0U, 1U},
+     miga80_chipram_write_word, 0x00003456U, 1U, 0U, 0U, 1U},
     {"write_long4_dst_plus1", "write", "long_unrolled4",
-     RAW_WRITE_LONG4, magi80_chipram_write_long4, 0x13579bdfU,
+     RAW_WRITE_LONG4, miga80_chipram_write_long4, 0x13579bdfU,
      1U, 0U, 0U, 1U},
     {"write_long4_dst_plus2", "write", "long_unrolled4",
-     RAW_WRITE_LONG4, magi80_chipram_write_long4, 0x13579bdfU,
+     RAW_WRITE_LONG4, miga80_chipram_write_long4, 0x13579bdfU,
      1U, 0U, 0U, 2U},
     {"write_long4_dst_plus3", "write", "long_unrolled4",
-     RAW_WRITE_LONG4, magi80_chipram_write_long4, 0x13579bdfU,
+     RAW_WRITE_LONG4, miga80_chipram_write_long4, 0x13579bdfU,
      1U, 0U, 0U, 3U},
     {"read_word_src_plus1", "read", "word", RAW_READ_WORD,
-     magi80_chipram_read_word, 0U, 1U, 1U, 1U, 0U},
+     miga80_chipram_read_word, 0U, 1U, 1U, 1U, 0U},
     {"read_long4_src_plus1", "read", "long_unrolled4",
-     RAW_READ_LONG4, magi80_chipram_read_long4, 0U, 1U, 1U, 1U, 0U},
+     RAW_READ_LONG4, miga80_chipram_read_long4, 0U, 1U, 1U, 1U, 0U},
     {"read_long4_src_plus2", "read", "long_unrolled4",
-     RAW_READ_LONG4, magi80_chipram_read_long4, 0U, 1U, 1U, 2U, 0U},
+     RAW_READ_LONG4, miga80_chipram_read_long4, 0U, 1U, 1U, 2U, 0U},
     {"read_long4_src_plus3", "read", "long_unrolled4",
-     RAW_READ_LONG4, magi80_chipram_read_long4, 0U, 1U, 1U, 3U, 0U},
+     RAW_READ_LONG4, miga80_chipram_read_long4, 0U, 1U, 1U, 3U, 0U},
     {"copy_long4_src_plus1", "copy", "long_unrolled4",
-     RAW_COPY_LONG4, magi80_chipram_copy_long4, 0U, 2U, 1U, 1U, 0U},
+     RAW_COPY_LONG4, miga80_chipram_copy_long4, 0U, 2U, 1U, 1U, 0U},
     {"copy_long4_src_plus2", "copy", "long_unrolled4",
-     RAW_COPY_LONG4, magi80_chipram_copy_long4, 0U, 2U, 1U, 2U, 0U},
+     RAW_COPY_LONG4, miga80_chipram_copy_long4, 0U, 2U, 1U, 2U, 0U},
     {"copy_long4_src_plus3", "copy", "long_unrolled4",
-     RAW_COPY_LONG4, magi80_chipram_copy_long4, 0U, 2U, 1U, 3U, 0U},
+     RAW_COPY_LONG4, miga80_chipram_copy_long4, 0U, 2U, 1U, 3U, 0U},
     {"copy_long4_dst_plus1", "copy", "long_unrolled4",
-     RAW_COPY_LONG4, magi80_chipram_copy_long4, 0U, 2U, 1U, 0U, 1U},
+     RAW_COPY_LONG4, miga80_chipram_copy_long4, 0U, 2U, 1U, 0U, 1U},
     {"copy_long4_dst_plus2", "copy", "long_unrolled4",
-     RAW_COPY_LONG4, magi80_chipram_copy_long4, 0U, 2U, 1U, 0U, 2U},
+     RAW_COPY_LONG4, miga80_chipram_copy_long4, 0U, 2U, 1U, 0U, 2U},
     {"copy_long4_dst_plus3", "copy", "long_unrolled4",
-     RAW_COPY_LONG4, magi80_chipram_copy_long4, 0U, 2U, 1U, 0U, 3U},
+     RAW_COPY_LONG4, miga80_chipram_copy_long4, 0U, 2U, 1U, 0U, 3U},
     {"copy_long4_src_plus1_dst_plus3", "copy", "long_unrolled4",
-     RAW_COPY_LONG4, magi80_chipram_copy_long4, 0U, 2U, 1U, 1U, 3U},
+     RAW_COPY_LONG4, miga80_chipram_copy_long4, 0U, 2U, 1U, 1U, 3U},
     {"rmw_add_word_dst_plus1", "read_modify_write", "word",
-     RAW_RMW_ADD_WORD, magi80_chipram_rmw_add_word, 0x00000103U,
+     RAW_RMW_ADD_WORD, miga80_chipram_rmw_add_word, 0x00000103U,
      2U, 0U, 0U, 1U},
     {"rmw_add_long4_dst_plus1", "read_modify_write", "long_unrolled4",
-     RAW_RMW_ADD_LONG4, magi80_chipram_rmw_add_long4, 0x01020305U,
+     RAW_RMW_ADD_LONG4, miga80_chipram_rmw_add_long4, 0x01020305U,
      2U, 0U, 0U, 1U},
     {"rmw_add_long4_dst_plus2", "read_modify_write", "long_unrolled4",
-     RAW_RMW_ADD_LONG4, magi80_chipram_rmw_add_long4, 0x01020305U,
+     RAW_RMW_ADD_LONG4, miga80_chipram_rmw_add_long4, 0x01020305U,
      2U, 0U, 0U, 2U},
     {"rmw_add_long4_dst_plus3", "read_modify_write", "long_unrolled4",
-     RAW_RMW_ADD_LONG4, magi80_chipram_rmw_add_long4, 0x01020305U,
+     RAW_RMW_ADD_LONG4, miga80_chipram_rmw_add_long4, 0x01020305U,
      2U, 0U, 0U, 3U}
 };
 
@@ -526,11 +526,11 @@ static int acquire_cia_timer_pair_from(struct Library *resource,
            sizeof(exclusive_cia_interrupts));
     exclusive_cia_interrupts[0].is_Node.ln_Type = NT_INTERRUPT;
     exclusive_cia_interrupts[0].is_Node.ln_Name =
-        (char *)"MAGI-80 timer A reservation";
+        (char *)"MIGA-80 timer A reservation";
     exclusive_cia_interrupts[0].is_Code = cia_timer_interrupt_stub;
     exclusive_cia_interrupts[1].is_Node.ln_Type = NT_INTERRUPT;
     exclusive_cia_interrupts[1].is_Node.ln_Name =
-        (char *)"MAGI-80 timer B reservation";
+        (char *)"MIGA-80 timer B reservation";
     exclusive_cia_interrupts[1].is_Code = cia_timer_interrupt_stub;
 
     Disable();
@@ -661,7 +661,7 @@ static ULONG hash_front_planes(UBYTE *const planes[BENCH_SCREEN_DEPTH])
     ULONG hash = 2166136261UL;
     size_t logical_plane;
 
-    for (logical_plane = 0U; logical_plane < MAGI80_C2P4_PLANE_COUNT;
+    for (logical_plane = 0U; logical_plane < MIGA80_C2P4_PLANE_COUNT;
          ++logical_plane) {
         hash = fnv1a32_update(hash, planes[logical_plane << 1],
                               BENCH_SCREEN_PLANE_BYTES);
@@ -672,7 +672,7 @@ static ULONG hash_front_planes(UBYTE *const planes[BENCH_SCREEN_DEPTH])
 static ULONG hash_contiguous_c2p_planes(const UBYTE *allocation)
 {
     return fnv1a32(allocation,
-                   BENCH_SCREEN_PLANE_BYTES * MAGI80_C2P4_PLANE_COUNT);
+                   BENCH_SCREEN_PLANE_BYTES * MIGA80_C2P4_PLANE_COUNT);
 }
 
 static int check_region(const UBYTE *region, size_t length, UBYTE value)
@@ -1349,14 +1349,14 @@ static void clear_front_planes(void)
 {
     size_t logical_plane;
 
-    for (logical_plane = 0U; logical_plane < MAGI80_C2P4_PLANE_COUNT;
+    for (logical_plane = 0U; logical_plane < MIGA80_C2P4_PLANE_COUNT;
          ++logical_plane) {
         memset(physical_planes[logical_plane << 1], 0,
                BENCH_SCREEN_PLANE_BYTES);
     }
 }
 
-static enum Magi80C2P4Status convert_c2p(
+static enum Miga80C2P4Status convert_c2p(
     const struct C2PProfile *profile,
     enum C2PLayout layout,
     enum C2PBackend backend,
@@ -1368,7 +1368,7 @@ static enum Magi80C2P4Status convert_c2p(
         layout == C2P_LAYOUT_PACKED4
             ? (size_t)(BENCH_SCREEN_WIDTH >> 1)
             : (size_t)BENCH_SCREEN_WIDTH;
-    UBYTE *planes[MAGI80_C2P4_PLANE_COUNT];
+    UBYTE *planes[MIGA80_C2P4_PLANE_COUNT];
     size_t logical_plane;
 
     if (fast_assisted != 0) {
@@ -1383,26 +1383,26 @@ static enum Magi80C2P4Status convert_c2p(
         lookup = pair_lut;
     }
 
-    for (logical_plane = 0U; logical_plane < MAGI80_C2P4_PLANE_COUNT;
+    for (logical_plane = 0U; logical_plane < MIGA80_C2P4_PLANE_COUNT;
          ++logical_plane) {
         planes[logical_plane] = physical_planes[logical_plane << 1];
     }
     if (backend == C2P_BACKEND_MASK32_M68K) {
         if (layout == C2P_LAYOUT_PACKED4) {
-            return magi80_c2p4_mask32_m68k_packed4(
+            return miga80_c2p4_mask32_m68k_packed4(
                 source, profile->width, profile->height, source_stride,
                 planes, BENCH_SCREEN_WIDTH >> 3);
         }
-        return magi80_c2p4_mask32_m68k_byte4(
+        return miga80_c2p4_mask32_m68k_byte4(
             source, profile->width, profile->height, source_stride,
             planes, BENCH_SCREEN_WIDTH >> 3);
     }
     if (layout == C2P_LAYOUT_PACKED4) {
-        return magi80_c2p4_pair_lut_m68k_packed4(
+        return miga80_c2p4_pair_lut_m68k_packed4(
             source, profile->width, profile->height, source_stride,
             planes, BENCH_SCREEN_WIDTH >> 3, lookup);
     }
-    return magi80_c2p4_pair_lut_m68k_byte4(
+    return miga80_c2p4_pair_lut_m68k_byte4(
         source, profile->width, profile->height, source_stride, planes,
         BENCH_SCREEN_WIDTH >> 3, lookup);
 }
@@ -1420,12 +1420,12 @@ static UWORD c2p_blitter_rows(size_t profile_index)
 
 static int prepare_c2p_oracles(void)
 {
-    UBYTE *oracle_planes[MAGI80_C2P4_PLANE_COUNT];
+    UBYTE *oracle_planes[MIGA80_C2P4_PLANE_COUNT];
     size_t plane;
     size_t profile_index;
     size_t layout_index;
 
-    for (plane = 0U; plane < MAGI80_C2P4_PLANE_COUNT; ++plane) {
+    for (plane = 0U; plane < MIGA80_C2P4_PLANE_COUNT; ++plane) {
         oracle_planes[plane] =
             oracle_planes_allocation + (plane * BENCH_SCREEN_PLANE_BYTES);
     }
@@ -1435,22 +1435,22 @@ static int prepare_c2p_oracles(void)
 
         for (layout_index = 0U; layout_index < BENCH_C2P_LAYOUT_COUNT;
              ++layout_index) {
-            enum Magi80C2P4Status status;
+            enum Miga80C2P4Status status;
 
             memset(oracle_planes_allocation, 0,
-                   BENCH_SCREEN_PLANE_BYTES * MAGI80_C2P4_PLANE_COUNT);
+                   BENCH_SCREEN_PLANE_BYTES * MIGA80_C2P4_PLANE_COUNT);
             if (layout_index == C2P_LAYOUT_PACKED4) {
-                status = magi80_c2p4_reference_packed4(
+                status = miga80_c2p4_reference_packed4(
                     packed_source, profile->width, profile->height,
                     BENCH_SCREEN_WIDTH >> 1, oracle_planes,
                     BENCH_SCREEN_WIDTH >> 3);
             } else {
-                status = magi80_c2p4_reference_byte4(
+                status = miga80_c2p4_reference_byte4(
                     byte_source, profile->width, profile->height,
                     BENCH_SCREEN_WIDTH, oracle_planes,
                     BENCH_SCREEN_WIDTH >> 3);
             }
-            if (status != MAGI80_C2P4_OK) {
+            if (status != MIGA80_C2P4_OK) {
                 return 0;
             }
             c2p_expected_checksum[profile_index][layout_index] =
@@ -1515,7 +1515,7 @@ static int run_c2p_case(const struct DmaProfile *dma,
              ++iteration) {
             if (convert_c2p(profile, layout, backend,
                             fast_assisted) !=
-                MAGI80_C2P4_OK) {
+                MIGA80_C2P4_OK) {
                 (void)end_batch(dma, &state,
                                 &blitter_busy_at_kernel_end);
                 exclusive_failure_detail = 203U;
@@ -1617,7 +1617,7 @@ static int run_exclusive_suite(void)
     int success = 1;
 
     dedicated_stack_pointer_offset =
-        magi80_current_stack_pointer() -
+        miga80_current_stack_pointer() -
         (ULONG)(uintptr_t)(stack_allocation + BENCH_STACK_GUARD_BYTES +
                            BENCH_STACK_BOUNDARY_RESERVE_BYTES);
     progress_phase = PHASE_EXCLUSIVE_ENTER;
@@ -1866,8 +1866,8 @@ static int write_header(BPTR output)
     return write_text(output,
                       "exclusive_graphics_benchmark_format=3\n"
                       "benchmark=chipram_c2p4\n"
-                      "environment=" MAGI80_BENCHMARK_ENVIRONMENT "\n"
-                      "timing_authority=" MAGI80_BENCHMARK_AUTHORITY "\n"
+                      "environment=" MIGA80_BENCHMARK_ENVIRONMENT "\n"
+                      "timing_authority=" MIGA80_BENCHMARK_AUTHORITY "\n"
                       "timing_scope=exclusive_kernel_batch\n"
                       "timing_source=cia_cascade_32\n") &&
            write_key_decimal(output, "exec_version=", exec_version) &&
@@ -2334,7 +2334,7 @@ int main(int argc, char **argv)
     BPTR console_output = Output();
     BPTR report_output = console_output;
     BPTR report_file = (BPTR)0;
-    const char *report_path = MAGI80_BENCHMARK_REPORT_PATH;
+    const char *report_path = MIGA80_BENCHMARK_REPORT_PATH;
     UBYTE *usable_stack;
     ULONG chip_revision;
     size_t plane;
@@ -2350,12 +2350,12 @@ int main(int argc, char **argv)
     if (report_path != NULL) {
         (void)write_text(
             console_output,
-            "MAGI-80 exclusive graphics benchmark starting.\n"
+            "MIGA-80 exclusive graphics benchmark starting.\n"
             "Screen changes and silence are expected. Please wait up to ten minutes.\n");
         report_file = Open(report_path, MODE_NEWFILE);
         if (report_file == (BPTR)0) {
             (void)write_text(console_output,
-                             "MAGI-80 BENCHMARK RESULT: FAIL\n"
+                             "MIGA-80 BENCHMARK RESULT: FAIL\n"
                              "The writable result file could not be created.\n");
             return RETURN_ERROR;
         }
@@ -2364,14 +2364,14 @@ int main(int argc, char **argv)
             (void)Close(report_file);
             report_file = (BPTR)0;
             (void)write_text(console_output,
-                             "MAGI-80 BENCHMARK RESULT: FAIL\n"
+                             "MIGA-80 BENCHMARK RESULT: FAIL\n"
                              "The writable result file could not be created.\n");
             return RETURN_ERROR;
         }
         if (!Close(report_file)) {
             report_file = (BPTR)0;
             (void)write_text(console_output,
-                             "MAGI-80 BENCHMARK RESULT: FAIL\n"
+                             "MIGA-80 BENCHMARK RESULT: FAIL\n"
                              "The writable result file could not be created.\n");
             return RETURN_ERROR;
         }
@@ -2486,10 +2486,10 @@ int main(int argc, char **argv)
         (UBYTE *)AllocMem(BENCH_SCREEN_WIDTH * BENCH_SCREEN_HEIGHT,
                           MEMF_CHIP | MEMF_CLEAR);
     pair_lut = (uint32_t *)AllocMem(
-        MAGI80_C2P4_PAIR_LUT_ENTRIES * sizeof(uint32_t),
+        MIGA80_C2P4_PAIR_LUT_ENTRIES * sizeof(uint32_t),
         MEMF_CHIP | MEMF_CLEAR);
     oracle_planes_allocation = (UBYTE *)AllocMem(
-        BENCH_SCREEN_PLANE_BYTES * MAGI80_C2P4_PLANE_COUNT,
+        BENCH_SCREEN_PLANE_BYTES * MIGA80_C2P4_PLANE_COUNT,
         MEMF_PUBLIC | MEMF_CLEAR);
     audio_sample = (UBYTE *)AllocMem(BENCH_AUDIO_SAMPLE_BYTES,
                                      MEMF_CHIP | MEMF_CLEAR);
@@ -2534,7 +2534,7 @@ int main(int argc, char **argv)
             BENCH_SCREEN_WIDTH * BENCH_SCREEN_HEIGHT,
             MEMF_FAST | MEMF_CLEAR);
         fast_pair_lut = (uint32_t *)AllocMem(
-            MAGI80_C2P4_PAIR_LUT_ENTRIES * sizeof(uint32_t),
+            MIGA80_C2P4_PAIR_LUT_ENTRIES * sizeof(uint32_t),
             MEMF_FAST | MEMF_CLEAR);
         stack_allocation =
             (UBYTE *)AllocMem(BENCH_STACK_TOTAL_BYTES, MEMF_FAST);
@@ -2555,7 +2555,7 @@ int main(int argc, char **argv)
             }
             if (fast_pair_lut != NULL) {
                 FreeMem(fast_pair_lut,
-                        MAGI80_C2P4_PAIR_LUT_ENTRIES * sizeof(uint32_t));
+                        MIGA80_C2P4_PAIR_LUT_ENTRIES * sizeof(uint32_t));
                 fast_pair_lut = NULL;
             }
             if (fast_byte_source != NULL) {
@@ -2586,7 +2586,7 @@ int main(int argc, char **argv)
     }
     stack_memory = memory_type_token(stack_allocation);
     code_memory = memory_type_token(
-        (const void *)(uintptr_t)magi80_chipram_write_long4);
+        (const void *)(uintptr_t)miga80_chipram_write_long4);
     if ((fast_matrix_active != 0U && strcmp(stack_memory, "fast") != 0) ||
         (fast_matrix_active == 0U && strcmp(stack_memory, "chip") != 0)) {
         failure = "verify_benchmark_stack_memory";
@@ -2594,9 +2594,9 @@ int main(int argc, char **argv)
     }
 
     build_c2p_sources();
-    magi80_c2p4_build_pair_lut(pair_lut);
+    miga80_c2p4_build_pair_lut(pair_lut);
     if (fast_matrix_active != 0U) {
-        magi80_c2p4_build_pair_lut(fast_pair_lut);
+        miga80_c2p4_build_pair_lut(fast_pair_lut);
     }
     if (!prepare_c2p_oracles()) {
         failure = "prepare_c2p_oracles";
@@ -2708,7 +2708,7 @@ cleanup:
     }
     if (fast_pair_lut != NULL) {
         FreeMem(fast_pair_lut,
-                MAGI80_C2P4_PAIR_LUT_ENTRIES * sizeof(uint32_t));
+                MIGA80_C2P4_PAIR_LUT_ENTRIES * sizeof(uint32_t));
     }
     if (fast_byte_source != NULL) {
         FreeMem(fast_byte_source,
@@ -2740,11 +2740,11 @@ cleanup:
     }
     if (oracle_planes_allocation != NULL) {
         FreeMem(oracle_planes_allocation,
-                BENCH_SCREEN_PLANE_BYTES * MAGI80_C2P4_PLANE_COUNT);
+                BENCH_SCREEN_PLANE_BYTES * MIGA80_C2P4_PLANE_COUNT);
     }
     if (pair_lut != NULL) {
         FreeMem(pair_lut,
-                MAGI80_C2P4_PAIR_LUT_ENTRIES * sizeof(uint32_t));
+                MIGA80_C2P4_PAIR_LUT_ENTRIES * sizeof(uint32_t));
     }
     if (byte_source != NULL) {
         FreeMem(byte_source, BENCH_SCREEN_WIDTH * BENCH_SCREEN_HEIGHT);
@@ -2785,7 +2785,7 @@ cleanup:
 
     if (report_path != NULL) {
         (void)write_text(console_output,
-                         "MAGI-80 measurements complete; writing report.\n");
+                         "MIGA-80 measurements complete; writing report.\n");
         report_file = Open(report_path, MODE_NEWFILE);
         if (report_file == (BPTR)0) {
             failure = "open_report_after_cleanup";
@@ -2823,13 +2823,13 @@ cleanup:
         if (!Close(report_file)) {
             report_file = (BPTR)0;
             (void)write_text(console_output,
-                             "\nMAGI-80 BENCHMARK RESULT: FAIL\n"
+                             "\nMIGA-80 BENCHMARK RESULT: FAIL\n"
                              "The report file could not be closed.\n");
             return RETURN_ERROR;
         }
         report_file = (BPTR)0;
         (void)write_text(console_output,
-                         "\nMAGI-80 BENCHMARK RESULT: PASS\n"
+                         "\nMIGA-80 BENCHMARK RESULT: PASS\n"
                          "Wait for the floppy LED to stop before ejecting.\n"
                          "Result report: ");
         (void)write_text(console_output, report_path);
@@ -2853,7 +2853,7 @@ emit_failure:
     if (report_file != (BPTR)0) {
         (void)Close(report_file);
         (void)write_text(console_output,
-                         "\nMAGI-80 BENCHMARK RESULT: FAIL\n"
+                         "\nMIGA-80 BENCHMARK RESULT: FAIL\n"
                          "Keep the disk and photograph this screen.\n"
                          "Diagnostic report: ");
         (void)write_text(console_output, report_path);

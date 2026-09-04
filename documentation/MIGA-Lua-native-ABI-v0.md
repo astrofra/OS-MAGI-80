@@ -3,7 +3,7 @@
 **Status:** frozen bootstrap register and stack core
 
 This is the private calling convention between generated MIGA Lua functions
-and the trusted MAGI-80 runtime. It is not the Amiga C ABI, an AmigaOS ABI, or
+and the trusted MIGA-80 runtime. It is not the Amiga C ABI, an AmigaOS ABI, or
 part of the source-cartridge format. Version 0.1 freezes only the rules needed
 by the scalar compiler bootstrap and the next register allocator.
 
@@ -87,7 +87,7 @@ generated spill fixture additionally exercises a 12-byte `A6` frame, direct
 negative-offset reloads, and preservation of `D3-D7/A6` across six edge
 inputs. The conditional corpus exercises canonical Boolean arguments and
 results, all six integer comparisons, conditional branches, nested CFG joins,
-and conservative `phi` edge slots.
+and CFG-aware coalesced `phi` edge slots.
 
 Run the host contract and generated-code checks with:
 

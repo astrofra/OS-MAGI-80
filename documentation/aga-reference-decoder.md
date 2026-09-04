@@ -1,4 +1,4 @@
-# MAGI-80 AGA Dual-Playfield Reference Decoder
+# MIGA-80 AGA Dual-Playfield Reference Decoder
 
 **Status:** Portable C99 decoder implemented; native golden, differential, and sanitizer tests pass on macOS
 
@@ -6,9 +6,9 @@
 
 ## 1. Purpose
 
-An optimized graphics backend is not correct merely because its bitplanes look plausible. MAGI-80 needs a deterministic way to compare those bitplanes with the logical scene that produced them.
+An optimized graphics backend is not correct merely because its bitplanes look plausible. MIGA-80 needs a deterministic way to compare those bitplanes with the logical scene that produced them.
 
-`src/graphics/aga_reference_decoder.c` provides that inverse mapping. It decodes the two four-plane AGA playfields into a 256 × 256 byte-per-pixel image that can be compared directly with `magi80_graphics_reference_compose()` output. It is a correctness tool, not runtime display code.
+`src/graphics/aga_reference_decoder.c` provides that inverse mapping. It decodes the two four-plane AGA playfields into a 256 × 256 byte-per-pixel image that can be compared directly with `miga80_graphics_reference_compose()` output. It is a correctness tool, not runtime display code.
 
 ## 2. Plane and Color Mapping
 
@@ -34,7 +34,7 @@ This produces palette identities rather than RGB values. Palette-register progra
 The public API is declared in `src/graphics/aga_reference_decoder.h`:
 
 ```c
-enum Magi80AgaReferenceStatus magi80_aga_reference_decode_dual_playfield(
+enum Miga80AgaReferenceStatus miga80_aga_reference_decode_dual_playfield(
     const uint8_t *planes[8],
     size_t plane_stride,
     uint8_t *output,

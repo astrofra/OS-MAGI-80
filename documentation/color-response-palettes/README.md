@@ -1,10 +1,10 @@
-# MAGI-80 color-response palette studies
+# MIGA-80 color-response palette studies
 
-These plates compare the same 256-color sample of MAGI-80's logical 12-bit RGB gamut after each proposed photographic-film, historical-video, color-vision, or console-inspired response. They are design references for the palette system described in the main specification, not claims of exact manufacturer-approved film simulation or individual human perception.
+These plates compare the same 256-color sample of MIGA-80's logical 12-bit RGB gamut after each proposed photographic-film, historical-video, color-vision, or console-inspired response. They are design references for the palette system described in the main specification, not claims of exact manufacturer-approved film simulation or individual human perception.
 
 ## Reading the grid
 
-The full MAGI-80 color space contains 4,096 logical values (`0xRGB`, four bits per component). The generator builds a 24-bit output for every one of those values, then displays this shared 256-color subset:
+The full MIGA-80 color space contains 4,096 logical values (`0xRGB`, four bits per component). The generator builds a 24-bit output for every one of those values, then displays this shared 256-color subset:
 
 - red and green use levels `0, 2, 4, 6, 9, 11, 13, 15`;
 - blue uses levels `0, 5, 10, 15`;
@@ -94,13 +94,13 @@ This mode previews the corresponding complete protan red–green deficiency endp
 
 ![Protan color-vision simulation](./10-protan-machado-2009.png)
 
-These two modes are simulations for design review, not automatic accessibility corrections. MAGI-80 SHOULD use them to expose confusing palette pairs while keeping contrast, symbols, outlines, and redundant non-color cues as the actual accessibility controls.
+These two modes are simulations for design review, not automatic accessibility corrections. MIGA-80 SHOULD use them to expose confusing palette pairs while keeping contrast, symbols, outlines, and redundant non-color cues as the actual accessibility controls.
 
 ## Mega Drive-inspired midtone purple (1988)
 
-Each RGB12 component is pulled only 28% toward the nearest value in the Mega Drive's 3-bit-per-channel RGB vocabulary. This restrained posterization evokes the console's stepped palette without reducing MAGI-80 to 512 colors: all 4,096 logical inputs remain available to the profile. MAGI-80 then adds a luminance-gated violet bias: red and blue rise and green contracts around the middle of the tone range, while the bias mathematically falls to zero at black and white. The 1988 date is the Japanese Mega Drive launch year.
+Each RGB12 component is pulled only 28% toward the nearest value in the Mega Drive's 3-bit-per-channel RGB vocabulary. This restrained posterization evokes the console's stepped palette without reducing MIGA-80 to 512 colors: all 4,096 logical inputs remain available to the profile. MIGA-80 then adds a luminance-gated violet bias: red and blue rise and green contracts around the middle of the tone range, while the bias mathematically falls to zero at black and white. The 1988 date is the Japanese Mega Drive launch year.
 
-The violet tendency is an explicit MAGI-80 art-direction choice inspired by the appearance of many Mega Drive titles; it is not presented as a measured property of every console VDP, encoder, cable, or display.
+The violet tendency is an explicit MIGA-80 art-direction choice inspired by the appearance of many Mega Drive titles; it is not presented as a measured property of every console VDP, encoder, cable, or display.
 
 ![Mega Drive-inspired midtone-purple response](./11-megadrive-1988.png)
 
@@ -118,11 +118,11 @@ The present film transforms are reproducible visual baselines. A release-quality
 
 ## Target storage and lookup
 
-The floating-point transforms in this generator are strictly host-side build operations. Embedding all eleven tables in the MAGI-80 executable would cost 132 KiB as packed RGB24 or 176 KiB as aligned 32-bit entries, which is too large relative to the binary and floppy budgets.
+The floating-point transforms in this generator are strictly host-side build operations. Embedding all eleven tables in the MIGA-80 executable would cost 132 KiB as packed RGB24 or 176 KiB as aligned 32-bit entries, which is too large relative to the binary and floppy budgets.
 
 Two alternatives must be benchmarked on the stock A1200. The first stores each canonical table as an independently compressed block in an external, versioned response pack. The second stores compact fixed-point descriptors—initially Q14 channels, signed Q13 matrices, and small integer curve tables—and reconstructs all 4,096 entries once when the profile is selected. The fixed-point path is accepted only if its table is byte-identical to the canonical output, has the same checksum, and is fast enough for an interactive profile change.
 
-Either route constructs one 16 KiB table of 4,096 aligned `0x00RRGGBB` values before runtime. A game-time mapping is then a single integer array lookup and the 31 active colors are cached separately. No matrix, gamma, interpolation, decompression, table generation, or floating-point work is permitted after exclusive takeover. The full comparison and hybrid fallback policy are specified in [section 11.4.2 of the main specification](../MAGI-80-specification-and-roadmap.md#1142-lut-storage-and-integer-only-runtime-contract).
+Either route constructs one 16 KiB table of 4,096 aligned `0x00RRGGBB` values before runtime. A game-time mapping is then a single integer array lookup and the 31 active colors are cached separately. No matrix, gamma, interpolation, decompression, table generation, or floating-point work is permitted after exclusive takeover. The full comparison and hybrid fallback policy are specified in [section 11.4.2 of the main specification](../MIGA-80-specification-and-roadmap.md#1142-lut-storage-and-integer-only-runtime-contract).
 
 ## Sources
 

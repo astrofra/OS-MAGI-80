@@ -2,18 +2,18 @@
 
 set -euo pipefail
 
-MAGI80_PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MAGI80_OUTPUT_DIR="${MAGI80_FS_UAE_OUTPUT_DIR:-$MAGI80_PROJECT_ROOT/build/fs-uae}"
+MIGA80_PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MIGA80_OUTPUT_DIR="${MIGA80_FS_UAE_OUTPUT_DIR:-$MIGA80_PROJECT_ROOT/build/fs-uae}"
 
-"$MAGI80_PROJECT_ROOT/scripts/configure-fs-uae.sh" >/dev/null
+"$MIGA80_PROJECT_ROOT/scripts/configure-fs-uae.sh" >/dev/null
 
-MAGI80_CONFIG_COUNT=0
-for config_file in "$MAGI80_OUTPUT_DIR"/*.fs-uae; do
+MIGA80_CONFIG_COUNT=0
+for config_file in "$MIGA80_OUTPUT_DIR"/*.fs-uae; do
   if [ ! -f "$config_file" ]; then
     continue
   fi
 
-  MAGI80_CONFIG_COUNT=$((MAGI80_CONFIG_COUNT + 1))
+  MIGA80_CONFIG_COUNT=$((MIGA80_CONFIG_COUNT + 1))
   /usr/bin/grep -qx 'amiga_model = A1200' "$config_file"
   /usr/bin/grep -qx 'chip_memory = 2048' "$config_file"
   /usr/bin/grep -qx 'fast_memory = 0' "$config_file"
@@ -30,24 +30,24 @@ for config_file in "$MAGI80_OUTPUT_DIR"/*.fs-uae; do
   fi
 done
 
-if [ "$MAGI80_CONFIG_COUNT" -eq 0 ]; then
+if [ "$MIGA80_CONFIG_COUNT" -eq 0 ]; then
   printf 'No FS-UAE profile was generated.\n' >&2
   exit 1
 fi
 
-if [ -f "$MAGI80_OUTPUT_DIR/a1200-pal-ks30-rom.fs-uae" ]; then
+if [ -f "$MIGA80_OUTPUT_DIR/a1200-pal-ks30-rom.fs-uae" ]; then
   printf 'PASS  Kickstart 3.0/39.106 ROM validation\n'
 else
   printf 'PENDING Kickstart 3.0/39.106 ROM is not configured\n'
 fi
-if [ -f "$MAGI80_OUTPUT_DIR/a1200-pal-ks31-rom.fs-uae" ]; then
+if [ -f "$MIGA80_OUTPUT_DIR/a1200-pal-ks31-rom.fs-uae" ]; then
   printf 'PASS  Kickstart 3.1/40.068 ROM validation\n'
 else
   printf 'PENDING Kickstart 3.1/40.068 ROM is not configured\n'
 fi
 
 for profile in a1200-pal-ks30-hd a1200-pal-ks31-hd; do
-  config_file="$MAGI80_OUTPUT_DIR/$profile.fs-uae"
+  config_file="$MIGA80_OUTPUT_DIR/$profile.fs-uae"
   if [ ! -f "$config_file" ]; then
     continue
   fi
@@ -58,7 +58,7 @@ for profile in a1200-pal-ks30-hd a1200-pal-ks31-hd; do
 done
 
 for profile in a1200-pal-ks30-adf a1200-pal-ks31-adf; do
-  config_file="$MAGI80_OUTPUT_DIR/$profile.fs-uae"
+  config_file="$MIGA80_OUTPUT_DIR/$profile.fs-uae"
   if [ ! -f "$config_file" ]; then
     continue
   fi

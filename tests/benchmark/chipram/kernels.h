@@ -1,89 +1,89 @@
-#ifndef MAGI80_TESTS_BENCHMARK_CHIPRAM_KERNELS_H
-#define MAGI80_TESTS_BENCHMARK_CHIPRAM_KERNELS_H
+#ifndef MIGA80_TESTS_BENCHMARK_CHIPRAM_KERNELS_H
+#define MIGA80_TESTS_BENCHMARK_CHIPRAM_KERNELS_H
 
 #include <exec/types.h>
 
-typedef ULONG (*Magi80ChipRamKernel)(
+typedef ULONG (*Miga80ChipRamKernel)(
     UBYTE *destination,
     const UBYTE *source,
     ULONG bytes,
     ULONG seed);
 
-ULONG magi80_current_stack_pointer(void);
+ULONG miga80_current_stack_pointer(void);
 
-ULONG magi80_chipram_write_byte(
+ULONG miga80_chipram_write_byte(
     UBYTE *destination,
     const UBYTE *source,
     ULONG bytes,
     ULONG seed);
 
-ULONG magi80_chipram_write_word(
+ULONG miga80_chipram_write_word(
     UBYTE *destination,
     const UBYTE *source,
     ULONG bytes,
     ULONG seed);
 
-ULONG magi80_chipram_write_long(
+ULONG miga80_chipram_write_long(
     UBYTE *destination,
     const UBYTE *source,
     ULONG bytes,
     ULONG seed);
 
-ULONG magi80_chipram_write_long4(
+ULONG miga80_chipram_write_long4(
     UBYTE *destination,
     const UBYTE *source,
     ULONG bytes,
     ULONG seed);
 
-ULONG magi80_chipram_copy_long4(
+ULONG miga80_chipram_copy_long4(
     UBYTE *destination,
     const UBYTE *source,
     ULONG bytes,
     ULONG seed);
 
-ULONG magi80_chipram_read_long4(
+ULONG miga80_chipram_read_long4(
     UBYTE *destination,
     const UBYTE *source,
     ULONG bytes,
     ULONG seed);
 
-ULONG magi80_chipram_read_byte(
+ULONG miga80_chipram_read_byte(
     UBYTE *destination,
     const UBYTE *source,
     ULONG bytes,
     ULONG seed);
 
-ULONG magi80_chipram_read_word(
+ULONG miga80_chipram_read_word(
     UBYTE *destination,
     const UBYTE *source,
     ULONG bytes,
     ULONG seed);
 
-ULONG magi80_chipram_read_long(
+ULONG miga80_chipram_read_long(
     UBYTE *destination,
     const UBYTE *source,
     ULONG bytes,
     ULONG seed);
 
-ULONG magi80_chipram_rmw_add_byte(
+ULONG miga80_chipram_rmw_add_byte(
     UBYTE *destination,
     const UBYTE *source,
     ULONG bytes,
     ULONG seed);
 
-ULONG magi80_chipram_rmw_add_word(
+ULONG miga80_chipram_rmw_add_word(
     UBYTE *destination,
     const UBYTE *source,
     ULONG bytes,
     ULONG seed);
 
-ULONG magi80_chipram_rmw_add_long(
+ULONG miga80_chipram_rmw_add_long(
     UBYTE *destination,
     const UBYTE *source,
     ULONG bytes,
     ULONG seed);
 
-ULONG magi80_chipram_rmw_add_long4(
+ULONG miga80_chipram_rmw_add_long4(
     UBYTE *destination,
     const UBYTE *source,
     ULONG bytes,

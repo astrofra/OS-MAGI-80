@@ -1,19 +1,19 @@
-# MAGI-80 Product Requirements, Technical Specification, and Development Roadmap
+# MIGA-80 Product Requirements, Technical Specification, and Development Roadmap
 
 | Field | Value |
 | --- | --- |
 | Document status | Working specification, revision 0.3 |
 | Date | 2026-09-03 |
-| Target release | MAGI-80 1.0 |
+| Target release | MIGA-80 1.0 |
 | Primary hardware | Stock PAL Amiga 1200, 68EC020, AGA, 2 MiB Chip RAM |
 | Implementation | C99 with narrowly scoped 68020 assembly |
 | Build model | Cross-compiled with GCC plus native host tests and an embedded 68EC020 generated-code runner |
 
 ## 1. Purpose
 
-This document defines MAGI-80, a small fantasy-console-style development environment for a stock Amiga 1200. It turns the machine into a focused place for creating and running games and demos, with deliberate limits inspired by PICO-8.
+This document defines MIGA-80, a small fantasy-console-style development environment for a stock Amiga 1200. It turns the machine into a focused place for creating and running games and demos, with deliberate limits inspired by PICO-8.
 
-MAGI-80 provides:
+MIGA-80 provides:
 
 - an integrated source-code editor;
 - an integrated sprite editor;
@@ -30,28 +30,28 @@ This specification is intended to be detailed enough to guide architecture, impl
 
 The terms **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and **MAY** describe requirement priority:
 
-- **MUST** is required for MAGI-80 1.0.
+- **MUST** is required for MIGA-80 1.0.
 - **SHOULD** is expected unless Phase 0 evidence shows that the stock machine cannot support it reliably.
 - **MAY** is optional or belongs to a later release.
 
 ## 3. Product definition
 
-### 3.1 What MAGI-80 is
+### 3.1 What MIGA-80 is
 
-MAGI-80 is a fantasy computer and integrated development environment hosted by AmigaOS while editing, with an exclusive hardware-oriented execution mode while running a cartridge. It replaces the normal AmigaOS user experience from the user's perspective, but it does not replace Kickstart, Exec, AmigaDOS, or the installed filesystem implementation in version 1.0.
+MIGA-80 is a fantasy computer and integrated development environment hosted by AmigaOS while editing, with an exclusive hardware-oriented execution mode while running a cartridge. It replaces the normal AmigaOS user experience from the user's perspective, but it does not replace Kickstart, Exec, AmigaDOS, or the installed filesystem implementation in version 1.0.
 
 The product may be called a mini-OS because it supplies its own shell, editors, language, runtime, graphics model, and asset format. Technically, version 1.0 is a single AmigaOS executable with two operating personalities:
 
 1. **Hosted mode:** AmigaOS continues multitasking and provides filesystems, devices, memory allocation, and system-friendly display/input services.
-2. **Exclusive runtime mode:** the MAGI-80 task prevents task rescheduling, takes ownership of the display, blitter, input path, and Paula audio resources needed by the cartridge, and makes no filesystem or other blocking OS calls until it restores the hosted environment.
+2. **Exclusive runtime mode:** the MIGA-80 task prevents task rescheduling, takes ownership of the display, blitter, input path, and Paula audio resources needed by the cartridge, and makes no filesystem or other blocking OS calls until it restores the hosted environment.
 
 This interpretation resolves an otherwise irreconcilable requirement: a completely independent bare-metal OS cannot use AmigaOS libraries to read OFS and FFS volumes. A future bare-metal edition would need its own filesystem and device drivers and is outside the 1.0 scope.
 
-MAGI-80 MUST reuse AmigaOS and the selected lightweight C runtime wherever that improves reliability without weakening the fantasy-machine contract. In hosted mode, ordinary C99 allocation and stream APIs such as `malloc()`, `free()`, `fopen()`, `fread()`, `fwrite()`, and `fclose()` are valid implementation choices when their runtime is compatible with the target systems. Direct Exec, DOS, graphics, device, and resource APIs remain appropriate where MAGI-80 needs Amiga-specific capabilities such as volume enumeration, Chip RAM, screen ownership, or error details. Reimplementing a general allocator, filesystem, device layer, or window system is not a goal.
+MIGA-80 MUST reuse AmigaOS and the selected lightweight C runtime wherever that improves reliability without weakening the fantasy-machine contract. In hosted mode, ordinary C99 allocation and stream APIs such as `malloc()`, `free()`, `fopen()`, `fread()`, `fwrite()`, and `fclose()` are valid implementation choices when their runtime is compatible with the target systems. Direct Exec, DOS, graphics, device, and resource APIs remain appropriate where MIGA-80 needs Amiga-specific capabilities such as volume enumeration, Chip RAM, screen ownership, or error details. Reimplementing a general allocator, filesystem, device layer, or window system is not a goal.
 
 ### 3.2 PICO-8 principles adopted
 
-MAGI-80 adopts the following general principles rather than attempting API compatibility:
+MIGA-80 adopts the following general principles rather than attempting API compatibility:
 
 - one coherent machine with fixed capabilities;
 - immediate edit–compile–run–stop feedback;
@@ -77,7 +77,7 @@ When requirements compete, decisions SHOULD favor, in order:
 
 ### 3.4 Native-hardware leverage policy
 
-MAGI-80 SHOULD use the machine's existing strengths instead of simulating in software what the A1200 already does well. The intended split is:
+MIGA-80 SHOULD use the machine's existing strengths instead of simulating in software what the A1200 already does well. The intended split is:
 
 - Exec, AmigaDOS, the C runtime, Intuition/graphics services, device APIs, and resource arbitration while editing;
 - the 68020's 32-bit operations for generated game logic, flexible pixel drawing, fixed-point math, and the parts of C2P it performs best;
@@ -90,14 +90,14 @@ MAGI-80 SHOULD use the machine's existing strengths instead of simulating in sof
 
 The fantasy-machine API remains stable even when a backend optimization changes. A feature is not considered “hardware-accelerated” until it is faster on a real stock A1200 with active display DMA.
 
-The adopted graphics direction is defined in [MAGI-80 Graphics Architecture — Performance-Oriented Design Notes](./MAGI-80-graphics-architecture-notes.md): do not regenerate pixels when AGA can move, compose, or display their existing representation. Exact viewport sizes, scroll margins, object limits, and CPU/blitter division remain Phase 0 measurement decisions.
+The adopted graphics direction is defined in [MIGA-80 Graphics Architecture — Performance-Oriented Design Notes](./MIGA-80-graphics-architecture-notes.md): do not regenerate pixels when AGA can move, compose, or display their existing representation. Exact viewport sizes, scroll margins, object limits, and CPU/blitter division remain Phase 0 measurement decisions.
 
 ## 4. Goals and non-goals
 
 ### 4.1 Version 1.0 goals
 
 - Boot or launch on a stock A1200 with no accelerator, Fast RAM, hard disk, or FPU.
-- Fit a useful MAGI-80 distribution, including one example cartridge, on one standard Amiga DD floppy.
+- Fit a useful MIGA-80 distribution, including one example cartridge, on one standard Amiga DD floppy.
 - Launch the same core program from an AmigaOS hard disk.
 - Keep AmigaOS alive and schedulable throughout editing.
 - Enter and leave exclusive runtime mode repeatedly without rebooting or damaging the prior display, audio, input, or filesystem state.
@@ -132,7 +132,7 @@ The adopted graphics direction is defined in [MAGI-80 Graphics Architecture — 
 | --- | --- | --- | --- |
 | A-01 | PAL A1200 is the certified 1.0 target. | A non-interlaced 256-line workspace naturally fits PAL and provides a stable 50 Hz cadence. | Detect the video standard before opening the workspace. On NTSC, show a clear unsupported-mode message in a safe AmigaOS screen. A 256 × 200 compatibility mode MAY follow later. |
 | A-02 | Kickstart/AmigaOS 3.0 and 3.1 are the initial compatibility targets. | These are the normal stock A1200 environments and expose the required classic APIs. | Test both on emulator and original hardware. Newer 3.x releases are best-effort until separately certified. |
-| A-03 | MAGI-80 is an AmigaOS-hosted environment, not a bare-metal kernel. | OFS/FFS access through `dos.library`, safe HD launch, and continued AmigaOS operation during editing require a hosted process. | If literal bare-metal operation becomes mandatory, split it into a separate product track with its own loader, filesystem, input, and device work. |
+| A-03 | MIGA-80 is an AmigaOS-hosted environment, not a bare-metal kernel. | OFS/FFS access through `dos.library`, safe HD launch, and continued AmigaOS operation during editing require a hosted process. | If literal bare-metal operation becomes mandatory, split it into a separate product track with its own loader, filesystem, input, and device work. |
 | A-04 | A standard DD ADF is 901,120 bytes raw, conventionally called 880 KiB. | This is the distribution ceiling and matches a stock internal drive. | The release pipeline MUST build and boot-test the exact image rather than relying only on summed file sizes. |
 | A-05 | The safe filesystem payload budget is initially 800 KiB. | OFS overhead, boot metadata, and future headroom make the raw ADF size an unsafe payload target. | Generate both OFS and FFS candidate images in Phase 0, select one boot format, and replace this estimate with measured free-block budgets. |
 | A-06 | The virtual palette remains a 12-bit RGB index space even though AGA palette entries are 24-bit. A versioned response-profile LUT maps every logical `0xRGB` value to one `0xRRGGBB` hardware value. | The 4,096-color authoring space preserves the intended fantasy-machine constraint, while AGA's precision can express a film- or video-derived response without increasing cartridge color precision. | Generate and validate all 4,096 mappings offline from documented response data; retain direct nibble replication only as a neutral reference and diagnostic fallback. |
@@ -148,7 +148,7 @@ The adopted graphics direction is defined in [MAGI-80 Graphics Architecture — 
 | A-16 | Generated 68020 code is exercised locally through a pinned Musashi 68EC020 runner before UAE or hardware integration. | Most compiler and ABI failures can then be reproduced in a sub-second native test without building or launching an Amiga image. | Musashi results establish functional confidence only. A curated corpus SHOULD later run under Moira as an independent oracle, while UAE and real A1200 tests remain mandatory for OS, chipset, cache, and performance behavior. |
 | A-17 | An informal stock-A1200 Chip-RAM write estimate near 6 MB/s is treated as a bandwidth warning, not as an engineering budget. | Its loop, access width, alignment, display/DMA state, and unit convention are unknown, and write-only throughput does not describe C2P's mixed traffic. | Phase 0 MUST reproduce aligned byte/word/long read, write, and mixed-access tests on real hardware with display blanked and active and with representative DMA states. Generated disassembly and raw E-Clock/raster distributions must accompany the result. |
 | A-18 | Available Fast RAM enables an optional transparent acceleration tier, never a different cartridge contract. | Moving CPU code, stacks, game state, dictionaries, chunky sources, and CPU-only scratch out of contended Chip RAM can free 68020 and chipset cycles while AGA and the blitter retain DMA access to Chip RAM. | Phase 0 MUST compare stock and Fast-assisted placement on real hardware. The allocator records every memory domain, all DMA-visible data remains in Chip RAM, and release certification still uses the stock 2 MiB configuration. |
-| A-19 | The eleven complete 4,096-entry color-response tables MUST NOT be compiled as literal arrays into the MAGI-80 executable. | RGB24 storage alone would consume 135,168 bytes (132 KiB), or 180,224 bytes (176 KiB) as runtime-aligned 32-bit entries, before executable-format or alignment overhead. This is disproportionate to the floppy and binary budgets. | Phase 0 compares two integer-only sources for the selected 16 KiB direct-index table: independently compressed canonical LUT blocks, or one-time reconstruction from compact fixed-point profile descriptors. Neither route may perform color calculations after takeover. |
+| A-19 | The eleven complete 4,096-entry color-response tables MUST NOT be compiled as literal arrays into the MIGA-80 executable. | RGB24 storage alone would consume 135,168 bytes (132 KiB), or 180,224 bytes (176 KiB) as runtime-aligned 32-bit entries, before executable-format or alignment overhead. This is disproportionate to the floppy and binary budgets. | Phase 0 compares two integer-only sources for the selected 16 KiB direct-index table: independently compressed canonical LUT blocks, or one-time reconstruction from compact fixed-point profile descriptors. Neither route may perform color calculations after takeover. |
 
 ## 6. Target platform and compatibility contract
 
@@ -170,11 +170,11 @@ The adopted graphics direction is defined in [MAGI-80 Graphics Architecture — 
 - Second joystick.
 - Accelerator.
 
-Optional hardware MUST NOT be required by a version 1.0 cartridge. When Fast RAM is present, MAGI-80 MAY select the `fast_assisted` memory tier without changing fantasy-machine semantics, timing rules, save data, or cartridge compatibility. It MUST preserve the stock-memory execution path and MUST place all DMA-visible data in Chip RAM.
+Optional hardware MUST NOT be required by a version 1.0 cartridge. When Fast RAM is present, MIGA-80 MAY select the `fast_assisted` memory tier without changing fantasy-machine semantics, timing rules, save data, or cartridge compatibility. It MUST preserve the stock-memory execution path and MUST place all DMA-visible data in Chip RAM.
 
 ### 6.3 Startup checks
 
-Before opening its workspace, MAGI-80 MUST check:
+Before opening its workspace, MIGA-80 MUST check:
 
 - CPU capability;
 - AGA availability;
@@ -184,7 +184,7 @@ Before opening its workspace, MAGI-80 MUST check:
 - whether critical display and audio resources can be acquired;
 - whether the launch volume is readable.
 
-Failure MUST return to AmigaOS with a plain explanation. MAGI-80 MUST NOT attempt hardware takeover after a failed preflight.
+Failure MUST return to AmigaOS with a plain explanation. MIGA-80 MUST NOT attempt hardware takeover after a failed preflight.
 
 ## 7. Operating model
 
@@ -226,19 +226,19 @@ In hosted mode:
 - Keyboard and mouse events MUST use OS input facilities.
 - Music preview SHOULD use an OS-cooperative audio path and must handle unavailable Paula channels gracefully.
 - Direct custom-chip access MUST be limited to operations explicitly coordinated with the appropriate OS resource or library.
-- The user MUST be able to leave MAGI-80 and return to Workbench or CLI without rebooting.
+- The user MUST be able to leave MIGA-80 and return to Workbench or CLI without rebooting.
 
 ### 7.3 Exclusive runtime mode
 
 In exclusive runtime mode:
 
 - The cartridge and all referenced data MUST already be resident.
-- All MAGI-80 project/import streams with pending work MUST be flushed and closed before takeover. Inherited CLI/Workbench process handles may remain open but MUST stay untouched until restoration.
+- All MIGA-80 project/import streams with pending work MUST be flushed and closed before takeover. Inherited CLI/Workbench process handles may remain open but MUST stay untouched until restoration.
 - No operation that may call `Wait()` is allowed.
-- The MAGI-80 task MUST prevent normal task rescheduling for the duration of the run.
-- Hardware interrupts required for MAGI-80 input, video timing, and music MUST continue to operate.
+- The MIGA-80 task MUST prevent normal task rescheduling for the duration of the run.
+- Hardware interrupts required for MIGA-80 input, video timing, and music MUST continue to operate.
 - `Disable()` MUST NOT cover the gameplay session. Official Exec guidance warns that long disabled sections disrupt vital system activity; it may only protect a measured, very short transition when necessary.
-- MAGI-80 MUST coordinate ownership of the blitter, display, CIA timer if used, and Paula channels before programming them directly.
+- MIGA-80 MUST coordinate ownership of the blitter, display, CIA timer if used, and Paula channels before programming them directly.
 - An emergency stop input MUST remain available even when generated user code loops forever. The compiler MUST insert stop and execution-budget checks at every backward control-flow edge and other bounded safe points.
 - A generated-code fault detected by a guard, execution-budget exhaustion, or user stop MUST enter the same restoration path.
 - The runtime MUST perform no dynamic memory allocation after takeover.
@@ -248,19 +248,19 @@ In exclusive runtime mode:
 The exact register and library sequence is a Phase 0 deliverable, not something to improvise late in development. The initial design is:
 
 1. Compile the cartridge and validate all resources.
-2. Validate generated-code bounds, relocations, guarded control-flow metadata, stack requirements, and calls against the immutable MAGI-80 native ABI jump table.
+2. Validate generated-code bounds, relocations, guarded control-flow metadata, stack requirements, and calls against the immutable MIGA-80 native ABI jump table.
 3. Flush the generated code range from the 68020 instruction cache with the appropriate Exec cache-control function before it can execute.
 4. Allocate and pin all remaining runtime memory.
-5. Finish, flush, and close MAGI-80 project/import file operations; stop hosted audio preview.
-6. Save the active `View`, display configuration, palette, DMA/interrupt state that MAGI-80 will modify, and input/audio ownership state.
-7. Install or activate preallocated MAGI-80 interrupt handlers through the appropriate Exec/CIA resource interfaces.
+5. Finish, flush, and close MIGA-80 project/import file operations; stop hosted audio preview.
+6. Save the active `View`, display configuration, palette, DMA/interrupt state that MIGA-80 will modify, and input/audio ownership state.
+7. Install or activate preallocated MIGA-80 interrupt handlers through the appropriate Exec/CIA resource interfaces.
 8. Obtain exclusive blitter access and wait for any prior blit to finish.
 9. Blank or detach the OS view using `graphics.library`, with required frame waits completed before scheduling is forbidden.
 10. Call `Forbid()` once the runtime path is guaranteed not to wait.
-11. In a short critical transition, install the MAGI-80 Copper list, bitplane pointers, palette, DMA, and owned interrupt sources.
+11. In a short critical transition, install the MIGA-80 Copper list, bitplane pointers, palette, DMA, and owned interrupt sources.
 12. Run the fixed-step native callback loop, synchronized by an interrupt-set flag or a nonblocking beam/tick mechanism.
 
-Restoration reverses those steps: stop MAGI-80 DMA and interrupt sources, restore the saved display and owned resources, release the blitter, call `Permit()`, restart hosted input/audio as needed, and redraw the editor. The implementation MUST track nesting and ownership explicitly; it MUST never issue an unmatched `Permit()`, `Enable()`, `DisownBlitter()`, or resource release.
+Restoration reverses those steps: stop MIGA-80 DMA and interrupt sources, restore the saved display and owned resources, release the blitter, call `Permit()`, restart hosted input/audio as needed, and redraw the editor. The implementation MUST track nesting and ownership explicitly; it MUST never issue an unmatched `Permit()`, `Enable()`, `DisownBlitter()`, or resource release.
 
 ### 7.5 Restoration acceptance test
 
@@ -273,7 +273,7 @@ A stock A1200 MUST survive at least 1,000 automated or operator-assisted run/sto
 - disks and hard-disk volumes remain usable;
 - no Chip RAM or OS resource leak is detected;
 - no stale audio DMA or stuck note remains;
-- the prior Workbench/CLI state remains usable after MAGI-80 exits.
+- the prior Workbench/CLI state remains usable after MIGA-80 exits.
 
 ## 8. User experience
 
@@ -292,7 +292,7 @@ The shell SHOULD use consistent function-key shortcuts and show them on screen. 
 
 ### 8.2 Visual workspace
 
-The MAGI-80 UI SHOULD use the same 256 × 256 logical surface as cartridges so that asset previews are exact. A compact 6 × 8 or similarly legible bitmap font SHOULD provide at least 40 source columns. The code editor MUST support horizontal scrolling because the logical screen is intentionally narrow.
+The MIGA-80 UI SHOULD use the same 256 × 256 logical surface as cartridges so that asset previews are exact. A compact 6 × 8 or similarly legible bitmap font SHOULD provide at least 40 source columns. The code editor MUST support horizontal scrolling because the logical screen is intentionally narrow.
 
 ### 8.3 Immediate feedback
 
@@ -309,8 +309,8 @@ The MAGI-80 UI SHOULD use the same 256 × 256 logical surface as cartridges so t
 | ID | Requirement |
 | --- | --- |
 | SYS-001 | The full release image MUST fit on one standard 880 KiB Amiga DD floppy. |
-| SYS-002 | The floppy edition MUST boot through a minimal AmigaDOS startup sequence and enter MAGI-80 without opening Workbench. |
-| SYS-003 | The same MAGI-80 core executable MUST be launchable from CLI and Workbench on a hard disk. |
+| SYS-002 | The floppy edition MUST boot through a minimal AmigaDOS startup sequence and enter MIGA-80 without opening Workbench. |
+| SYS-003 | The same MIGA-80 core executable MUST be launchable from CLI and Workbench on a hard disk. |
 | SYS-004 | After a floppy boot completes, the executable and all mandatory UI resources MUST be resident so that the boot disk can be exchanged for a project disk. |
 | SYS-005 | Quit MUST restore the original AmigaOS display, input, audio, scheduling, current directory, and error status as far as the public APIs permit. |
 | SYS-006 | A failed startup MUST release every resource acquired by that startup. |
@@ -352,7 +352,7 @@ The MAGI-80 UI SHOULD use the same 256 × 256 logical surface as cartridges so t
 
 | ID | Requirement |
 | --- | --- |
-| AUD-001 | MAGI-80 MUST import standard four-channel, 31-sample ProTracker modules with recognized signatures such as `M.K.`, `M!K!`, and `4CHN`. |
+| AUD-001 | MIGA-80 MUST import standard four-channel, 31-sample ProTracker modules with recognized signatures such as `M.K.`, `M!K!`, and `4CHN`. |
 | AUD-002 | Import MUST validate the header, song length, order table, pattern count, sample lengths, loop ranges, and total file bounds before allocating or copying bulk data. |
 | AUD-003 | Unsupported signatures, effects, corrupt loops, truncated patterns, and over-budget samples MUST produce specific errors and MUST NOT destabilize the editor. |
 | AUD-004 | The importer MUST preserve signed 8-bit sample data, finetune, volume, loop points, pattern data, and song order for supported files. |
@@ -369,13 +369,13 @@ The MAGI-80 UI SHOULD use the same 256 × 256 logical surface as cartridges so t
 
 | ID | Requirement |
 | --- | --- |
-| IO-001 | In hosted mode, MAGI-80 MUST enumerate mounted volumes and directories through `dos.library`. |
+| IO-001 | In hosted mode, MIGA-80 MUST enumerate mounted volumes and directories through `dos.library`. |
 | IO-002 | It MUST read files on OFS and FFS volumes as exposed by AmigaDOS; it MUST NOT depend on direct knowledge of their on-disk block formats. |
 | IO-003 | It MUST open, read, seek when supported, examine, enumerate, create, write, flush, close, rename, and delete through documented AmigaOS facilities or the selected C99 runtime backed by them. Volume enumeration, disk-specific state, and detailed DOS errors MAY use `dos.library` directly; ordinary sequential file data MAY use `fopen()` and related calls. |
 | IO-004 | File browsing MUST support `DF0:` and normal hard-disk volume/device names. |
-| IO-005 | MAGI-80 MUST detect disk removal, insertion, validation delays, write protection, full media, name collisions, and DOS errors without losing the in-memory project. |
+| IO-005 | MIGA-80 MUST detect disk removal, insertion, validation delays, write protection, full media, name collisions, and DOS errors without losing the in-memory project. |
 | IO-006 | Saves SHOULD use a temporary sibling file, flush and close it, then replace the destination only after success. If the volume lacks room for both copies, the UI MUST explain the risk and offer Save As to another volume; it MUST NOT silently overwrite the only valid copy. |
-| IO-007 | No MAGI-80-owned project/import handle, lock, outstanding DOS packet, or unflushed project write may cross into exclusive runtime mode. Inherited process handles may remain idle but MUST NOT be accessed while task scheduling is frozen. |
+| IO-007 | No MIGA-80-owned project/import handle, lock, outstanding DOS packet, or unflushed project write may cross into exclusive runtime mode. Inherited process handles may remain idle but MUST NOT be accessed while task scheduling is frozen. |
 | IO-008 | File and volume names MUST be normalized conservatively and MUST remain usable on both OFS and FFS. |
 | IO-009 | Unknown files are read-only imports until their parser validates them. |
 | IO-010 | A cartridge loaded from hard disk MUST behave identically to the same bytes loaded from floppy. |
@@ -388,12 +388,12 @@ The MAGI-80 UI SHOULD use the same 256 × 256 logical surface as cartridges so t
 | CART-002 | A shareable cartridge SHOULD be a single file with magic, format version, section directory, declared lengths, checksums, and no native pointers. |
 | CART-003 | Multi-byte fields MUST use a documented byte order; big-endian is preferred to minimize target conversion. |
 | CART-004 | Every section MUST be independently bounds-checked before use. Unknown optional sections MUST be skippable. Unknown mandatory sections MUST reject the cartridge. |
-| CART-005 | Version 1.0 cartridges MUST NOT embed executable machine code. MAGI-80 MUST compile source into a fresh native-code arena for the current compiler and ABI, preventing stale or externally injected native code from bypassing language safety. |
+| CART-005 | Version 1.0 cartridges MUST NOT embed executable machine code. MIGA-80 MUST compile source into a fresh native-code arena for the current compiler and ABI, preventing stale or externally injected native code from bypassing language safety. |
 | CART-006 | A release cartridge MUST be reproducible from its source and assets. Given the same MIGA Lua compiler, native ABI, and target profile, compilation MUST produce the same generated code and data layout. |
 | CART-007 | Compression MUST be deterministic, streamable or bounded-memory, and fast enough to load from floppy. RLE and a small LZ-family codec are candidates. |
 | CART-008 | The shell MUST show packed disk size and worst-case resident size before saving. |
 | CART-009 | A malformed cartridge MUST never reach native code generation with an unchecked section, offset, count, or decompression result. |
-| CART-010 | The cartridge MUST identify its container, MIGA Lua language, and target-profile versions. Compiler and native ABI versions belong to the MAGI-80 system and trusted in-session compiled image, not to an executable cartridge payload. |
+| CART-010 | The cartridge MUST identify its container, MIGA Lua language, and target-profile versions. Compiler and native ABI versions belong to the MIGA-80 system and trusted in-session compiled image, not to an executable cartridge payload. |
 | CART-011 | A cartridge MUST store logical palette values and the response-profile identifier, not a private replacement LUT. An unknown mandatory profile or incompatible profile version MUST reject the cartridge with a specific diagnostic rather than silently changing its colors. |
 
 ## 10. MIGA Lua language and native compiler
@@ -584,7 +584,7 @@ A cartridge MAY define these statically resolved entry points:
 - `draw(): void` — called after an update when a new frame is requested;
 - `shutdown(): void` — called on a normal stop under a strict execution budget.
 
-Missing callbacks are legal no-ops. MAGI-80, not generated code, owns the main loop, frame pacing, interrupt handling, error trampoline, and emergency stop path. `init()` may populate preallocated arrays and dictionaries but may not grow their capacity or allocate memory.
+Missing callbacks are legal no-ops. MIGA-80, not generated code, owns the main loop, frame pacing, interrupt handling, error trampoline, and emergency stop path. `init()` may populate preallocated arrays and dictionaries but may not grow their capacity or allocate memory.
 
 ### 10.8 Native 68020 backend and ABI
 
@@ -598,7 +598,7 @@ The backend SHOULD initially implement only optimizations with clear value and s
 - constant-offset record fields;
 - scaled or strength-reduced fixed-array addressing;
 - inlining of very small arithmetic and guard helpers when it reduces total cost;
-- direct native calls for recognized MAGI-80 built-ins;
+- direct native calls for recognized MIGA-80 built-ins;
 - shared assembly helpers for expensive fixed-point operations.
 
 The bounded pass architecture, optimization levels, regression signals, and
@@ -614,10 +614,10 @@ The native ABI MUST define:
 - argument and multiple-return placement;
 - an immutable, versioned jump table containing the only runtime functions callable by generated code;
 - typed signatures and stable numeric IDs for every fantasy API function;
-- error and stop trampolines that return control to MAGI-80 without returning through an invalid user stack;
+- error and stop trampolines that return control to MIGA-80 without returning through an invalid user stack;
 - relocation kinds, code alignment, code-arena bounds, and source-map metadata.
 
-Generated code MUST NOT address AmigaOS libraries, custom-chip registers, the Copper list, unrelated MAGI-80 state, or arbitrary absolute memory. Hardware access remains inside reviewed C/assembly runtime functions reached through the native ABI.
+Generated code MUST NOT address AmigaOS libraries, custom-chip registers, the Copper list, unrelated MIGA-80 state, or arbitrary absolute memory. Hardware access remains inside reviewed C/assembly runtime functions reached through the native ABI.
 
 ABI preservation is executable behavior, not documentation alone. Before invoking a generated function, the host runner MUST initialize callee-saved registers, the stack, and guard memory with recognizable values, then verify them after return. [MIGA Lua Native ABI 0.1](./MIGA-Lua-native-ABI-v0.md) freezes the bootstrap register and stack core: scalar arguments in `D0-D2`, scalar result in `D0`, future address-class arguments in `A0-A1`, `D3-D7` and `A2-A6` callee-saved, opaque runtime context in `A5`, optional frame pointer in `A6`, and four-byte stack alignment. Multiple returns are excluded from language version 1; stack arguments, traps, runtime-context layout, and fixed-point rules remain ABI-extension decisions.
 
@@ -636,7 +636,7 @@ Its first version MUST provide:
 - deterministic runtime-service mocks implemented as reserved traps or synthetic control-page accesses that validate arguments, record calls, and return defined values;
 - a circular disassembly trace, normally retained silently and printed with registers and nearby memory only on failure.
 
-The proposed local memory addresses in [MAGI-80 Local 68020 Tooling](./MAGI-80-local-68020-tooling.md) are runner configuration, not cartridge or native ABI. Tests MUST cover big-endian layout, 24-bit address handling, sign/zero extension, stack alignment, branch limits, arithmetic flags, function calls, guards, runtime traps, illegal operations, and timeout behavior.
+The proposed local memory addresses in [MIGA-80 Local 68020 Tooling](./MIGA-80-local-68020-tooling.md) are runner configuration, not cartridge or native ABI. Tests MUST cover big-endian layout, 24-bit address handling, sign/zero extension, stack alignment, branch limits, arithmetic flags, function calls, guards, runtime traps, illegal operations, and timeout behavior.
 
 Most generated-code tests SHOULD be semantic: compile a function, execute it, and compare its result and side effects with the host typed-IR oracle. A small reviewed set MAY use normalized-disassembly goldens for prologues, epilogues, branches, addressing, fixed-point kernels, and guard sequences. Deterministic randomized programs and inputs SHOULD compare the typed-IR oracle with Musashi; a later curated edge corpus SHOULD also compare Musashi with Moira before hardware sign-off.
 
@@ -657,7 +657,7 @@ The following controls are mandatory:
 - generated branch targets, relocations, code/data ranges, entry points, stack requirements, guard metadata, and jump-table call targets MUST be validated before execution;
 - release tests MUST disassemble or otherwise independently check emitted instruction streams on the host; malformed IR and relocation fuzzing MUST never produce an installable code image;
 - generated code MUST reside in a dedicated fixed-size arena and MUST never be loaded directly from an untrusted cartridge section;
-- after emission and relocation, MAGI-80 MUST call the appropriate Exec cache-clear function for the generated range before execution, because the 68020 has an instruction cache;
+- after emission and relocation, MIGA-80 MUST call the appropriate Exec cache-clear function for the generated range before execution, because the 68020 has an instruction cache;
 - no generated code or game data allocation occurs after takeover;
 - random number generation uses a documented algorithm and explicit seed;
 - given the same source, compiler version, assets, seed, and input sequence, game-visible state MUST be reproducible.
@@ -760,13 +760,13 @@ The first hosted Phase 0 smoke test provisionally maps the transparent overlay t
 
 #### 11.4.1 Logical 12-bit gamut and color-response profiles
 
-MAGI-80 presents exactly 4,096 colors to cartridge code and asset tools, following the classic Amiga `0xRGB` convention. These values are logical color coordinates, not literal AGA register contents. Each built-in response profile owns an immutable 4,096-entry lookup table:
+MIGA-80 presents exactly 4,096 colors to cartridge code and asset tools, following the classic Amiga `0xRGB` convention. These values are logical color coordinates, not literal AGA register contents. Each built-in response profile owns an immutable 4,096-entry lookup table:
 
 ```text
 logical 0xRGB (12-bit) -> profile LUT[4096] -> hardware 0xRRGGBB (24-bit AGA)
 ```
 
-Consequently, a predefined MAGI-80 gamut may draw each of its 4,096 entries from anywhere in AGA's approximately 16.7-million-color space while the cartridge still sees only 4,096 possible colors. Only the 31 opaque colors selected by the current dual-playfield palette are resident simultaneously; the lookup table does not change that display limit. Different logical colors MAY converge after quantization or by design, most notably in the monochrome profile.
+Consequently, a predefined MIGA-80 gamut may draw each of its 4,096 entries from anywhere in AGA's approximately 16.7-million-color space while the cartridge still sees only 4,096 possible colors. Only the 31 opaque colors selected by the current dual-playfield palette are resident simultaneously; the lookup table does not change that display limit. Different logical colors MAY converge after quantization or by design, most notably in the monochrome profile.
 
 Version 1.0 MUST provide exactly five photographic-stock profiles, three historical-video profiles, two common color-vision-deficiency simulations, and one console-inspired profile:
 
@@ -792,11 +792,11 @@ Each response contracts red, green, and blue sensitivity and tone range accordin
 
 The deutan and protan modes MUST apply the corresponding full-deficiency endpoint matrices from the 2009 Machado–Oliveira–Fernandes physiologically based model in linear RGB. They are simulations for finding confusing color pairs, not corrective filters and not substitutes for contrast, shape, text, outlines, or redundant non-color cues. The editor MUST label that individual perception and severity vary.
 
-The Mega Drive mode MUST preserve all 4,096 logical colors as distinct 24-bit results. It pulls each component only part-way—initially 28%—toward the nearest value in the console's 3-bit-per-channel RGB vocabulary; it MUST NOT collapse the gamut to the Mega Drive's 512 hardware colors. A smooth luminance bell then raises red and blue and contracts green in the midtones, with exactly zero violet bias at black and white. This violet cast is an explicit MAGI-80 art-direction choice inspired by the appearance of Mega Drive titles, not a claim that every VDP, encoder, cable, or display had that measured response.
+The Mega Drive mode MUST preserve all 4,096 logical colors as distinct 24-bit results. It pulls each component only part-way—initially 28%—toward the nearest value in the console's 3-bit-per-channel RGB vocabulary; it MUST NOT collapse the gamut to the Mega Drive's 512 hardware colors. A smooth luminance bell then raises red and blue and contracts green in the midtones, with exactly zero violet bias at black and white. This violet cast is an explicit MIGA-80 art-direction choice inspired by the appearance of Mega Drive titles, not a claim that every VDP, encoder, cable, or display had that measured response.
 
 Every shipped LUT MUST record its profile ID and version, source-data provenance, illuminant and white-point assumptions, transform parameters, generator revision, and checksum. Tests MUST cover all 4,096 inputs, deterministic rounding, black/white behavior, neutral-ramp behavior, gamut bounds, representative color-chart patches, editor/runtime identity, and hardware register output. The Mega Drive test additionally asserts 4,096 distinct mapped colors and zero purple bias at both luminance endpoints. Direct nibble replication (`0xRGB -> 0xRRGGBB`) remains a non-creative reference path for diagnostics and differential tests, not one of the eleven selectable profiles.
 
-The initial 256-color grids and their reproducible generator are documented in [MAGI-80 Color-Response Palette Studies](./color-response-palettes/README.md).
+The initial 256-color grids and their reproducible generator are documented in [MIGA-80 Color-Response Palette Studies](./color-response-palettes/README.md).
 
 #### 11.4.2 LUT storage and integer-only runtime contract
 
@@ -822,7 +822,7 @@ The dynamic alternative stores only a versioned fixed-point descriptor for each 
 
 Because there are only 4,096 source values, the dynamic generator MAY exhaustively reconstruct the table when a profile is selected. It MUST run in hosted mode into a preallocated destination, remain responsive enough for interactive profile changes, report a controlled error on failure, and produce the canonical profile checksum before the table is accepted. Phase 0 MUST record generation time, peak scratch memory, descriptor size, code size, and checksum equality on a stock 14 MHz 68EC020. The fixed-point representation becomes authoritative only if the host reference generator can execute the same integer path and produce byte-identical output for all eleven profiles.
 
-In hosted mode, MAGI-80 either validates and expands the selected packed block or generates it from the selected fixed-point descriptor. Both routes write into a preallocated, 32-bit-aligned 4,096-entry table whose entries have the form `0x00RRGGBB`, and both use checked integer operations only. At most one full response table need be expanded at a time; an optional second table for before/after editor comparison MUST be charged explicitly to the editor memory budget. Fast RAM is preferred when available, but the stock configuration allocates the table in ordinary CPU-accessible Chip RAM.
+In hosted mode, MIGA-80 either validates and expands the selected packed block or generates it from the selected fixed-point descriptor. Both routes write into a preallocated, 32-bit-aligned 4,096-entry table whose entries have the form `0x00RRGGBB`, and both use checked integer operations only. At most one full response table need be expanded at a time; an optional second table for before/after editor comparison MUST be charged explicitly to the editor memory budget. Fast RAM is preferred when available, but the stock configuration allocates the table in ordinary CPU-accessible Chip RAM.
 
 Once selected, mapping a logical color is semantically just:
 
@@ -867,8 +867,8 @@ Phase 0 MUST compare no margin, ±16 pixels, and ±32 pixels. The guarantee is a
 ### 11.7 Video profiles and visible budgets
 
 - Certified video output is PAL 50 Hz.
-- **MAGI-80 Standard** targets deterministic 25 Hz simulation/rendering, with each completed frame displayed for two refreshes.
-- **MAGI-80 Turbo** targets 50 Hz and requires an explicit cartridge opt-in plus stricter measured budgets.
+- **MIGA-80 Standard** targets deterministic 25 Hz simulation/rendering, with each completed frame displayed for two refreshes.
+- **MIGA-80 Turbo** targets 50 Hz and requires an explicit cartridge opt-in plus stricter measured budgets.
 - A full 256 × 256 chunky refresh is a high-cost feature, not the baseline workload. It is available only within the performance envelope frozen by Phase 0.
 - Input-to-display latency is no more than two display refreshes in the standard path.
 - The empty runtime MUST miss no video deadline over a 30-minute test.
@@ -908,7 +908,7 @@ Input events used by the cartridge MUST be sampled at deterministic frame bounda
 
 ### 13.1 Hosted backend
 
-The hosted backend owns no hardware without allocation. It uses `audio.device` and the appropriate CIA resource or a similarly cooperative mechanism. If another application holds the channels or timer, MAGI-80 SHOULD continue editing silently and explain why preview is disabled.
+The hosted backend owns no hardware without allocation. It uses `audio.device` and the appropriate CIA resource or a similarly cooperative mechanism. If another application holds the channels or timer, MIGA-80 SHOULD continue editing silently and explain why preview is disabled.
 
 ### 13.2 Exclusive backend
 
@@ -942,7 +942,7 @@ Expected row, tick, period, volume, loop, and song-position traces SHOULD be com
 The release build MUST produce a bootable `.adf` and a manifest. The image SHOULD contain only:
 
 - boot metadata and `S:Startup-Sequence`;
-- the MAGI-80 executable;
+- the MIGA-80 executable;
 - embedded or separate mandatory fonts/help data;
 - one small example cartridge;
 - license and short read-me files if space permits.
@@ -952,7 +952,7 @@ Initial payload allocation:
 | Component | Target ceiling |
 | --- | ---: |
 | Boot glue and required system files | 48 KiB |
-| Packed MAGI-80 executable and mandatory data | 440 KiB |
+| Packed MIGA-80 executable and mandatory data | 440 KiB |
 | Built-in help, font, and templates | 64 KiB |
 | Example cartridge | 192 KiB |
 | Filesystem and growth reserve | 56 KiB |
@@ -962,14 +962,14 @@ The release pipeline MUST fail when the actual image exceeds its block budget. C
 
 ### 14.2 AmigaOS licensing constraint
 
-A bootable AmigaDOS disk may require copyrighted operating-system components or files not owned by the MAGI-80 project. The project MUST NOT redistribute them without a valid license.
+A bootable AmigaDOS disk may require copyrighted operating-system components or files not owned by the MIGA-80 project. The project MUST NOT redistribute them without a valid license.
 
 At least one legally viable release route is required:
 
 1. distribute an installer that builds the bootable image from the user's licensed AmigaOS media;
 2. obtain redistribution permission;
 3. use a compatible redistributable component after proving it meets the stock A1200 requirements; or
-4. distribute the MAGI-80 files as a non-bootable disk plus instructions, while treating the bootable-image requirement as not yet complete.
+4. distribute the MIGA-80 files as a non-bootable disk plus instructions, while treating the bootable-image requirement as not yet complete.
 
 This legal decision is a release gate, not a documentation footnote.
 
@@ -978,7 +978,7 @@ This legal decision is a release gate, not a documentation footnote.
 - Installation MUST work by copying one directory to an AmigaDOS volume.
 - The main binary MUST launch from CLI.
 - A Workbench tool icon and tooltypes SHOULD be provided.
-- Paths MUST be relative to the program or use an assigned MAGI-80 volume name; hard-coded `DH0:` paths are prohibited.
+- Paths MUST be relative to the program or use an assigned MIGA-80 volume name; hard-coded `DH0:` paths are prohibited.
 - The hard-disk edition MAY contain more examples and offline documentation, but the core behavior and cartridge limits MUST match the floppy edition.
 
 ### 14.4 Suggested cartridge container
@@ -1022,7 +1022,7 @@ The canonical response LUTs are system resources, not cartridge sections. Cartri
 
 ### 15.1 Memory policy
 
-All RAM on a stock A1200 is Chip RAM and is shared with DMA. MAGI-80 MUST behave correctly without Fast RAM and MUST account for contention, not merely capacity.
+All RAM on a stock A1200 is Chip RAM and is shared with DMA. MIGA-80 MUST behave correctly without Fast RAM and MUST account for contention, not merely capacity.
 
 The runtime exposes two orthogonal memory tiers internally:
 
@@ -1045,7 +1045,7 @@ Initial peak target:
 | Editor text, undo, compiler arenas, and diagnostics | 256 KiB |
 | Generated native code, globals, guarded stack, dictionaries, and runtime work memory | 128 KiB |
 | Copper, audio state, input queues, OS objects, alignment, and reserve | 128 KiB |
-| **MAGI-80 target peak** | **1,388 KiB** |
+| **MIGA-80 target peak** | **1,388 KiB** |
 | **Nominal remainder for AmigaOS and safety** | **660 KiB** |
 
 These are ceilings, not allocations that must all be permanent. The 192 KiB graphics figure is a planning envelope for double-buffered four-plane playfields, a selected chunky viewport source, bounded scroll margins, and object control/cache data; it is not a promise that every maximum option can coexist. Phase 0 MUST publish measured memory profiles for Small, Medium, and Full viewports and for the chosen object fallback. Editor/compiler arenas SHOULD be reset and reused for runtime work. The executable MUST avoid a single large contiguous allocation when smaller pools are sufficient. Preflight MUST report both total free memory and largest free block.
@@ -1083,7 +1083,7 @@ Graphics reports MUST also account for a conservative payload lower bound: sourc
 
 Fine timing has two distinct harnesses. The hosted cooperative harness validates APIs, allocations, exact pixels, reports, and cleanup. Its `WaitTOF()` calls occur outside timed brackets, but task scheduling can still perturb a bracket and the waits substantially increase wall-clock duration. Its reports MUST use `timing_scope=hosted_cooperative` and cannot select an implementation.
 
-The performance-authority harness enters a bounded exclusive-runtime section only after files, allocations, and setup are complete. It owns the required Copper/display, DMA, and interrupt state, freezes AmigaOS scheduling, supports a raster-polled kernel-batch mode and a minimal MAGI-80 VBlank/runtime-frame mode, measures batched or back-to-back iterations without per-sample `WaitTOF()`, and restores state symmetrically. It MUST distinguish `exclusive_kernel_batch` from `exclusive_runtime_frame` and use stack canaries, phase/progress markers, and practical exception diagnostics so a controller can distinguish slow execution, deadlock, stack damage, a crash, and teardown failure. This requirement does not authorize an unbounded blind `Disable()` region: the matched call is restricted to short atomic entry/leave windows, and hardware/interrupt ownership must follow [Exclusive Graphics Benchmark Plan](./graphics-exclusive-benchmark.md).
+The performance-authority harness enters a bounded exclusive-runtime section only after files, allocations, and setup are complete. It owns the required Copper/display, DMA, and interrupt state, freezes AmigaOS scheduling, supports a raster-polled kernel-batch mode and a minimal MIGA-80 VBlank/runtime-frame mode, measures batched or back-to-back iterations without per-sample `WaitTOF()`, and restores state symmetrically. It MUST distinguish `exclusive_kernel_batch` from `exclusive_runtime_frame` and use stack canaries, phase/progress markers, and practical exception diagnostics so a controller can distinguish slow execution, deadlock, stack damage, a crash, and teardown failure. This requirement does not authorize an unbounded blind `Disable()` region: the matched call is restricted to short atomic entry/leave windows, and hardware/interrupt ownership must follow [Exclusive Graphics Benchmark Plan](./graphics-exclusive-benchmark.md).
 
 ## 16. Software architecture
 
@@ -1129,9 +1129,9 @@ The compiler frontend, typed IR, 68020 emitter, cartridge parser, MOD state mach
 
 ### 16.3 Toolchain
 
-The preferred toolchain is the maintained `m68k-amigaos-gcc` family with AmigaOS NDK-compatible headers and libraries. It builds MAGI-80 itself; it is not invoked by the on-Amiga MIGA Lua compiler. The build MUST pin an exact toolchain commit or reproducible container image even though the product does not require a particular GCC version.
+The preferred toolchain is the maintained `m68k-amigaos-gcc` family with AmigaOS NDK-compatible headers and libraries. It builds MIGA-80 itself; it is not invoked by the on-Amiga MIGA Lua compiler. The build MUST pin an exact toolchain commit or reproducible container image even though the product does not require a particular GCC version.
 
-Initial MAGI-80 system compiler/linker policy:
+Initial MIGA-80 system compiler/linker policy:
 
 - C language mode: `-std=c99`;
 - CPU baseline: `-m68020` or the verified equivalent;
@@ -1148,7 +1148,7 @@ The initial system ABI and toolchain revisions are locked in `toolchain/versions
 
 ### 16.4 Host compiler-validation toolchain
 
-The compiler-development loop defined in [MAGI-80 Local 68020 Tooling](./MAGI-80-local-68020-tooling.md) is separate from the Amiga Hunk build:
+The compiler-development loop defined in [MIGA-80 Local 68020 Tooling](./MIGA-80-local-68020-tooling.md) is separate from the Amiga Hunk build:
 
 | Role | Initial choice | Policy |
 | --- | --- | --- |
@@ -1192,7 +1192,7 @@ One command SHOULD produce:
 
 ### 17.1 Error classes
 
-MAGI-80 MUST distinguish:
+MIGA-80 MUST distinguish:
 
 - startup/platform incompatibility;
 - insufficient or fragmented memory;
@@ -1247,7 +1247,7 @@ Every commit SHOULD run native frontend/IR tests, Musashi generated-code semanti
 
 ### 18.3 Release acceptance criteria
 
-MAGI-80 1.0 is complete only when all of the following are true:
+MIGA-80 1.0 is complete only when all of the following are true:
 
 - A legal distribution artifact fits and boots from one real DD floppy.
 - The hard-disk edition launches from CLI and Workbench.
@@ -1288,7 +1288,7 @@ blitter waits, instruction-cache state restoration, and a tester handoff.
 Emulator reports remain non-authoritative for physical timing, and stock-A1200
 distributions, safe publication, a genuine hybrid, Level-3 runtime timing, and
 stress/fault tests remain open. See
-[MAGI-80 Physical A1200 Graphics Test](./physical-a1200-graphics-test.md). Older
+[MIGA-80 Physical A1200 Graphics Test](./physical-a1200-graphics-test.md). Older
 report formats remain regression fixtures so distributed candidate images can
 still be diagnosed, but their timings must not be pooled with format 3.
 
@@ -1300,10 +1300,12 @@ lowered to a typed multi-block stack IR, and interpreted as a host oracle. ABI
 frontend, backend, and Musashi checks, with a saved-register negative control.
 The `-O1` path renames locals through the acyclic CFG, creates typed `phi` joins,
 folds and simplifies values, removes dead values and overwritten assignments,
-computes liveness, linearly allocates `D0-D7`, preserves used saved registers,
-and renders assembly byte-identically from host and 68020 compiler builds. When
-eight registers are insufficient it replans with `D7` as a saved scratch, reuses
-bounded spill slots, and emits an ABI `A6` frame. Five source corpora at `-O0`
+solves fixed-point per-block liveness with edge-specific `phi` uses, reuses
+locations across exclusive branches, coalesces compatible `phi` slots,
+preserves used saved registers, and renders assembly byte-identically from host
+and 68020 compiler builds. When seven ordinary registers are insufficient in a
+spilling plan it uses `D7` as a saved scratch, reuses bounded spill slots, and
+emits an ABI `A6` frame. Five source corpora at `-O0`
 and `-O1` plus a forced spill fixture agree with their oracles across 66 Musashi
 executions while recording image size, instruction count, and maximum callee
 stack use. Loops and loop-carried joins, calls, `void` code generation,
@@ -1349,7 +1351,7 @@ Exit gate:
 - At least one generated function produces matching observable results under the typed-IR oracle, Musashi, UAE, and the on-target direct emitter; target cache synchronization and guards remain part of that proof.
 - The native compiler can emit, relocate, validate, cache-synchronize, run, budget-stop, and discard a small guarded 68020 program without destabilizing AmigaOS.
 - Run/restore succeeds 100 consecutive times without a leak or broken OS state.
-- A credible path exists to stay below 1,388 KiB peak MAGI-80 memory and 800 KiB disk payload.
+- A credible path exists to stay below 1,388 KiB peak MIGA-80 memory and 800 KiB disk payload.
 - The project has a legal route to a bootable release image.
 
 If this gate fails, do not build editors. Reduce the default viewport, object guarantee, scroll margin, video buffering, memory model, cartridge cap, or boot scope first. Preserve the three-layer API only where a deterministic implementation remains affordable; do not hide an unbounded software fallback behind it. If the native compiler itself fails its time, size, cache, or safety gate, simplify its language/backend or explicitly revisit the bytecode fallback before proceeding; do not maintain two production execution engines.
@@ -1372,14 +1374,14 @@ Every case MUST follow the [Graphics Benchmark Report Format](./graphics-benchma
 
 #### Compiler-tooling workstream
 
-This workstream follows [MAGI-80 Local 68020 Tooling](./MAGI-80-local-68020-tooling.md) and is staged to avoid turning the local runner into another Amiga emulator:
+This workstream follows [MIGA-80 Local 68020 Tooling](./MIGA-80-local-68020-tooling.md) and is staged to avoid turning the local runner into another Amiga emulator:
 
 1. **Runner foundation — Phase 0 (implemented):** embed Musashi, select 68EC020 mode, implement bounded big-endian memory, execute a reviewed `mul_add` function, stop through a return sentinel/trap, and report a short failure trace.
 2. **Compiler connection — Phase 0/early Phase 3 (initial subset implemented):** render integer arithmetic and return through textual assembly, assemble/link automatically, retain ELF symbols, load a flat image, and execute several inputs from the ordinary host test command. The bootstrap currently retains an Amiga relocatable object rather than ELF, so ELF/symbol-manifest loading remains part of this step.
 3. **ABI freeze — early Phase 3 (register/stack, source-local, and spill-frame tranches implemented):** ABI 0.1 now fixes register roles, opaque `A5` runtime-context ownership, one scalar return, Boolean representation, frame bounds, stack alignment, and executable saved-register checks. `-O0` assigns typed source locals to bounded `A6` slots; `-O1` renames locals through acyclic control flow and emits bounded `A6` spill/edge frames when needed while restoring `D3-D7/A6`. Calls, `void`, context layout, and error traps remain open extensions; multiple returns are excluded from version 1.
-4. **Semantic expansion — Phase 3 (`bool`, comparisons, and `if`/`else` implemented):** the typed IR now has bounded multi-block control flow and O1 value joins; add loops and loop-carried joins, fixed point, globals, arrays, records, dictionaries, strings/symbols, guards, runtime mocks, negative tests, and deterministic randomized differential tests.
+4. **Semantic expansion — Phase 3 (`bool`, comparisons, and `if`/`else` implemented):** the typed IR now has bounded multi-block control flow and O1 value joins; fixed-point CFG liveness and `phi`-slot coalescing prepare the optimizer for back edges. Add loops and loop-carried joins, fixed point, globals, arrays, records, dictionaries, strings/symbols, guards, runtime mocks, negative tests, and deterministic randomized differential tests.
 5. **Direct-encoder convergence — Phase 3:** compare the shipping encoder with the assembly route and typed-IR oracle until encoding, relocation, source maps, and behavior agree; retain only selective normalized-disassembly goldens.
-6. **Performance regression — Phase 3 onward (initial size/count/stack signals implemented):** the `-O0`/`-O1` differential now records code size, executed instructions, and maximum callee stack use for five reviewed corpora, including typed locals and a nested conditional CFG, plus a forced spill fixture. Approximate core cycles, calls, memory-operation counts, `phi`-slot coalescing, and representative cartridge kernels remain pending. Never translate emulator values into A1200 frame claims.
+6. **Performance regression — Phase 3 onward (CFG allocation signals implemented):** the `-O0`/`-O1` differential records code size, executed instructions, and maximum callee stack use for five reviewed corpora, including typed locals and a nested conditional CFG, plus a forced spill fixture. The conditional case now verifies CFG-aware register reuse and the coalescing of six live `phi` values into two stack slots. Approximate core cycles, calls, memory-operation counts, and representative cartridge kernels remain pending. Never translate emulator values into A1200 frame claims.
 7. **Independent CPU validation — late Phase 3 or hardening:** add Moira only when the edge-case corpus is large enough to justify the adapter; investigate every divergent final state and keep real hardware authoritative.
 
 The runner mocks graphics/audio/input calls only at the native ABI boundary. Copper lists, blits, sprite DMA, audio DMA, raster interrupts, Chip-RAM contention, C2P/display interaction, and 25/50 Hz deadlines remain exclusively in the UAE/real-hardware workstream.
@@ -1564,7 +1566,7 @@ Do not cut:
 | R-15 | AGA playfield/sprite priority, palette-bank, fetch, alignment, or Copper behavior differs from the proposed compositor. | Medium | High | Freeze behavior from register-level tests using Commodore documentation, capture working values and traces, and add composite/palette/sprite-priority golden screens. |
 | R-16 | C runtime or GCC output pulls in large or non-stock dependencies. | Medium | High | Inspect link maps from day one, avoid floating point and heavyweight stdio, use a minimal compatible runtime, and pin the toolchain/ABI. |
 | R-17 | Hosted module preview cannot acquire all Paula channels without disrupting other applications. | Medium | Low | Make preview cooperative and optional, report contention, and reserve exclusive guarantees for Run mode. |
-| R-18 | Disk swapping prompts for the boot volume after MAGI-80 starts. | Medium | Medium | Embed fonts/help needed after launch, avoid overlays initially, pre-open/close required libraries and files, and test single-drive boot-to-project swaps. |
+| R-18 | Disk swapping prompts for the boot volume after MIGA-80 starts. | Medium | Medium | Embed fonts/help needed after launch, avoid overlays initially, pre-open/close required libraries and files, and test single-drive boot-to-project swaps. |
 | R-19 | The on-target native compiler is too large or too slow for an edit–run loop. | Medium | High | Prove a minimal emitter in Phase 0, use compact typed IR and bounded arenas, prefer simple passes, measure per-phase time/peak memory/code size, and cache the compiled image only within the trusted current session. |
 | R-20 | A code-emitter or relocation bug generates a legal-looking but unsafe 68020 instruction stream. | Medium | Critical | Template-driven emission, independent host disassembly/golden tests, typed relocations, code-range and call-target validation, differential execution against a host IR oracle, and aggressive malformed-IR fuzzing. |
 | R-21 | The 68020 executes stale instructions after code generation. | Medium | Critical | Never execute before relocation and validation complete; call the appropriate Exec cache-clear function over the generated range before takeover; include repeated compile/run code-replacement tests on real hardware. |
@@ -1636,7 +1638,7 @@ This slice exercises every architectural boundary before richer editor tools or 
 
 These sources inform the assumptions above; they are not runtime dependencies:
 
-- [MAGI-80 Local 68020 Tooling](./MAGI-80-local-68020-tooling.md), defining the fast generated-code test loop and its boundary with UAE and real hardware.
+- [MIGA-80 Local 68020 Tooling](./MIGA-80-local-68020-tooling.md), defining the fast generated-code test loop and its boundary with UAE and real hardware.
 - [Musashi — Motorola 680x0 emulator](https://github.com/kstenerud/Musashi), the proposed primary embedded 68EC020 core for host compiler tests.
 - [Moira — Motorola 68000/68010/68EC020/68020 emulator](https://dirkwhoffmann.github.io/Moira/), the proposed optional independent CPU oracle.
 - [GNU Binutils](https://sourceware.org/binutils/) and [vasm](https://sun.hasenbraten.de/vasm/), candidate development assembly, link, extraction, and inspection tools.
@@ -1647,7 +1649,7 @@ These sources inform the assumptions above; they are not runtime dependencies:
 - [AmigaOS Documentation Wiki — Basic Input and Output Programming](https://wiki.amigaos.net/wiki/Basic_Input_and_Output_Programming), for AmigaDOS locks and file-handle operations.
 - [Commodore Amiga Hardware Reference Manual mirror — Forming a Dual-Playfield Display](https://amigadev.elowar.com/read/ADCD_2.1/Hardware_Manual_guide/node0078.html), for odd/even bitplane grouping, transparency, palette grouping, and playfield priority.
 - [Commodore AA Chip Set Functional Specification mirror](https://shanson.com/spencer/Amiga-AA-Chipset.pdf), for AGA's eight-bitplane, palette-bank, fetch-mode, and `PF2OF` extensions.
-- [MAGI-80 Color-Response Palette Studies](./color-response-palettes/README.md), containing the common 256-color RGB12 sample grid, all nine comparison PNGs, the reproducible generator, dates, assumptions, and source links.
+- [MIGA-80 Color-Response Palette Studies](./color-response-palettes/README.md), containing the common 256-color RGB12 sample grid, all nine comparison PNGs, the reproducible generator, dates, assumptions, and source links.
 - [ITU-R BT.470-6 — Conventional Television Systems](https://www.itu.int/dms_pubrec/itu-r/rec/bt/r-rec-bt.470-6-199811-s!!pdf-e.pdf), especially the historical NTSC and 625-line PAL/SECAM primary chromaticities and reference whites.
 - [Kodak Professional PORTRA 400 technical data](https://www.kodakprofessional.com/sites/default/files/wysiwyg/pro/resources/e4050_portra_400.pdf) and [EKTACHROME E100 technical data](https://www.kodakprofessional.com/sites/default/files/wysiwyg/pro/resources/e4000_ektachrome_100.pdf), including characteristic, spectral-sensitivity, and dye-density curves.
 - [ILFORD HP5 PLUS technical information](https://www.ilfordphoto.com/amfile/file/download/file/1903/product/691/), including its panchromatic spectral-sensitivity and characteristic curves.

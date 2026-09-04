@@ -1,35 +1,35 @@
 #include "graphics/c2p4_reference.h"
 
-static enum Magi80C2P4Status validate_lookup_conversion(
+static enum Miga80C2P4Status validate_lookup_conversion(
     const uint8_t *chunky,
     size_t width,
     size_t height,
     size_t chunky_stride,
     size_t required_chunky_bytes,
-    uint8_t *planes[MAGI80_C2P4_PLANE_COUNT],
+    uint8_t *planes[MIGA80_C2P4_PLANE_COUNT],
     size_t plane_stride,
-    const uint32_t table[MAGI80_C2P4_PAIR_LUT_ENTRIES])
+    const uint32_t table[MIGA80_C2P4_PAIR_LUT_ENTRIES])
 {
     size_t plane;
 
     if (chunky == NULL || planes == NULL || table == NULL) {
-        return MAGI80_C2P4_INVALID_ARGUMENT;
+        return MIGA80_C2P4_INVALID_ARGUMENT;
     }
-    for (plane = 0U; plane < MAGI80_C2P4_PLANE_COUNT; ++plane) {
+    for (plane = 0U; plane < MIGA80_C2P4_PLANE_COUNT; ++plane) {
         if (planes[plane] == NULL) {
-            return MAGI80_C2P4_INVALID_ARGUMENT;
+            return MIGA80_C2P4_INVALID_ARGUMENT;
         }
     }
     if (width == 0U || height == 0U || (width & 7U) != 0U) {
-        return MAGI80_C2P4_INVALID_DIMENSIONS;
+        return MIGA80_C2P4_INVALID_DIMENSIONS;
     }
     if (chunky_stride < required_chunky_bytes ||
         plane_stride < (width >> 3) ||
         height > SIZE_MAX / chunky_stride ||
         height > SIZE_MAX / plane_stride) {
-        return MAGI80_C2P4_INVALID_STRIDE;
+        return MIGA80_C2P4_INVALID_STRIDE;
     }
-    return MAGI80_C2P4_OK;
+    return MIGA80_C2P4_OK;
 }
 
 static uint32_t spread_nibble(uint8_t color)
@@ -51,15 +51,15 @@ static uint32_t spread_nibble(uint8_t color)
     return spread;
 }
 
-void magi80_c2p4_build_pair_lut(
-    uint32_t table[MAGI80_C2P4_PAIR_LUT_ENTRIES])
+void miga80_c2p4_build_pair_lut(
+    uint32_t table[MIGA80_C2P4_PAIR_LUT_ENTRIES])
 {
     size_t pair;
 
     if (table == NULL) {
         return;
     }
-    for (pair = 0U; pair < MAGI80_C2P4_PAIR_LUT_ENTRIES; ++pair) {
+    for (pair = 0U; pair < MIGA80_C2P4_PAIR_LUT_ENTRIES; ++pair) {
         uint8_t high = (uint8_t)(pair >> 4);
         uint8_t low = (uint8_t)(pair & 0x0fU);
 
@@ -67,7 +67,7 @@ void magi80_c2p4_build_pair_lut(
     }
 }
 
-static void store_transpose(uint8_t *planes[MAGI80_C2P4_PLANE_COUNT],
+static void store_transpose(uint8_t *planes[MIGA80_C2P4_PLANE_COUNT],
                             size_t destination_offset, uint32_t transpose)
 {
     planes[0][destination_offset] = (uint8_t)(transpose >> 24);
@@ -76,21 +76,21 @@ static void store_transpose(uint8_t *planes[MAGI80_C2P4_PLANE_COUNT],
     planes[3][destination_offset] = (uint8_t)transpose;
 }
 
-enum Magi80C2P4Status magi80_c2p4_lookup_packed4(
+enum Miga80C2P4Status miga80_c2p4_lookup_packed4(
     const uint8_t *chunky,
     size_t width,
     size_t height,
     size_t chunky_stride,
-    uint8_t *planes[MAGI80_C2P4_PLANE_COUNT],
+    uint8_t *planes[MIGA80_C2P4_PLANE_COUNT],
     size_t plane_stride,
-    const uint32_t table[MAGI80_C2P4_PAIR_LUT_ENTRIES])
+    const uint32_t table[MIGA80_C2P4_PAIR_LUT_ENTRIES])
 {
-    enum Magi80C2P4Status status = validate_lookup_conversion(
+    enum Miga80C2P4Status status = validate_lookup_conversion(
         chunky, width, height, chunky_stride, width >> 1, planes,
         plane_stride, table);
     size_t y;
 
-    if (status != MAGI80_C2P4_OK) {
+    if (status != MIGA80_C2P4_OK) {
         return status;
     }
     for (y = 0U; y < height; ++y) {
@@ -108,24 +108,24 @@ enum Magi80C2P4Status magi80_c2p4_lookup_packed4(
                             transpose);
         }
     }
-    return MAGI80_C2P4_OK;
+    return MIGA80_C2P4_OK;
 }
 
-enum Magi80C2P4Status magi80_c2p4_lookup_byte4(
+enum Miga80C2P4Status miga80_c2p4_lookup_byte4(
     const uint8_t *chunky,
     size_t width,
     size_t height,
     size_t chunky_stride,
-    uint8_t *planes[MAGI80_C2P4_PLANE_COUNT],
+    uint8_t *planes[MIGA80_C2P4_PLANE_COUNT],
     size_t plane_stride,
-    const uint32_t table[MAGI80_C2P4_PAIR_LUT_ENTRIES])
+    const uint32_t table[MIGA80_C2P4_PAIR_LUT_ENTRIES])
 {
-    enum Magi80C2P4Status status = validate_lookup_conversion(
+    enum Miga80C2P4Status status = validate_lookup_conversion(
         chunky, width, height, chunky_stride, width, planes, plane_stride,
         table);
     size_t y;
 
-    if (status != MAGI80_C2P4_OK) {
+    if (status != MIGA80_C2P4_OK) {
         return status;
     }
     for (y = 0U; y < height; ++y) {
@@ -154,5 +154,5 @@ enum Magi80C2P4Status magi80_c2p4_lookup_byte4(
                             transpose);
         }
     }
-    return MAGI80_C2P4_OK;
+    return MIGA80_C2P4_OK;
 }

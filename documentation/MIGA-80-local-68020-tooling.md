@@ -1,23 +1,23 @@
-# MAGI-80 Local 68020 Tooling
+# MIGA-80 Local 68020 Tooling
 
 ## Fast compiler development without launching UAE
 
-**Status:** runner, typed compiler, ABI 0.1, value-IR `-O1`, and spills implemented
+**Status:** runner, typed compiler, CFG-aware value-IR `-O1`, and spills implemented
 
 **Primary target:** stock Amiga 1200, 68EC020 at approximately 14 MHz  
 **Host platforms:** macOS, Linux, and Windows  
-**Scope:** local testing of the MAGI-80 Lua compiler and its generated 68020 code
+**Scope:** local testing of the MIGA-80 Lua compiler and its generated 68020 code
 
 ---
 
 ## 1. Objective
 
-The MAGI-80 Lua compiler should be testable as an ordinary host-side program. Most compiler work must not require booting an Amiga, preparing an ADF or HDF image, launching UAE, or interacting with Workbench.
+The MIGA-80 Lua compiler should be testable as an ordinary host-side program. Most compiler work must not require booting an Amiga, preparing an ADF or HDF image, launching UAE, or interacting with Workbench.
 
 The intended development loop is:
 
 ```text
-MAGI-80 Lua source
+MIGA-80 Lua source
       |
       v
 compiler frontend and optimizer
@@ -38,7 +38,7 @@ embedded 68EC020 emulator
 register, memory and trace assertions
 ```
 
-This local runner validates the compiler. UAE and real hardware validate the complete MAGI-80 machine.
+This local runner validates the compiler. UAE and real hardware validate the complete MIGA-80 machine.
 
 ---
 
@@ -78,7 +78,7 @@ Moira is attractive for:
 
 - differential tests against an implementation independent from Musashi;
 - investigating instruction timing;
-- future integration into a more complete virtual MAGI-80 machine;
+- future integration into a more complete virtual MIGA-80 machine;
 - catching emulator-specific behaviour in edge cases.
 
 For the first compiler runner, however, Musashi is the simpler baseline. Supporting two CPU engines immediately would add engineering work before the compiler has enough behaviour to justify it.
@@ -103,7 +103,7 @@ The tooling should deliberately separate correctness, approximate CPU cost, and 
 
 The important rule is:
 
-> Passing the local 68EC020 runner means that generated code is functionally correct under the defined MAGI-80 execution model. It does not prove that a cartridge meets its frame budget on an Amiga 1200.
+> Passing the local 68EC020 runner means that generated code is functionally correct under the defined MIGA-80 execution model. It does not prove that a cartridge meets its frame budget on an Amiga 1200.
 
 CPU-core cycle counts are still useful as a stable regression metric. They must not be presented as exact wall-clock predictions for code that accesses Chip RAM or runs concurrently with display, Copper, audio or Blitter DMA.
 
@@ -137,7 +137,7 @@ Tests should cover:
 - signed and unsigned extension;
 - aligned stack and data accesses;
 - the exact behaviour chosen for odd-address word and longword accesses;
-- 24-bit address truncation or rejection, according to the MAGI-80 contract.
+- 24-bit address truncation or rejection, according to the MIGA-80 contract.
 
 Even if generated code is never supposed to perform an unaligned access, detecting it is valuable because it usually identifies a compiler or ABI bug.
 
@@ -223,7 +223,7 @@ The runner can then:
 - return a deterministic result;
 - reject calls unavailable in the tested language profile.
 
-This creates a mock MAGI-80 runtime without pretending to emulate AGA hardware.
+This creates a mock MIGA-80 runtime without pretending to emulate AGA hardware.
 
 ---
 
@@ -269,7 +269,7 @@ This creates a mock MAGI-80 runtime without pretending to emulate AGA hardware.
 ### Memory and data structures
 
 - globals and locals;
-- arrays and tables in the restricted MAGI-80 model;
+- arrays and tables in the restricted MIGA-80 model;
 - bounds checks, if enabled;
 - strings and constant pools;
 - pointer arithmetic generated internally;
@@ -292,7 +292,7 @@ Three complementary styles should be used.
 
 ### Semantic tests
 
-Compile a MAGI-80 Lua function, execute it, and compare its result with the language specification or a small host reference implementation. These tests should form the majority of the suite because they tolerate harmless changes in instruction selection.
+Compile a MIGA-80 Lua function, execute it, and compare its result with the language specification or a small host reference implementation. These tests should form the majority of the suite because they tolerate harmless changes in instruction selection.
 
 ### Golden-code tests
 
@@ -372,7 +372,7 @@ Two workable approaches exist.
 ### Option A: generate assembly first
 
 ```text
-MAGI-80 Lua -> textual 68k assembly -> assembler -> ELF -> flat binary
+MIGA-80 Lua -> textual 68k assembly -> assembler -> ELF -> flat binary
 ```
 
 Advantages:
@@ -393,7 +393,7 @@ This is the recommended first implementation.
 ### Option B: emit machine code directly
 
 ```text
-MAGI-80 Lua -> internal encoder -> raw code or ELF
+MIGA-80 Lua -> internal encoder -> raw code or ELF
 ```
 
 Advantages:
@@ -569,6 +569,9 @@ circular disassembly trace for failures. Run it with `gmake miga68k-test`.
 and nested `if`/`else`, lowers it to typed stack IR and value IR, renders GNU
 m68k assembly at `-O0` or `-O1`, and provides a host CFG evaluator. The IR has
 up to 32 blocks with bounded successors; O1 inserts typed join values. The
+optimizer solves bounded per-block liveness, treats `phi` inputs as edge uses,
+reuses registers across exclusive branches, and coalesces compatible `phi`
+slots. The
 ordinary test path assembles both levels for five corpora and checks six inputs
 per corpus against Musashi. A synthetic value-IR fixture forces three reusable
 spill slots in an `A6` frame and checks six more inputs, saved registers, stack
@@ -622,7 +625,10 @@ including a deliberate clobber negative control. See
 executed instructions, and maximum callee stack bytes. The differential suite
 locks reviewed `-O0`/`-O1` figures for five source corpora, including nested
 conditional control flow, plus a forced spill fixture. These are optimizer
-regressions only, not cycle or wall-time claims.
+regressions only, not cycle or wall-time claims. In the conditional corpus,
+CFG-aware allocation reduces the `-O1` result to 380 code bytes, 63 executed
+instructions, and 24 maximum callee stack bytes; six live `phi` values share
+two slots.
 
 - record code size, instruction counts, and stack use; **implemented for the bootstrap**
 - add core-cycle estimates;
@@ -673,15 +679,15 @@ The first version should contain only:
 
 Use textual assembly plus GNU Binutils or vasm at first. Keep ELF for symbols and debugging, then extract a flat binary for execution. Add Moira only when differential validation or more precise CPU timing has concrete value.
 
-This gives MAGI-80 two deliberately different feedback loops:
+This gives MIGA-80 two deliberately different feedback loops:
 
 ```text
 FAST LOOP
-MAGI-80 Lua -> compiler -> Musashi -> assertions
+MIGA-80 Lua -> compiler -> Musashi -> assertions
 Purpose: correctness, diagnostics, regression tests
 
 HARDWARE LOOP
-MAGI-80 Lua -> compiler -> MAGI-80 runtime -> UAE/A1200
+MIGA-80 Lua -> compiler -> MIGA-80 runtime -> UAE/A1200
 Purpose: chipset integration, compatibility and real performance
 ```
 

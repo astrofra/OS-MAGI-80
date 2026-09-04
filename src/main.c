@@ -18,7 +18,7 @@ static int write_message(BPTR output, const char *message, size_t length)
 int main(void)
 {
     static const char banner[] =
-        "MAGI-80 Phase 0 hosted bootstrap.\n"
+        "MIGA-80 Phase 0 hosted bootstrap.\n"
         "AmigaOS API and 68020 soft-float build are operational.\n";
 
     if (!write_message(Output(), banner, sizeof(banner) - 1U)) {

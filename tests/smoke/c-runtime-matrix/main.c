@@ -10,8 +10,8 @@
 #include <proto/dos.h>
 #include <proto/exec.h>
 
-#ifndef MAGI80_RUNTIME_NAME
-#error "MAGI80_RUNTIME_NAME must identify the selected C runtime"
+#ifndef MIGA80_RUNTIME_NAME
+#error "MIGA80_RUNTIME_NAME must identify the selected C runtime"
 #endif
 
 static const char *stdio_failure = "stdio";
@@ -152,7 +152,7 @@ static int test_stdio(const char *base)
         return 0;
     }
 
-#ifndef MAGI80_NEWLIB_COMPAT
+#ifndef MIGA80_NEWLIB_COMPAT
     if (rename(first_path, second_path) != 0 || remove(second_path) != 0) {
         (void)remove(first_path);
         (void)remove(second_path);
@@ -169,7 +169,7 @@ static int test_stdio(const char *base)
     errno = 0;
     file = fopen(missing_path, "rb");
     if (file != NULL
-#ifndef MAGI80_NEWLIB_COMPAT
+#ifndef MIGA80_NEWLIB_COMPAT
         || errno == 0
 #endif
     ) {
@@ -233,18 +233,18 @@ int main(int argc, char **argv)
         return fail("amigaos");
     }
 
-    (void)printf("runtime=%s\n", MAGI80_RUNTIME_NAME);
+    (void)printf("runtime=%s\n", MIGA80_RUNTIME_NAME);
     (void)printf("arguments=pass\n");
     (void)printf("heap=pass\n");
     (void)printf("malloc_zero=%s\n", zero_result);
     (void)printf("stdio_file=pass\n");
     (void)printf("stdio_missing_errno="
-#ifndef MAGI80_NEWLIB_COMPAT
+#ifndef MIGA80_NEWLIB_COMPAT
                  "pass\n");
 #else
                  "unavailable\n");
 #endif
-#ifndef MAGI80_NEWLIB_COMPAT
+#ifndef MIGA80_NEWLIB_COMPAT
     (void)printf("c_rename=pass\n");
 #else
     (void)printf("c_rename=unavailable\n");
