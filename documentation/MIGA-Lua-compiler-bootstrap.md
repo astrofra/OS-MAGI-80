@@ -1,59 +1,79 @@
 # MIGA Lua Compiler Bootstrap
 
-**Status:** typed locals, entry basic block, `-O1` value backend, and spills implemented
+**Status:** `bool`, comparisons, `if`/`else` CFG, typed locals, `-O1`, and spills implemented
 
 ## Scope
 
 The bootstrap compiler proves the complete host development path without
 claiming the version 1.0 grammar is frozen. Its accepted source is exactly one
-public `i32` function:
+public scalar function:
 
 ```ebnf
-function   = "function", name, "(", [ parameters ], ")", ":", "i32",
+function   = "function", name, "(", [ parameters ], ")", ":", scalar-type,
              { statement }, return-statement, "end" ;
 parameters = parameter, { ",", parameter } ;
-parameter  = name, ":", "i32" ;
-statement  = local-declaration | assignment ;
-local-declaration = "local", name, ":", "i32", "=", expression ;
+parameter  = name, ":", scalar-type ;
+scalar-type = "i32" | "bool" ;
+statement  = local-declaration | assignment | if-statement ;
+conditional-statement = assignment | if-statement ;
+local-declaration = "local", name, ":", scalar-type, "=", expression ;
 assignment = local-name, "=", expression ;
+if-statement = "if", expression, "then", { conditional-statement },
+               "else", { conditional-statement }, "end" ;
 return-statement = "return", expression ;
-expression = product, { ( "+" | "-" ), product } ;
+expression = sum, { ( "==" | "~=" | "!=" | "<" | "<=" | ">" | ">=" ), sum } ;
+sum        = product, { ( "+" | "-" ), product } ;
 product    = unary, { "*", unary } ;
-unary      = "-", unary | integer | parameter-name | local-name
+unary      = "-", unary | integer | "true" | "false"
+             | parameter-name | local-name
              | "(", expression, ")" ;
 ```
 
 Whitespace and Lua line comments beginning with `--` are accepted. Decimal
 literals are limited to `0` through `2147483647`. A function has at most 16
-function-scoped `i32` locals and 32 statements including the final return.
+function-scoped scalar locals and 32 statements including nested branches and
+the final return.
 Declarations require an initializer; a local is visible only after that
 initializer, cannot shadow a parameter or another local, and parameters are
-immutable. The initial ABI supports at most three parameters in `D0` through
-`D2`, with the `i32` result in `D0`. Arithmetic has defined two's-complement
-wrapping semantics. Register and frame placement follows [MIGA Lua Native ABI
-0.1](./MIGA-Lua-native-ABI-v0.md).
+immutable. Types are exact: the bootstrap performs no implicit conversion,
+including between constants. Arithmetic and ordered comparisons require `i32`;
+`==`, `~=`, and its exact alias `!=` require two operands of the same scalar
+type; conditions require `bool`. `if` currently requires an explicit `else`.
+Declarations and returns
+inside a conditional branch remain rejected until lexical scopes and multiple
+exit blocks are specified. The initial ABI supports at most three scalar
+parameters in `D0` through `D2`, with one scalar result in `D0`. Arithmetic has
+defined two's-complement wrapping semantics. Register and frame placement
+follows [MIGA Lua Native ABI 0.1](./MIGA-Lua-native-ABI-v0.md).
 
-Everything else—including calls, control flow, other types, multiple
-functions, hexadecimal source literals, and the minimum `i32` literal
-spelling—is rejected rather than guessed.
+The version 1 language contract requires an explicit return annotation and
+includes `void`, but `void` code generation is not in this bootstrap tranche.
+Calls, `while`, other types, multiple functions, multiple returns, hexadecimal
+source literals, and the minimum `i32` literal spelling are likewise rejected
+rather than guessed.
+
+Arrays are not part of the bootstrap grammar yet. Their frozen version 1
+language contract is nevertheless zero-based: for `array<T, N>`, valid indices
+are exactly `0` through `N - 1`, and index `0` denotes the first element.
 
 ## Pipeline
 
 The implementation has four bounded, host-buildable layers:
 
-1. The frontend produces an `i32` AST with bounded node, statement, and local
+1. The frontend produces a typed scalar AST with bounded node, statement, and local
    tables and reports the first error with a one-based line and column.
-2. Lowering produces a typed stack IR with explicit local loads/stores and one
-   entry basic block. Blocks already carry bounded successor slots for the
-   future `if` and `while` lowering. The current interpreter and backends
-   deliberately reject multi-block IR until their control-flow handling lands.
-   A host interpreter is the semantic oracle and uses unsigned C operations to
-   specify 32-bit wrapping.
-3. `-O1` renames straight-line locals to their current value while lowering to
-   value IR. It then folds and simplifies constants, removes dead values and
-   overwritten assignments, computes liveness, linearly allocates `D0-D7`, and
-   replans with bounded spill slots when register pressure requires it. Calls
-   will need an explicit side-effect rule before this renaming crosses them.
+2. Lowering produces a typed stack IR with explicit local loads/stores,
+   comparisons, conditional/unconditional terminators, and up to 32 basic
+   blocks with two successor slots each. The host interpreter follows this CFG
+   as the semantic oracle and uses unsigned C operations to specify 32-bit
+   wrapping and implementation-independent signed comparisons.
+3. `-O1` renames locals to values within the acyclic CFG and creates typed
+   `phi` values at two-predecessor joins. It folds and simplifies constants,
+   removes dead values and overwritten assignments, computes conservative
+   liveness, linearly allocates `D0-D7`, and replans with bounded spill slots
+   when register pressure or edge transfers require it. Cyclic value flow for
+   `while` remains deliberately rejected. Calls will need an explicit
+   side-effect rule before value renaming crosses them.
 4. The development backend renders GNU m68k assembly. `-O0` retains fixed `A6`
    parameter/local slots and expression-stack temporaries as a baseline. The
    default `-O1` keeps current local and expression values in registers and
@@ -104,13 +124,14 @@ machine-code emission; the shipping encoder and instruction-cache
 synchronization remain later work.
 
 The differential tests preserve `-O0`/`-O1` assembly, relocatable objects, and
-flat binaries under the compiler pipeline build directories. Four source
-corpora—including typed local declarations, reassignment, and a dead store—use
-six edge inputs each at both levels. Those 48 executions must produce the same
-`D0` value as the typed-IR interpreter. A synthetic value-IR schedule then
-forces three spills and adds six more oracle comparisons, bringing the total
-to 54. This is necessary because the current bounded source subset cannot
-naturally exceed all eight data registers. The reports retain image size,
+flat binaries under the compiler pipeline build directories. Five source
+corpora—including typed locals and a nested 19-block comparison/branch
+fixture—use six edge inputs each at both levels. Those 60 executions must
+produce the same `D0` value as the typed-IR interpreter. A synthetic value-IR
+schedule then forces three spills and adds six more oracle comparisons,
+bringing the total to 66. This is necessary because the current bounded source
+subset cannot naturally exceed all eight data registers. The reports retain
+image size,
 executed instruction count, and maximum callee stack use, while the runner
 verifies return, stack balance, callee-saved registers including `A6`, memory
 guards, and the instruction budget.

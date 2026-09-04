@@ -31,8 +31,9 @@ by the scalar compiler bootstrap and the next register allocator.
 
 Arguments are assigned from left to right within their type class. Mixed
 scalar/address signatures therefore advance the two register sequences
-independently. The 0.1 frontend exposes scalar `i32` arguments only; address
-arguments are reserved so the register allocator cannot claim their registers.
+independently. The 0.1 frontend exposes scalar `i32` and `bool` arguments only;
+address arguments are reserved so the register allocator cannot claim their
+registers.
 There are no stack arguments in ABI 0.1. A signature that exhausts either
 register class must be rejected until a later ABI version defines aggregates
 and stack argument placement.
@@ -67,10 +68,10 @@ across a call. A callee may use those resources without saving them. `D3-D7`,
 `A2-A5`, and a used `A6` must be restored exactly. A scalar function returns
 one value in `D0`; a `void` function has no register result.
 
-Multiple returns, address values in the source language, stack arguments,
-varargs, controlled traps, runtime-service IDs, and error unwinding remain
-unavailable. They require an explicit compatible extension or ABI version bump
-before compiler code may emit them.
+Multiple returns are excluded from language version 1. Address values in the
+source language, stack arguments, varargs, controlled traps, runtime-service
+IDs, and error unwinding remain unavailable and require an explicit compatible
+extension or ABI version bump before compiler code may emit them.
 
 ## Executable conformance
 
@@ -83,7 +84,10 @@ modified saved register is detected. The `-O0` typed-local corpus exercises a
 20-byte `A6` frame with parameter slots followed by source-local slots; its
 optimized counterpart erases those slots when values remain in registers. The
 generated spill fixture additionally exercises a 12-byte `A6` frame, direct
-negative-offset reloads, and preservation of `D3-D7/A6` across six edge inputs.
+negative-offset reloads, and preservation of `D3-D7/A6` across six edge
+inputs. The conditional corpus exercises canonical Boolean arguments and
+results, all six integer comparisons, conditional branches, nested CFG joins,
+and conservative `phi` edge slots.
 
 Run the host contract and generated-code checks with:
 

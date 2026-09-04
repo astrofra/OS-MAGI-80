@@ -32,7 +32,7 @@ static void set_value(struct miga80_value_function *function,
     struct miga80_value_instruction *value = &function->values[index];
 
     (void)memset(value, 0, sizeof(*value));
-    value->type = MIGA80_VALUE_I32;
+    value->type = MIGA80_TYPE_I32;
     value->opcode = opcode;
     value->left = left;
     value->right = right;
@@ -49,6 +49,10 @@ static void build_spill_fixture(struct miga80_value_function *function)
     (void)memset(function, 0, sizeof(*function));
     (void)snprintf(function->name, sizeof(function->name), "spill_fixture");
     function->parameter_count = 3U;
+    function->parameter_types[0] = MIGA80_TYPE_I32;
+    function->parameter_types[1] = MIGA80_TYPE_I32;
+    function->parameter_types[2] = MIGA80_TYPE_I32;
+    function->result_type = MIGA80_TYPE_I32;
     for (index = 0U; index < 3U; ++index) {
         set_value(function, index, MIGA80_VALUE_PARAMETER,
                   MIGA80_INVALID_VALUE, MIGA80_INVALID_VALUE, index);
@@ -70,6 +74,18 @@ static void build_spill_fixture(struct miga80_value_function *function)
     set_value(function, 18U, MIGA80_VALUE_ADD, 17U, 2U, 0U);
     function->value_count = 19U;
     function->result = 18U;
+    function->block_count = 1U;
+    function->entry_block = 0U;
+    function->block_order_count = 1U;
+    function->block_order[0] = 0U;
+    function->blocks[0].first_value = 0U;
+    function->blocks[0].value_count = function->value_count;
+    function->blocks[0].predecessors[0] = MIGA80_INVALID_BLOCK;
+    function->blocks[0].predecessors[1] = MIGA80_INVALID_BLOCK;
+    function->blocks[0].successors[0] = MIGA80_INVALID_BLOCK;
+    function->blocks[0].successors[1] = MIGA80_INVALID_BLOCK;
+    function->blocks[0].condition = MIGA80_INVALID_VALUE;
+    function->blocks[0].terminator = MIGA80_VALUE_RETURN;
 }
 
 static int test_valid_function(void)
@@ -315,11 +331,99 @@ static int test_locals_and_entry_block(void)
     ir.block_count = 2U;
     if (miga80_evaluate_ir(&ir, arguments, ARRAY_COUNT(arguments), &result,
                            &diagnostic) ||
-        strstr(diagnostic.message, "control flow") == NULL) {
+        strstr(diagnostic.message, "basic block") == NULL) {
         return 0;
     }
     return !miga80_build_value_ir(&ir, &value_ir, &diagnostic) &&
-           strstr(diagnostic.message, "control flow") != NULL;
+           strstr(diagnostic.message, "basic block") != NULL;
+}
+
+static int test_bool_comparisons_and_cfg(void)
+{
+    static const char source[] =
+        "function choose(a: i32, b: i32, flag: bool): i32 "
+        "local x: i32 = a "
+        "if flag != false then x = a + 1 else x = b - 1 end "
+        "return x end";
+    static const uint32_t true_arguments[] = {7U, 20U, 1U};
+    static const uint32_t false_arguments[] = {7U, 20U, 0U};
+    static const char bool_source[] =
+        "function ordered(a: i32, b: i32): bool return a < b end";
+    struct miga80_ir_function ir;
+    struct miga80_value_function value_ir;
+    struct miga80_diagnostic diagnostic;
+    char assembly_text[8192];
+    unsigned int phi_count = 0U;
+    unsigned int index;
+    uint32_t result;
+    size_t assembly_size;
+    FILE *assembly;
+    int emitted;
+    int closed;
+
+    if (!compile_source(source, &ir, &diagnostic) ||
+        ir.parameter_types[2] != MIGA80_TYPE_BOOL || ir.block_count != 4U ||
+        ir.blocks[0].successor_count != 2U ||
+        ir.blocks[1].successor_count != 1U ||
+        ir.blocks[2].successor_count != 1U ||
+        ir.blocks[3].successor_count != 0U ||
+        !miga80_evaluate_ir(&ir, true_arguments,
+                            ARRAY_COUNT(true_arguments), &result,
+                            &diagnostic) ||
+        result != 8U ||
+        !miga80_evaluate_ir(&ir, false_arguments,
+                            ARRAY_COUNT(false_arguments), &result,
+                            &diagnostic) ||
+        result != 19U ||
+        miga80_evaluate_ir(&ir,
+                           (const uint32_t[]){7U, 20U, 2U}, 3U, &result,
+                           &diagnostic) ||
+        strstr(diagnostic.message, "canonical") == NULL ||
+        !miga80_build_value_ir(&ir, &value_ir, &diagnostic) ||
+        value_ir.block_count != 4U) {
+        return 0;
+    }
+    for (index = 0U; index < value_ir.value_count; ++index) {
+        if (value_ir.values[index].live &&
+            value_ir.values[index].opcode == MIGA80_VALUE_PHI) {
+            ++phi_count;
+        }
+    }
+    if (phi_count != 1U) {
+        return 0;
+    }
+
+    assembly = tmpfile();
+    if (assembly == NULL) {
+        return 0;
+    }
+    emitted = miga80_emit_gnu_m68k_o1(assembly, &value_ir, &diagnostic);
+    rewind(assembly);
+    assembly_size =
+        fread(assembly_text, 1U, sizeof(assembly_text) - 1U, assembly);
+    assembly_text[assembly_size] = '\0';
+    if (ferror(assembly) || strstr(assembly_text, "sne") == NULL ||
+        strstr(assembly_text, "beq") == NULL ||
+        strstr(assembly_text, ".L_choose_b3:") == NULL) {
+        emitted = 0;
+    }
+    closed = fclose(assembly);
+    if (!emitted || closed != 0) {
+        return 0;
+    }
+    ir.blocks[0].successors[0] = ir.blocks[0].successors[1];
+    if (miga80_validate_ir(&ir, &diagnostic) ||
+        strstr(diagnostic.message, "fallthrough") == NULL) {
+        return 0;
+    }
+    if (!compile_source(bool_source, &ir, &diagnostic) ||
+        ir.result_type != MIGA80_TYPE_BOOL ||
+        !miga80_evaluate_ir(&ir, (const uint32_t[]){UINT32_C(0xffffffff), 0U},
+                            2U, &result, &diagnostic) ||
+        result != 1U) {
+        return 0;
+    }
+    return 1;
 }
 
 static int test_spill_frame(void)
@@ -384,6 +488,7 @@ int main(int argc, char **argv)
 
     if (!test_valid_function() || !test_constant_folding() ||
         !test_locals_and_entry_block() ||
+        !test_bool_comparisons_and_cfg() ||
         !test_spill_frame() ||
         !expect_error("function f(a): i32 return a end", 1U, 13U,
                       "expected ':'") ||
@@ -408,11 +513,26 @@ int main(int argc, char **argv)
         !expect_error("function f(): i32 x = 1 return x end", 1U, 19U,
                       "unknown local assignment target") ||
         !expect_error("function f(): i32 local x: i32 = x return x end", 1U,
-                      34U, "unknown identifier")) {
+                      34U, "unknown identifier") ||
+        !expect_error("function f(): i32 local x: bool = 1 return 0 end", 1U,
+                      25U, "local initializer requires bool") ||
+        !expect_error("function f(): bool return 1 end", 1U, 20U,
+                      "function return requires bool") ||
+        !expect_error("function f(a: i32): i32 if a then else end return a end",
+                      1U, 25U, "if condition requires bool") ||
+        !expect_error("function f(): bool return true < false end", 1U, 32U,
+                      "ordered comparison requires i32") ||
+        !expect_error("function f(): bool return 1 == true end", 1U, 29U,
+                      "different types") ||
+        !expect_error("function f(): bool return !true end", 1U, 27U,
+                      "expected '=' after '!'") ||
+        !expect_error("function f(): i32 if true then local x: i32 = 1 else "
+                      "end return 0 end",
+                      1U, 32U, "local declarations inside if")) {
         fprintf(stderr, "compiler frontend/IR regression failed\n");
         return 1;
     }
 
-    printf("PASS  compiler locals, entry block, value IR, O0/O1, and spill frames\n");
+    printf("PASS  compiler bool/if CFG, locals, value IR, O0/O1, and spill frames\n");
     return 0;
 }

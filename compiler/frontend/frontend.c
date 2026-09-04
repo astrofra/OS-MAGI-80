@@ -11,14 +11,26 @@ enum token_kind {
     TOKEN_INTEGER,
     TOKEN_FUNCTION,
     TOKEN_LOCAL,
+    TOKEN_IF,
+    TOKEN_THEN,
+    TOKEN_ELSE,
     TOKEN_RETURN,
     TOKEN_END,
     TOKEN_I32,
+    TOKEN_BOOL,
+    TOKEN_TRUE,
+    TOKEN_FALSE,
     TOKEN_LEFT_PAREN,
     TOKEN_RIGHT_PAREN,
     TOKEN_COLON,
     TOKEN_COMMA,
     TOKEN_EQUAL,
+    TOKEN_EQUAL_EQUAL,
+    TOKEN_NOT_EQUAL,
+    TOKEN_LESS,
+    TOKEN_LESS_EQUAL,
+    TOKEN_GREATER,
+    TOKEN_GREATER_EQUAL,
     TOKEN_PLUS,
     TOKEN_MINUS,
     TOKEN_STAR
@@ -153,12 +165,24 @@ static struct token next_token(struct lexer *lexer)
             token.kind = TOKEN_FUNCTION;
         } else if (token_is_word(&token, "local")) {
             token.kind = TOKEN_LOCAL;
+        } else if (token_is_word(&token, "if")) {
+            token.kind = TOKEN_IF;
+        } else if (token_is_word(&token, "then")) {
+            token.kind = TOKEN_THEN;
+        } else if (token_is_word(&token, "else")) {
+            token.kind = TOKEN_ELSE;
         } else if (token_is_word(&token, "return")) {
             token.kind = TOKEN_RETURN;
         } else if (token_is_word(&token, "end")) {
             token.kind = TOKEN_END;
         } else if (token_is_word(&token, "i32")) {
             token.kind = TOKEN_I32;
+        } else if (token_is_word(&token, "bool")) {
+            token.kind = TOKEN_BOOL;
+        } else if (token_is_word(&token, "true")) {
+            token.kind = TOKEN_TRUE;
+        } else if (token_is_word(&token, "false")) {
+            token.kind = TOKEN_FALSE;
         }
         return token;
     }
@@ -198,7 +222,53 @@ static struct token next_token(struct lexer *lexer)
         token.kind = TOKEN_COMMA;
         break;
     case '=':
-        token.kind = TOKEN_EQUAL;
+        if (peek(lexer, 0U) == '=') {
+            (void)advance(lexer);
+            token.length = 2U;
+            token.kind = TOKEN_EQUAL_EQUAL;
+        } else {
+            token.kind = TOKEN_EQUAL;
+        }
+        break;
+    case '~':
+        if (peek(lexer, 0U) == '=') {
+            (void)advance(lexer);
+            token.length = 2U;
+            token.kind = TOKEN_NOT_EQUAL;
+        } else {
+            token.kind = TOKEN_INVALID;
+            set_diagnostic(lexer->diagnostic, token.line, token.column,
+                           "expected '=' after '~'");
+        }
+        break;
+    case '!':
+        if (peek(lexer, 0U) == '=') {
+            (void)advance(lexer);
+            token.length = 2U;
+            token.kind = TOKEN_NOT_EQUAL;
+        } else {
+            token.kind = TOKEN_INVALID;
+            set_diagnostic(lexer->diagnostic, token.line, token.column,
+                           "expected '=' after '!'");
+        }
+        break;
+    case '<':
+        if (peek(lexer, 0U) == '=') {
+            (void)advance(lexer);
+            token.length = 2U;
+            token.kind = TOKEN_LESS_EQUAL;
+        } else {
+            token.kind = TOKEN_LESS;
+        }
+        break;
+    case '>':
+        if (peek(lexer, 0U) == '=') {
+            (void)advance(lexer);
+            token.length = 2U;
+            token.kind = TOKEN_GREATER_EQUAL;
+        } else {
+            token.kind = TOKEN_GREATER;
+        }
         break;
     case '+':
         token.kind = TOKEN_PLUS;
@@ -231,12 +301,24 @@ static const char *token_name(enum token_kind kind)
         return "'function'";
     case TOKEN_LOCAL:
         return "'local'";
+    case TOKEN_IF:
+        return "'if'";
+    case TOKEN_THEN:
+        return "'then'";
+    case TOKEN_ELSE:
+        return "'else'";
     case TOKEN_RETURN:
         return "'return'";
     case TOKEN_END:
         return "'end'";
     case TOKEN_I32:
         return "'i32'";
+    case TOKEN_BOOL:
+        return "'bool'";
+    case TOKEN_TRUE:
+        return "'true'";
+    case TOKEN_FALSE:
+        return "'false'";
     case TOKEN_LEFT_PAREN:
         return "'('";
     case TOKEN_RIGHT_PAREN:
@@ -247,6 +329,18 @@ static const char *token_name(enum token_kind kind)
         return "','";
     case TOKEN_EQUAL:
         return "'='";
+    case TOKEN_EQUAL_EQUAL:
+        return "'=='";
+    case TOKEN_NOT_EQUAL:
+        return "'~='";
+    case TOKEN_LESS:
+        return "'<'";
+    case TOKEN_LESS_EQUAL:
+        return "'<='";
+    case TOKEN_GREATER:
+        return "'>'";
+    case TOKEN_GREATER_EQUAL:
+        return "'>='";
     case TOKEN_PLUS:
         return "'+'";
     case TOKEN_MINUS:
@@ -298,7 +392,8 @@ static int copy_name(struct parser *parser, char *destination,
 
 static int add_node(struct parser *parser, enum miga80_ast_kind kind,
                     unsigned int line, unsigned int column, int left,
-                    int right, uint32_t value, unsigned int symbol_index)
+                    int right, uint32_t value, unsigned int symbol_index,
+                    enum miga80_type type)
 {
     struct miga80_ast_node *node;
     const unsigned int index = parser->function->node_count;
@@ -318,6 +413,7 @@ static int add_node(struct parser *parser, enum miga80_ast_kind kind,
     node->right = right;
     node->value = value;
     node->symbol_index = symbol_index;
+    node->type = type;
     ++parser->function->node_count;
     return (int)index;
 }
@@ -354,6 +450,48 @@ static int find_local(const struct miga80_ast_function *function,
 
 static int parse_expression(struct parser *parser);
 
+static const char *type_name(enum miga80_type type)
+{
+    return type == MIGA80_TYPE_BOOL ? "bool" : "i32";
+}
+
+static int parse_type(struct parser *parser, enum miga80_type *type)
+{
+    if (parser->current.kind == TOKEN_I32) {
+        *type = MIGA80_TYPE_I32;
+        parser_advance(parser);
+        return 1;
+    }
+    if (parser->current.kind == TOKEN_BOOL) {
+        *type = MIGA80_TYPE_BOOL;
+        parser_advance(parser);
+        return 1;
+    }
+    set_diagnostic(parser->diagnostic, parser->current.line,
+                   parser->current.column, "expected scalar type, found %s",
+                   token_name(parser->current.kind));
+    parser->failed = 1;
+    return 0;
+}
+
+static int require_type(struct parser *parser, int node_index,
+                        enum miga80_type expected, unsigned int line,
+                        unsigned int column, const char *context)
+{
+    if (node_index == MIGA80_INVALID_NODE || parser->failed) {
+        return 0;
+    }
+    if (parser->function->nodes[node_index].type != expected) {
+        set_diagnostic(parser->diagnostic, line, column,
+                       "%s requires %s, found %s", context,
+                       type_name(expected),
+                       type_name(parser->function->nodes[node_index].type));
+        parser->failed = 1;
+        return 0;
+    }
+    return 1;
+}
+
 static int parse_primary(struct parser *parser)
 {
     const struct token token = parser->current;
@@ -362,7 +500,16 @@ static int parse_primary(struct parser *parser)
         parser_advance(parser);
         return add_node(parser, MIGA80_AST_LITERAL_I32, token.line,
                         token.column, MIGA80_INVALID_NODE,
-                        MIGA80_INVALID_NODE, token.integer, 0U);
+                        MIGA80_INVALID_NODE, token.integer, 0U,
+                        MIGA80_TYPE_I32);
+    }
+    if (token.kind == TOKEN_TRUE || token.kind == TOKEN_FALSE) {
+        parser_advance(parser);
+        return add_node(parser, MIGA80_AST_LITERAL_BOOL, token.line,
+                        token.column, MIGA80_INVALID_NODE,
+                        MIGA80_INVALID_NODE,
+                        token.kind == TOKEN_TRUE ? 1U : 0U, 0U,
+                        MIGA80_TYPE_BOOL);
     }
     if (token.kind == TOKEN_IDENTIFIER) {
         const int parameter = find_parameter(parser->function, &token);
@@ -377,14 +524,26 @@ static int parse_primary(struct parser *parser)
         }
         parser_advance(parser);
         if (parameter >= 0) {
-            return add_node(parser, MIGA80_AST_PARAMETER_I32, token.line,
+            const enum miga80_type type =
+                parser->function->parameter_types[parameter];
+
+            return add_node(parser,
+                            type == MIGA80_TYPE_BOOL
+                                ? MIGA80_AST_PARAMETER_BOOL
+                                : MIGA80_AST_PARAMETER_I32,
+                            token.line,
                             token.column, MIGA80_INVALID_NODE,
                             MIGA80_INVALID_NODE, 0U,
-                            (unsigned int)parameter);
+                            (unsigned int)parameter, type);
         }
-        return add_node(parser, MIGA80_AST_LOCAL_I32, token.line,
+        return add_node(parser,
+                        parser->function->local_types[local] == MIGA80_TYPE_BOOL
+                            ? MIGA80_AST_LOCAL_BOOL
+                            : MIGA80_AST_LOCAL_I32,
+                        token.line,
                         token.column, MIGA80_INVALID_NODE,
-                        MIGA80_INVALID_NODE, 0U, (unsigned int)local);
+                        MIGA80_INVALID_NODE, 0U, (unsigned int)local,
+                        parser->function->local_types[local]);
     }
     if (token.kind == TOKEN_LEFT_PAREN) {
         int expression;
@@ -396,7 +555,7 @@ static int parse_primary(struct parser *parser)
     }
 
     set_diagnostic(parser->diagnostic, token.line, token.column,
-                   "expected i32 expression, found %s",
+                   "expected scalar expression, found %s",
                    token_name(token.kind));
     parser->failed = 1;
     return MIGA80_INVALID_NODE;
@@ -410,9 +569,13 @@ static int parse_unary(struct parser *parser)
 
         parser_advance(parser);
         operand = parse_unary(parser);
+        if (!require_type(parser, operand, MIGA80_TYPE_I32, operation.line,
+                          operation.column, "unary '-'")) {
+            return MIGA80_INVALID_NODE;
+        }
         return add_node(parser, MIGA80_AST_NEG_I32, operation.line,
                         operation.column, operand, MIGA80_INVALID_NODE, 0U,
-                        0U);
+                        0U, MIGA80_TYPE_I32);
     }
     return parse_primary(parser);
 }
@@ -427,13 +590,20 @@ static int parse_multiply(struct parser *parser)
 
         parser_advance(parser);
         right = parse_unary(parser);
+        if (!require_type(parser, left, MIGA80_TYPE_I32, operation.line,
+                          operation.column, "operator '*'") ||
+            !require_type(parser, right, MIGA80_TYPE_I32, operation.line,
+                          operation.column, "operator '*'")) {
+            return MIGA80_INVALID_NODE;
+        }
         left = add_node(parser, MIGA80_AST_MUL_I32, operation.line,
-                        operation.column, left, right, 0U, 0U);
+                        operation.column, left, right, 0U, 0U,
+                        MIGA80_TYPE_I32);
     }
     return left;
 }
 
-static int parse_expression(struct parser *parser)
+static int parse_add(struct parser *parser)
 {
     int left = parse_multiply(parser);
 
@@ -448,8 +618,70 @@ static int parse_expression(struct parser *parser)
 
         parser_advance(parser);
         right = parse_multiply(parser);
+        if (!require_type(parser, left, MIGA80_TYPE_I32, operation.line,
+                          operation.column, "arithmetic operator") ||
+            !require_type(parser, right, MIGA80_TYPE_I32, operation.line,
+                          operation.column, "arithmetic operator")) {
+            return MIGA80_INVALID_NODE;
+        }
         left = add_node(parser, kind, operation.line, operation.column, left,
-                        right, 0U, 0U);
+                        right, 0U, 0U, MIGA80_TYPE_I32);
+    }
+    return left;
+}
+
+static int comparison_token(enum token_kind kind)
+{
+    return kind == TOKEN_EQUAL_EQUAL || kind == TOKEN_NOT_EQUAL ||
+           kind == TOKEN_LESS || kind == TOKEN_LESS_EQUAL ||
+           kind == TOKEN_GREATER || kind == TOKEN_GREATER_EQUAL;
+}
+
+static int parse_expression(struct parser *parser)
+{
+    int left = parse_add(parser);
+
+    while (!parser->failed && comparison_token(parser->current.kind)) {
+        const struct token operation = parser->current;
+        enum miga80_ast_kind kind = MIGA80_AST_EQ;
+        int right;
+
+        parser_advance(parser);
+        right = parse_add(parser);
+        if (left == MIGA80_INVALID_NODE || right == MIGA80_INVALID_NODE ||
+            parser->failed) {
+            return MIGA80_INVALID_NODE;
+        }
+        if (parser->function->nodes[left].type !=
+            parser->function->nodes[right].type) {
+            set_diagnostic(parser->diagnostic, operation.line,
+                           operation.column,
+                           "comparison operands have different types");
+            parser->failed = 1;
+            return MIGA80_INVALID_NODE;
+        }
+        if (operation.kind != TOKEN_EQUAL_EQUAL &&
+            operation.kind != TOKEN_NOT_EQUAL &&
+            parser->function->nodes[left].type != MIGA80_TYPE_I32) {
+            set_diagnostic(parser->diagnostic, operation.line,
+                           operation.column,
+                           "ordered comparison requires i32 operands");
+            parser->failed = 1;
+            return MIGA80_INVALID_NODE;
+        }
+        if (operation.kind == TOKEN_NOT_EQUAL) {
+            kind = MIGA80_AST_NE;
+        } else if (operation.kind == TOKEN_LESS) {
+            kind = MIGA80_AST_LT_I32;
+        } else if (operation.kind == TOKEN_LESS_EQUAL) {
+            kind = MIGA80_AST_LE_I32;
+        } else if (operation.kind == TOKEN_GREATER) {
+            kind = MIGA80_AST_GT_I32;
+        } else if (operation.kind == TOKEN_GREATER_EQUAL) {
+            kind = MIGA80_AST_GE_I32;
+        }
+        left = add_node(parser, kind, operation.line, operation.column, left,
+                        right, 0U, 0U, MIGA80_TYPE_BOOL);
     }
     return left;
 }
@@ -457,6 +689,7 @@ static int parse_expression(struct parser *parser)
 static int parse_parameter(struct parser *parser)
 {
     const struct token name = parser->current;
+    enum miga80_type type;
     unsigned int index;
 
     if (!expect(parser, TOKEN_IDENTIFIER)) {
@@ -482,34 +715,66 @@ static int parse_parameter(struct parser *parser)
     }
     index = parser->function->parameter_count;
     if (!copy_name(parser, parser->function->parameter_names[index], &name) ||
-        !expect(parser, TOKEN_COLON) || !expect(parser, TOKEN_I32)) {
+        !expect(parser, TOKEN_COLON) || !parse_type(parser, &type)) {
         return 0;
     }
+    parser->function->parameter_types[index] = type;
     ++parser->function->parameter_count;
     return 1;
 }
 
-static int add_statement(struct parser *parser,
-                         enum miga80_ast_statement_kind kind,
-                         unsigned int local_index, int expression,
-                         unsigned int line, unsigned int column)
+struct statement_list {
+    unsigned int first;
+    unsigned int last;
+};
+
+static void initialize_statement_list(struct statement_list *list)
+{
+    list->first = MIGA80_INVALID_STATEMENT;
+    list->last = MIGA80_INVALID_STATEMENT;
+}
+
+static unsigned int allocate_statement(
+    struct parser *parser, enum miga80_ast_statement_kind kind,
+    unsigned int local_index, int expression, unsigned int line,
+    unsigned int column)
 {
     struct miga80_ast_statement *statement;
+    unsigned int index;
 
     if (parser->function->statement_count == MIGA80_MAX_STATEMENTS) {
         set_diagnostic(parser->diagnostic, line, column,
                        "function body exceeds %u statements",
                        MIGA80_MAX_STATEMENTS);
         parser->failed = 1;
-        return 0;
+        return MIGA80_INVALID_STATEMENT;
     }
-    statement =
-        &parser->function->statements[parser->function->statement_count++];
+    index = parser->function->statement_count++;
+    statement = &parser->function->statements[index];
     statement->kind = kind;
     statement->local_index = local_index;
     statement->expression = expression;
     statement->line = line;
     statement->column = column;
+    statement->next_statement = MIGA80_INVALID_STATEMENT;
+    statement->then_statement = MIGA80_INVALID_STATEMENT;
+    statement->else_statement = MIGA80_INVALID_STATEMENT;
+    return index;
+}
+
+static int append_statement(struct parser *parser,
+                            struct statement_list *list,
+                            unsigned int statement)
+{
+    if (statement == MIGA80_INVALID_STATEMENT) {
+        return 0;
+    }
+    if (list->first == MIGA80_INVALID_STATEMENT) {
+        list->first = statement;
+    } else {
+        parser->function->statements[list->last].next_statement = statement;
+    }
+    list->last = statement;
     return 1;
 }
 
@@ -527,44 +792,48 @@ static int local_name_is_available(struct parser *parser,
     return 1;
 }
 
-static int parse_local_declaration(struct parser *parser)
+static unsigned int parse_local_declaration(struct parser *parser)
 {
     struct token name;
+    enum miga80_type type;
     int expression;
     unsigned int local_index;
 
     parser_advance(parser);
     name = parser->current;
     if (!expect(parser, TOKEN_IDENTIFIER)) {
-        return 0;
+        return MIGA80_INVALID_STATEMENT;
     }
     if (parser->function->local_count == MIGA80_MAX_LOCALS) {
         set_diagnostic(parser->diagnostic, name.line, name.column,
                        "function exceeds %u local variables",
                        MIGA80_MAX_LOCALS);
         parser->failed = 1;
-        return 0;
+        return MIGA80_INVALID_STATEMENT;
     }
     if (!local_name_is_available(parser, &name) ||
-        !expect(parser, TOKEN_COLON) || !expect(parser, TOKEN_I32) ||
+        !expect(parser, TOKEN_COLON) || !parse_type(parser, &type) ||
         !expect(parser, TOKEN_EQUAL)) {
-        return 0;
+        return MIGA80_INVALID_STATEMENT;
     }
     expression = parse_expression(parser);
-    if (parser->failed) {
-        return 0;
+    if (!require_type(parser, expression, type, name.line, name.column,
+                      "local initializer")) {
+        return MIGA80_INVALID_STATEMENT;
     }
     local_index = parser->function->local_count;
     if (!copy_name(parser, parser->function->local_names[local_index],
                    &name)) {
-        return 0;
+        return MIGA80_INVALID_STATEMENT;
     }
+    parser->function->local_types[local_index] = type;
     ++parser->function->local_count;
-    return add_statement(parser, MIGA80_AST_LOCAL_INITIALIZE_I32,
-                         local_index, expression, name.line, name.column);
+    return allocate_statement(parser, MIGA80_AST_LOCAL_INITIALIZE,
+                              local_index, expression, name.line,
+                              name.column);
 }
 
-static int parse_assignment(struct parser *parser)
+static unsigned int parse_assignment(struct parser *parser)
 {
     const struct token name = parser->current;
     const int local = find_local(parser->function, &name);
@@ -581,18 +850,89 @@ static int parse_assignment(struct parser *parser)
                            (int)name.length, name.start);
         }
         parser->failed = 1;
-        return 0;
+        return MIGA80_INVALID_STATEMENT;
     }
     if (!expect(parser, TOKEN_IDENTIFIER) || !expect(parser, TOKEN_EQUAL)) {
-        return 0;
+        return MIGA80_INVALID_STATEMENT;
     }
     expression = parse_expression(parser);
-    if (parser->failed) {
+    if (!require_type(parser, expression,
+                      parser->function->local_types[local], name.line,
+                      name.column, "assignment")) {
+        return MIGA80_INVALID_STATEMENT;
+    }
+    return allocate_statement(parser, MIGA80_AST_LOCAL_ASSIGN,
+                              (unsigned int)local, expression, name.line,
+                              name.column);
+}
+
+static unsigned int parse_if_statement(struct parser *parser);
+
+static int parse_conditional_statement_list(struct parser *parser,
+                                            struct statement_list *list)
+{
+    initialize_statement_list(list);
+    while (!parser->failed &&
+           (parser->current.kind == TOKEN_IDENTIFIER ||
+            parser->current.kind == TOKEN_IF)) {
+        unsigned int statement;
+
+        if (parser->current.kind == TOKEN_IF) {
+            statement = parse_if_statement(parser);
+        } else {
+            statement = parse_assignment(parser);
+        }
+        if (!append_statement(parser, list, statement)) {
+            return 0;
+        }
+    }
+    if (parser->current.kind == TOKEN_LOCAL) {
+        set_diagnostic(parser->diagnostic, parser->current.line,
+                       parser->current.column,
+                       "local declarations inside if are not implemented");
+        parser->failed = 1;
         return 0;
     }
-    return add_statement(parser, MIGA80_AST_LOCAL_ASSIGN_I32,
-                         (unsigned int)local, expression, name.line,
-                         name.column);
+    if (parser->current.kind == TOKEN_RETURN) {
+        set_diagnostic(parser->diagnostic, parser->current.line,
+                       parser->current.column,
+                       "return inside if is not implemented");
+        parser->failed = 1;
+        return 0;
+    }
+    return 1;
+}
+
+static unsigned int parse_if_statement(struct parser *parser)
+{
+    const struct token if_token = parser->current;
+    struct statement_list then_list;
+    struct statement_list else_list;
+    unsigned int statement_index;
+    int condition;
+
+    parser_advance(parser);
+    condition = parse_expression(parser);
+    if (!require_type(parser, condition, MIGA80_TYPE_BOOL, if_token.line,
+                      if_token.column, "if condition") ||
+        !expect(parser, TOKEN_THEN)) {
+        return MIGA80_INVALID_STATEMENT;
+    }
+    statement_index =
+        allocate_statement(parser, MIGA80_AST_IF, 0U, condition,
+                           if_token.line, if_token.column);
+    if (statement_index == MIGA80_INVALID_STATEMENT ||
+        !parse_conditional_statement_list(parser, &then_list) ||
+        !expect(parser, TOKEN_ELSE) ||
+        !parse_conditional_statement_list(parser, &else_list) ||
+        !expect(parser, TOKEN_END)) {
+        return MIGA80_INVALID_STATEMENT;
+    }
+    parser->function->statements[statement_index].then_statement =
+        then_list.first;
+    parser->function->statements[statement_index].else_statement =
+        else_list.first;
+    return statement_index;
 }
 
 int miga80_parse_function(const char *source, size_t source_size,
@@ -600,6 +940,7 @@ int miga80_parse_function(const char *source, size_t source_size,
                           struct miga80_diagnostic *diagnostic)
 {
     struct parser parser;
+    struct statement_list body;
     struct token function_name;
 
     if (source == NULL || function == NULL || diagnostic == NULL) {
@@ -615,6 +956,8 @@ int miga80_parse_function(const char *source, size_t source_size,
     parser.lexer.diagnostic = diagnostic;
     parser.function = function;
     parser.diagnostic = diagnostic;
+    function->first_statement = MIGA80_INVALID_STATEMENT;
+    initialize_statement_list(&body);
     parser_advance(&parser);
 
     if (!expect(&parser, TOKEN_FUNCTION)) {
@@ -638,17 +981,24 @@ int miga80_parse_function(const char *source, size_t source_size,
         }
     }
     if (!expect(&parser, TOKEN_RIGHT_PAREN) ||
-        !expect(&parser, TOKEN_COLON) || !expect(&parser, TOKEN_I32)) {
+        !expect(&parser, TOKEN_COLON) ||
+        !parse_type(&parser, &function->result_type)) {
         return 0;
     }
 
     while (!parser.failed && (parser.current.kind == TOKEN_LOCAL ||
-                              parser.current.kind == TOKEN_IDENTIFIER)) {
+                              parser.current.kind == TOKEN_IDENTIFIER ||
+                              parser.current.kind == TOKEN_IF)) {
+        unsigned int statement;
+
         if (parser.current.kind == TOKEN_LOCAL) {
-            if (!parse_local_declaration(&parser)) {
-                return 0;
-            }
-        } else if (!parse_assignment(&parser)) {
+            statement = parse_local_declaration(&parser);
+        } else if (parser.current.kind == TOKEN_IF) {
+            statement = parse_if_statement(&parser);
+        } else {
+            statement = parse_assignment(&parser);
+        }
+        if (!append_statement(&parser, &body, statement)) {
             return 0;
         }
     }
@@ -659,10 +1009,14 @@ int miga80_parse_function(const char *source, size_t source_size,
             return 0;
         }
         function->result = parse_expression(&parser);
-        if (parser.failed ||
-            !add_statement(&parser, MIGA80_AST_RETURN_I32, 0U,
-                           function->result, return_token.line,
-                           return_token.column)) {
+        if (!require_type(&parser, function->result, function->result_type,
+                          return_token.line, return_token.column,
+                          "function return") ||
+            !append_statement(
+                &parser, &body,
+                allocate_statement(&parser, MIGA80_AST_RETURN, 0U,
+                                   function->result, return_token.line,
+                                   return_token.column))) {
             return 0;
         }
     }
@@ -670,5 +1024,6 @@ int miga80_parse_function(const char *source, size_t source_size,
         !expect(&parser, TOKEN_EOF)) {
         return 0;
     }
+    function->first_statement = body.first;
     return function->result != MIGA80_INVALID_NODE;
 }

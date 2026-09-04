@@ -38,7 +38,7 @@ int miga80_emit_gnu_m68k(FILE *output,
         return 0;
     }
     (void)memset(diagnostic, 0, sizeof(*diagnostic));
-    if (!miga80_validate_straight_line_ir(function, diagnostic)) {
+    if (!miga80_validate_ir(function, diagnostic)) {
         return 0;
     }
     if (function->parameter_count > MIGA80_MAX_PARAMETERS) {
@@ -89,15 +89,27 @@ int miga80_emit_gnu_m68k(FILE *output,
     for (index = 0; index < function->instruction_count; ++index) {
         const struct miga80_ir_instruction *instruction =
             &function->instructions[index];
+        unsigned int block_index;
         int success = 1;
+
+        for (block_index = 0U; block_index < function->block_count;
+             ++block_index) {
+            if (function->blocks[block_index].first_instruction == index &&
+                !output_line(output, ".L_%s_b%u:\n", function->name,
+                             block_index)) {
+                return output_failure(diagnostic, instruction);
+            }
+        }
 
         switch (instruction->opcode) {
         case MIGA80_IR_PUSH_I32:
+        case MIGA80_IR_PUSH_BOOL:
             success = output_line(output,
                                   "        move.l  #0x%08x,-(%%a7)\n",
                                   (unsigned int)instruction->operand);
             break;
         case MIGA80_IR_PUSH_PARAMETER_I32:
+        case MIGA80_IR_PUSH_PARAMETER_BOOL:
             if (instruction->operand >= function->parameter_count) {
                 diagnostic->line = instruction->line;
                 diagnostic->column = instruction->column;
@@ -110,6 +122,7 @@ int miga80_emit_gnu_m68k(FILE *output,
                                   (instruction->operand + 1U) * 4U);
             break;
         case MIGA80_IR_PUSH_LOCAL_I32:
+        case MIGA80_IR_PUSH_LOCAL_BOOL:
             if (instruction->operand >= function->local_count) {
                 diagnostic->line = instruction->line;
                 diagnostic->column = instruction->column;
@@ -124,6 +137,7 @@ int miga80_emit_gnu_m68k(FILE *output,
                     4U);
             break;
         case MIGA80_IR_STORE_LOCAL_I32:
+        case MIGA80_IR_STORE_LOCAL_BOOL:
             if (instruction->operand >= function->local_count) {
                 diagnostic->line = instruction->line;
                 diagnostic->column = instruction->column;
@@ -148,6 +162,14 @@ int miga80_emit_gnu_m68k(FILE *output,
         case MIGA80_IR_ADD_I32:
         case MIGA80_IR_SUB_I32:
         case MIGA80_IR_MUL_I32:
+        case MIGA80_IR_EQ_I32:
+        case MIGA80_IR_NE_I32:
+        case MIGA80_IR_EQ_BOOL:
+        case MIGA80_IR_NE_BOOL:
+        case MIGA80_IR_LT_I32:
+        case MIGA80_IR_LE_I32:
+        case MIGA80_IR_GT_I32:
+        case MIGA80_IR_GE_I32:
             success = output_line(output,
                                   "        move.l  (%%a7)+,%%d1\n"
                                   "        move.l  (%%a7)+,%%d0\n");
@@ -156,15 +178,49 @@ int miga80_emit_gnu_m68k(FILE *output,
             } else if (success &&
                        instruction->opcode == MIGA80_IR_SUB_I32) {
                 success = output_line(output, "        sub.l   %%d1,%%d0\n");
-            } else if (success) {
+            } else if (success &&
+                       instruction->opcode == MIGA80_IR_MUL_I32) {
                 success = output_line(output, "        muls.l  %%d1,%%d0\n");
+            } else if (success) {
+                const char *condition = "seq";
+
+                if (instruction->opcode == MIGA80_IR_NE_I32 ||
+                    instruction->opcode == MIGA80_IR_NE_BOOL) {
+                    condition = "sne";
+                } else if (instruction->opcode == MIGA80_IR_LT_I32) {
+                    condition = "slt";
+                } else if (instruction->opcode == MIGA80_IR_LE_I32) {
+                    condition = "sle";
+                } else if (instruction->opcode == MIGA80_IR_GT_I32) {
+                    condition = "sgt";
+                } else if (instruction->opcode == MIGA80_IR_GE_I32) {
+                    condition = "sge";
+                }
+                success = output_line(output,
+                                      "        cmp.l   %%d1,%%d0\n"
+                                      "        %s     %%d0\n"
+                                      "        and.l   #1,%%d0\n",
+                                      condition);
             }
             if (success) {
                 success =
                     output_line(output, "        move.l  %%d0,-(%%a7)\n");
             }
             break;
-        case MIGA80_IR_RETURN_I32:
+        case MIGA80_IR_BRANCH_FALSE:
+            success = output_line(output,
+                                  "        move.l  (%%a7)+,%%d0\n"
+                                  "        tst.l   %%d0\n"
+                                  "        beq     .L_%s_b%u\n",
+                                  function->name,
+                                  (unsigned int)instruction->operand);
+            break;
+        case MIGA80_IR_JUMP:
+            success = output_line(output, "        bra     .L_%s_b%u\n",
+                                  function->name,
+                                  (unsigned int)instruction->operand);
+            break;
+        case MIGA80_IR_RETURN:
             success = output_line(output,
                                   "        move.l  (%%a7)+,%%d0\n"
                                   "        unlk    %%a6\n"

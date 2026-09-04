@@ -564,16 +564,17 @@ circular disassembly trace for failures. Run it with `gmake miga68k-test`.
 
 ### Phase 1 — connect the compiler
 
-**Initial connection implemented:** `miga80c` parses one annotated `i32`
-function with typed local declarations and assignments, lowers it to typed
-stack IR and value IR, renders GNU m68k assembly at `-O0` or `-O1`, and
-provides a host IR evaluator. The IR has an explicit entry block and bounded
-successor slots ready for the later `if`/`while` CFG. The ordinary test path
-assembles both levels for four corpora and checks six inputs per corpus against
-Musashi. A synthetic value-IR fixture forces three reusable spill slots in an
-`A6` frame and checks six more inputs, saved registers, stack balance, and
-maximum stack use. Host and 68020 test programs must render ordinary,
-local-heavy, and spilling assembly byte-identically. The current GNU toolchain
+**Initial connection implemented:** `miga80c` parses one explicitly annotated
+`i32`/`bool` function with typed local declarations, assignments, comparisons,
+and nested `if`/`else`, lowers it to typed stack IR and value IR, renders GNU
+m68k assembly at `-O0` or `-O1`, and provides a host CFG evaluator. The IR has
+up to 32 blocks with bounded successors; O1 inserts typed join values. The
+ordinary test path assembles both levels for five corpora and checks six inputs
+per corpus against Musashi. A synthetic value-IR fixture forces three reusable
+spill slots in an `A6` frame and checks six more inputs, saved registers, stack
+balance, and maximum stack use. Host and 68020 test programs must render
+ordinary, local-heavy, conditional, and spilling assembly byte-identically.
+The current GNU toolchain
 retains an Amiga relocatable object; ELF linking, symbol manifests, and broader
 language semantics remain pending. See
 [MIGA Lua Compiler Bootstrap](./MIGA-Lua-compiler-bootstrap.md).
@@ -607,7 +608,8 @@ including a deliberate clobber negative control. See
 
 ### Phase 3 — expand semantics
 
-- branches and loops;
+- comparisons, `bool`, and nested `if`/`else`; **implemented**
+- loops and loop-carried value joins;
 - fixed-point arithmetic;
 - globals and arrays;
 - restricted tables/strings;
@@ -618,9 +620,9 @@ including a deliberate clobber negative control. See
 
 **Initial signals implemented:** the generic runner reports image bytes,
 executed instructions, and maximum callee stack bytes. The differential suite
-locks reviewed `-O0`/`-O1` figures for three straight-line corpora plus a forced
-spill fixture. These are optimizer regressions only, not cycle or wall-time
-claims.
+locks reviewed `-O0`/`-O1` figures for five source corpora, including nested
+conditional control flow, plus a forced spill fixture. These are optimizer
+regressions only, not cycle or wall-time claims.
 
 - record code size, instruction counts, and stack use; **implemented for the bootstrap**
 - add core-cycle estimates;

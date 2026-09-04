@@ -1,0 +1,14 @@
+PASS  generated-o0/zero D0=ffffd54e instructions=123 code_bytes=572 stack_bytes=32
+PASS  generated-o0/positive D0=ffffdc64 instructions=123 code_bytes=572 stack_bytes=32
+PASS  generated-o0/negative_a D0=00002a9e instructions=123 code_bytes=572 stack_bytes=32
+PASS  generated-o0/negative_b D0=00002a70 instructions=123 code_bytes=572 stack_bytes=32
+PASS  generated-o0/wrap_u32 D0=80002a7e instructions=123 code_bytes=572 stack_bytes=32
+PASS  generated-o0/min_i32 D0=7fffdc84 instructions=123 code_bytes=572 stack_bytes=32
+PASS  generated-o1/zero D0=ffffd54e instructions=64 code_bytes=388 stack_bytes=44
+PASS  generated-o1/positive D0=ffffdc64 instructions=64 code_bytes=388 stack_bytes=44
+PASS  generated-o1/negative_a D0=00002a9e instructions=64 code_bytes=388 stack_bytes=44
+PASS  generated-o1/negative_b D0=00002a70 instructions=64 code_bytes=388 stack_bytes=44
+PASS  generated-o1/wrap_u32 D0=80002a7e instructions=64 code_bytes=388 stack_bytes=44
+PASS  generated-o1/min_i32 D0=7fffdc84 instructions=64 code_bytes=388 stack_bytes=44
+PASS  compiler O0/O1 match typed-IR oracle (12 cases)
+PASS  compiler O1 code size reduced from 572 to 388 bytes

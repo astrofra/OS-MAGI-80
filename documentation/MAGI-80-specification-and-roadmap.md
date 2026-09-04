@@ -471,7 +471,17 @@ function draw(): void
 end
 ```
 
-Type annotations are mandatory at public boundaries and when inference would be ambiguous. Local declarations and record literals SHOULD normally infer their types so that common code remains visually close to Lua. Phase 3 MUST freeze a grammar and a Lua-compatibility matrix before implementing the production parser.
+Version 1 deliberately chooses a strict, compact type contract for the
+on-Amiga compiler. Every function parameter, function return, and local
+variable declaration MUST carry an explicit type. `void` is an explicit return
+type; it is not inferred from a missing value. There is no implicit conversion,
+except that the frozen grammar MAY later permit a conversion between constants
+when the compiler proves it lossless at compile time. There are no polymorphic
+or union types and no multiple returns in version 1. Local inference is kept
+only as a possible later language extension, not as part of the first release.
+The bootstrap currently implements this contract for `i32` and `bool`; its
+`void` return path remains to be implemented. Phase 3 MUST freeze a grammar and
+a Lua-compatibility matrix before implementing the production parser.
 
 ### 10.3 Lua-like syntax contract
 
@@ -480,9 +490,10 @@ Version 1.0 MUST support, where compatible with the static type model:
 - `function`, `local`, `if`/`then`/`elseif`/`else`/`end`, `while`, `repeat`/`until`, and numeric `for` syntax;
 - generic `for` over compiler-known arrays and dictionaries;
 - Lua-style function calls, field access, indexing, table constructors, comments, and lexical conventions;
-- Lua operator spelling and precedence, with short-circuit `and`/`or` on `bool` values;
-- boolean conditions; optional values require an explicit presence or `nil` comparison rather than implicit coercion;
-- multiple assignment and statically typed multiple returns;
+- Lua operator spelling and precedence, with `!=` accepted as an exact alias
+  of `~=`, and short-circuit `and`/`or` on `bool` values;
+- boolean conditions with no truthy coercion from integers or other values;
+- single-target assignment and exactly zero (`void`) or one return value;
 - the `:` method-call spelling when the receiver and target function resolve statically;
 - immutable string literals and compile-time concatenation;
 - source line and column mappings for every generated safe point and diagnostic;
@@ -499,13 +510,19 @@ The required built-in types are:
 - `fix`, provisionally a signed 16.16 fixed-point value;
 - `color`, `layer`, `button`, `sprite_id`, and similar small domain types where they prevent accidental API misuse;
 - immutable, interned `string` or `symbol` values;
-- `T?` optional values with explicit absence;
 - fixed-layout records;
 - `array<T, N>`;
 - `dict<K, V, N>`;
-- statically known function signatures and multiple-return tuples.
+- statically known, monomorphic function signatures.
 
-There is no implicit `any` or universal tagged-value type in the stock profile. Numeric literals are typed from context. Narrowing, signed/unsigned changes, and `i32`/`fix` conversion require an explicit conversion unless proven lossless. No source operation may cause the compiler or runtime to link software floating-point support.
+`void` is valid only as a function return type. There is no implicit `any`,
+universal tagged-value type, polymorphic type, or union in the stock profile.
+Numeric literals are typed from an explicit context. Narrowing,
+signed/unsigned changes, and `i32`/`fix` conversion require an explicit
+conversion. A future constant-only exception may be admitted only when its
+validity is completely proven during compilation; the bootstrap implements no
+such exception. No source operation may cause the compiler or runtime to link
+software floating-point support.
 
 Top-level `local` and `const` declarations have module-static storage known at compile time and may be referenced by top-level functions, as in the example above. They do not allocate closure environments. Nested functions that capture activation-local values remain excluded in version 1.0.
 
@@ -513,10 +530,17 @@ Ordinary integer arithmetic SHOULD use defined two's-complement wrapping; checke
 
 ### 10.5 Records, arrays, and optimized dictionaries
 
-Lua table-constructor syntax maps to one of three statically selected layouts:
+Lua table-constructor syntax MUST be resolved from an explicit expected type;
+it maps to one of three statically selected layouts:
 
-1. **Record:** a constructor with named fields and a fixed inferred or declared shape becomes a compact record. Field access compiles to a constant byte displacement; it performs no hash lookup.
-2. **Array:** a homogeneous sequence becomes contiguous `array<T, N>` storage. Capacity and element size are compile-time constants, and each dynamic index is bounds-checked.
+1. **Record:** a constructor with named fields and a fixed declared shape
+   becomes a compact record. Field access compiles to a constant byte
+   displacement; it performs no hash lookup.
+2. **Array:** a homogeneous sequence becomes contiguous `array<T, N>` storage.
+   Arrays are zero-based: valid indices are exactly `0` through `N - 1`, index
+   `0` is the first element, and table-constructor sequence elements follow
+   that same base. Capacity and element size are compile-time constants, and
+   each dynamic index is bounds-checked.
 3. **Dictionary:** a declared `dict<K, V, N>` becomes a fixed-capacity typed hash table. It is used only when keys are genuinely dynamic.
 
 The 1.0 dictionary contract is:
@@ -532,6 +556,8 @@ The 1.0 dictionary contract is:
 - record syntax MUST NOT silently degrade to a dictionary because of one misspelled field.
 
 There is no general garbage-collected table type. Dynamic game collections use fixed arrays, typed dictionaries, or later a separately specified fixed-capacity pool type.
+The zero-based array rule is a deliberate material difference from Lua's
+conventional one-based sequences and MUST be called out in user documentation.
 
 ### 10.6 Excluded or restricted language features
 
@@ -593,7 +619,7 @@ The native ABI MUST define:
 
 Generated code MUST NOT address AmigaOS libraries, custom-chip registers, the Copper list, unrelated MAGI-80 state, or arbitrary absolute memory. Hardware access remains inside reviewed C/assembly runtime functions reached through the native ABI.
 
-ABI preservation is executable behavior, not documentation alone. Before invoking a generated function, the host runner MUST initialize callee-saved registers, the stack, and guard memory with recognizable values, then verify them after return. [MIGA Lua Native ABI 0.1](./MIGA-Lua-native-ABI-v0.md) freezes the bootstrap register and stack core: scalar arguments in `D0-D2`, scalar result in `D0`, future address-class arguments in `A0-A1`, `D3-D7` and `A2-A6` callee-saved, opaque runtime context in `A5`, optional frame pointer in `A6`, and four-byte stack alignment. Multiple returns, stack arguments, traps, runtime-context layout, and fixed-point rules remain ABI-extension decisions.
+ABI preservation is executable behavior, not documentation alone. Before invoking a generated function, the host runner MUST initialize callee-saved registers, the stack, and guard memory with recognizable values, then verify them after return. [MIGA Lua Native ABI 0.1](./MIGA-Lua-native-ABI-v0.md) freezes the bootstrap register and stack core: scalar arguments in `D0-D2`, scalar result in `D0`, future address-class arguments in `A0-A1`, `D3-D7` and `A2-A6` callee-saved, opaque runtime context in `A5`, optional frame pointer in `A6`, and four-byte stack alignment. Multiple returns are excluded from language version 1; stack arguments, traps, runtime-context layout, and fixed-point rules remain ABI-extension decisions.
 
 ### 10.9 Host-side generated-code execution
 
@@ -1068,7 +1094,7 @@ The performance-authority harness enters a bounded exclusive-runtime section onl
 | `shell` | Workspace navigation, commands, help, status, and error presentation. |
 | `editor_code` | Text buffer, rendering, commands, undo, and diagnostic navigation. |
 | `editor_sprite` | Tile/object pixel tools, palettes, hardware-eligibility diagnostics, reference previews, and undo. |
-| `compiler_frontend` | Lua-like lexer/parser, type inference, semantics, typed AST/IR, and source maps. |
+| `compiler_frontend` | Lua-like lexer/parser, explicit type checking, semantics, typed AST/IR, and source maps. |
 | `codegen_68020` | Layout, instruction selection, shared low-level m68k model, direct encoding, development assembly rendering, relocation, validation metadata, and cache synchronization. |
 | `native_runtime` | Versioned jump table, guarded callback invocation, execution budgets, stop/error trampolines, and fantasy API dispatch. |
 | `miga68k_test` | Host-only Musashi 68EC020 runner, bounded memory, runtime traps, assertions, traces, and CPU regression metrics. |
@@ -1197,7 +1223,7 @@ Cartridges and modules are untrusted input. Host builds MUST run their parsers u
 
 ### 18.1 Test layers
 
-1. **Native host unit tests:** lexer, Lua-like grammar, type inference/rules, typed IR, record/array/dictionary layouts, instruction encoding and relocation, fixed-point math, cartridge parser, compression, MOD effect state, and the three-layer graphics reference model.
+1. **Native host unit tests:** lexer, Lua-like grammar, explicit type rules, typed IR, record/array/dictionary layouts, instruction encoding and relocation, fixed-point math, cartridge parser, compression, MOD effect state, and the three-layer graphics reference model.
 2. **Property and fuzz tests:** cartridge/MOD parsing, decompression, source lexer/parser, typed IR, relocation inputs, dictionary operations, checked arithmetic, and malformed or nonterminating generated programs.
 3. **Local 68EC020 execution:** run generated functions under Musashi; assert results, side effects, ABI preservation, stack balance, guards, runtime calls, controlled traps, and instruction limits. A curated edge corpus SHOULD later run under Moira as an independent CPU oracle.
 4. **Golden and differential tests:** three-layer composite hashes, planar operation output, four-plane C2P bytes, complete 4,096-entry color-response LUTs, packed-resource decode, palette mapping, editor/runtime/hardware color identity, object-scheduler/fallback traces, selected normalized 68020 disassembly, direct-encoder behavior versus the host typed-IR oracle and assembly route, source error locations, runtime traces, and MOD tick traces.
@@ -1242,7 +1268,47 @@ The estimates below are engineering effort for one experienced developer, not ca
 
 Current Phase 0 evidence includes the reproducible cross-toolchain, native C2P golden vectors, the initial three-layer C99 reference compositor and goldens, an inverse dual-playfield decoder, validated graphics-report schemas, Amiga Hunk benchmark harnesses, and an Intuition-managed 4+4 dual-playfield smoke test under FS-UAE. The architecture-aligned C2P4 tranche includes packed4/byte4 scalar oracles, C99 and 68020 pair-LUT implementations, table-free C99 and 68020 32-pixel transposes, a staged blitter-publication negative control, all three viewport profiles, payload traffic accounting, and exact full-frame canonical differentials under host tests and FS-UAE. The 24-case hosted run remains `hosted_cooperative`. Its report-format-3 `exclusive_kernel_batch` successor has a 204-case stock baseline: six core raw kernels over seven additive display/DMA profiles, 26 extended raw read/read-modify-write/alignment kernels over three representative profiles, and twelve real 68020 C2P4 cases per profile. A complete Fast allocation appends 32 source-reading raw and 24 source/LUT C2P cases under blanked and fair-blitter states, for 260 total; DMA-visible data and planar destinations remain in Chip RAM while the dedicated stack moves to Fast and code placement is reported. Every case records memory domains, offsets, total payload traffic, and the Chip-contended subset.
 
-The harness runs from a guarded 16 KiB dedicated stack inside `Forbid()`, raster-polls blanking transitions without per-sample `WaitTOF()`, uses short `Disable()` handovers, drives four real muted Paula channels, drives seven 16 × 224 hardware sprites with a declared minimum fetch load of 6,328 bytes per video frame, and overlaps each CPU kernel with an adaptive fair-blitter transfer or a separately identified hog-mode preemption burst. The 128-byte blitter working set is repeated into logical loads from 512 KiB through 4,194,176 bytes, allowing the fair fixture to remain busy across even the Full conversion without consuming a second multi-megabyte buffer. A dedicated 32-bit timer made from two cascaded CIA timers replaces `ReadEClock()` inside this long custom-interrupt-masked section, after testing exposed a lost lower-word rollover around 92 seconds; timer ownership is acquired and released through `cia.resource`. The passing format-3 FS-UAE reports validate all output hashes and `DMACON`/`INTENA` restoration, measure 268 bytes of stack high water, and discard no timer sample. A bootable writable OFS hardware-candidate ADF and manifest provide `running`/FAIL/PASS on-disk result states, bounded raster and blitter waits, instruction-cache state restoration, and a tester handoff. Emulator reports remain non-authoritative for physical timing, and stock-A1200 distributions, safe publication, a genuine hybrid, Level-3 runtime timing, and stress/fault tests remain open. See [MAGI-80 Physical A1200 Graphics Test](./physical-a1200-graphics-test.md). Older report formats remain regression fixtures so distributed candidate images can still be diagnosed, but their timings must not be pooled with format 3. The pinned Musashi runner foundation and initial compiler connection are implemented: one annotated `i32` function with typed local declarations and assignments is parsed into a bounded AST, lowered to typed stack IR with an explicit entry basic block, and interpreted as a host oracle. ABI 0.1 freezes the register/stack core in a machine-readable module shared by the frontend, backend, and Musashi checks, with a saved-register negative control. The initial `-O1` path renames straight-line locals into value IR, folds and simplifies values, removes dead values and overwritten assignments, computes liveness, linearly allocates `D0-D7`, preserves used saved registers, and renders assembly byte-identically from host and 68020 compiler builds. When eight registers are insufficient it replans with `D7` as a saved scratch, reuses bounded spill slots, and emits an ABI `A6` frame. Four source corpora at `-O0` and `-O1` plus a forced spill fixture agree with their oracles across 54 Musashi executions while recording image size, instruction count, and maximum callee stack use. Multi-block control flow for `if`/`while`, calls, ELF/symbol-manifest loading, the shipping direct encoder, and UAE/hardware performance validation remain pending.
+The harness runs from a guarded 16 KiB dedicated stack inside `Forbid()`,
+raster-polls blanking transitions without per-sample `WaitTOF()`, uses short
+`Disable()` handovers, drives four real muted Paula channels, drives seven
+16 × 224 hardware sprites with a declared minimum fetch load of 6,328 bytes per
+video frame, and overlaps each CPU kernel with an adaptive fair-blitter transfer
+or a separately identified hog-mode preemption burst. The 128-byte blitter
+working set is repeated into logical loads from 512 KiB through 4,194,176 bytes,
+allowing the fair fixture to remain busy across even the Full conversion without
+consuming a second multi-megabyte buffer. A dedicated 32-bit timer made from two
+cascaded CIA timers replaces `ReadEClock()` inside this long
+custom-interrupt-masked section, after testing exposed a lost lower-word rollover
+around 92 seconds; timer ownership is acquired and released through
+`cia.resource`. The passing format-3 FS-UAE reports validate all output hashes
+and `DMACON`/`INTENA` restoration, measure 268 bytes of stack high water, and
+discard no timer sample. A bootable writable OFS hardware-candidate ADF and
+manifest provide `running`/FAIL/PASS on-disk result states, bounded raster and
+blitter waits, instruction-cache state restoration, and a tester handoff.
+Emulator reports remain non-authoritative for physical timing, and stock-A1200
+distributions, safe publication, a genuine hybrid, Level-3 runtime timing, and
+stress/fault tests remain open. See
+[MAGI-80 Physical A1200 Graphics Test](./physical-a1200-graphics-test.md). Older
+report formats remain regression fixtures so distributed candidate images can
+still be diagnosed, but their timings must not be pooled with format 3.
+
+The pinned Musashi runner foundation and compiler connection are implemented.
+One explicitly typed scalar `i32`/`bool` function with typed local declarations,
+assignments, comparisons, and nested `if`/`else` is parsed into a bounded AST,
+lowered to a typed multi-block stack IR, and interpreted as a host oracle. ABI
+0.1 freezes the register/stack core in a machine-readable module shared by the
+frontend, backend, and Musashi checks, with a saved-register negative control.
+The `-O1` path renames locals through the acyclic CFG, creates typed `phi` joins,
+folds and simplifies values, removes dead values and overwritten assignments,
+computes liveness, linearly allocates `D0-D7`, preserves used saved registers,
+and renders assembly byte-identically from host and 68020 compiler builds. When
+eight registers are insufficient it replans with `D7` as a saved scratch, reuses
+bounded spill slots, and emits an ABI `A6` frame. Five source corpora at `-O0`
+and `-O1` plus a forced spill fixture agree with their oracles across 66 Musashi
+executions while recording image size, instruction count, and maximum callee
+stack use. Loops and loop-carried joins, calls, `void` code generation,
+ELF/symbol-manifest loading, the shipping direct encoder, and UAE/hardware
+performance validation remain pending.
 
 ### Phase 0 — Feasibility and irreversible decisions
 
@@ -1310,10 +1376,10 @@ This workstream follows [MAGI-80 Local 68020 Tooling](./MAGI-80-local-68020-tool
 
 1. **Runner foundation — Phase 0 (implemented):** embed Musashi, select 68EC020 mode, implement bounded big-endian memory, execute a reviewed `mul_add` function, stop through a return sentinel/trap, and report a short failure trace.
 2. **Compiler connection — Phase 0/early Phase 3 (initial subset implemented):** render integer arithmetic and return through textual assembly, assemble/link automatically, retain ELF symbols, load a flat image, and execute several inputs from the ordinary host test command. The bootstrap currently retains an Amiga relocatable object rather than ELF, so ELF/symbol-manifest loading remains part of this step.
-3. **ABI freeze — early Phase 3 (register/stack, source-local, and spill-frame tranches implemented):** ABI 0.1 now fixes register roles, opaque `A5` runtime-context ownership, scalar returns, Boolean representation, frame bounds, stack alignment, and executable saved-register checks. `-O0` assigns typed source locals to bounded `A6` slots; `-O1` renames straight-line locals and emits bounded `A6` spill frames when needed while restoring `D3-D7/A6`. Calls, multiple returns, context layout, and error traps remain open extensions.
-4. **Semantic expansion — Phase 3 (typed locals and entry block implemented):** the typed IR now has bounded basic-block/successor storage ready for `if` and `while`; add multi-block branches, loops, value merging, fixed point, globals, arrays, records, dictionaries, strings/symbols, guards, runtime mocks, negative tests, and deterministic randomized differential tests.
+3. **ABI freeze — early Phase 3 (register/stack, source-local, and spill-frame tranches implemented):** ABI 0.1 now fixes register roles, opaque `A5` runtime-context ownership, one scalar return, Boolean representation, frame bounds, stack alignment, and executable saved-register checks. `-O0` assigns typed source locals to bounded `A6` slots; `-O1` renames locals through acyclic control flow and emits bounded `A6` spill/edge frames when needed while restoring `D3-D7/A6`. Calls, `void`, context layout, and error traps remain open extensions; multiple returns are excluded from version 1.
+4. **Semantic expansion — Phase 3 (`bool`, comparisons, and `if`/`else` implemented):** the typed IR now has bounded multi-block control flow and O1 value joins; add loops and loop-carried joins, fixed point, globals, arrays, records, dictionaries, strings/symbols, guards, runtime mocks, negative tests, and deterministic randomized differential tests.
 5. **Direct-encoder convergence — Phase 3:** compare the shipping encoder with the assembly route and typed-IR oracle until encoding, relocation, source maps, and behavior agree; retain only selective normalized-disassembly goldens.
-6. **Performance regression — Phase 3 onward (initial size/count/stack signals implemented):** the `-O0`/`-O1` differential now records code size, executed instructions, and maximum callee stack use for four reviewed straight-line corpora, including typed locals, and a forced spill fixture. Approximate core cycles, calls, memory-operation counts, and representative cartridge kernels remain pending. Never translate emulator values into A1200 frame claims.
+6. **Performance regression — Phase 3 onward (initial size/count/stack signals implemented):** the `-O0`/`-O1` differential now records code size, executed instructions, and maximum callee stack use for five reviewed corpora, including typed locals and a nested conditional CFG, plus a forced spill fixture. Approximate core cycles, calls, memory-operation counts, `phi`-slot coalescing, and representative cartridge kernels remain pending. Never translate emulator values into A1200 frame claims.
 7. **Independent CPU validation — late Phase 3 or hardening:** add Moira only when the edge-case corpus is large enough to justify the adapter; investigate every divergent final state and keep real hardware authoritative.
 
 The runner mocks graphics/audio/input calls only at the native ABI boundary. Copper lists, blits, sprite DMA, audio DMA, raster interrupts, Chip-RAM contention, C2P/display interaction, and 25/50 Hz deadlines remain exclusively in the UAE/real-hardware workstream.
@@ -1364,7 +1430,7 @@ Exit gate:
 Deliverables:
 
 - versioned MIGA Lua reference, Lua 5.1 compatibility matrix, and grammar;
-- lexer, parser, strong type inference/checking, fixed-point semantics, AST, and typed IR;
+- lexer, parser, strict explicit type checking, fixed-point semantics, AST, and typed IR;
 - fixed-layout records, arrays, optionals, and deterministic fixed-capacity dictionaries;
 - shared low-level m68k representation, development assembly renderer, 68020 data/stack layout, instruction selector, register/stack allocation, direct binary encoder, relocation, and generated-code validator;
 - versioned native ABI, immutable runtime jump table, typed planar/pixel/object/input/audio bindings, and stop/error trampolines;
@@ -1491,7 +1557,7 @@ Do not cut:
 | R-08 | The executable and useful example exceed floppy capacity. | Medium | High | Continuous block-budget CI, size maps, embedded compact assets, `-Os` for cold code, optional compressor, and reduced examples/help before features essential to creation. |
 | R-09 | ProTracker compatibility expands without bound because historical players disagree on effects. | High | Medium | Declare signatures and effects, use trace-based conformance, warn for unsupported behavior, and version the compatibility profile. |
 | R-10 | Malformed MOD or cartridge data causes overflow or corruption. | Medium | Critical | Checked arithmetic, bounds-first parsing, host fuzzing/sanitizers, target corpus, checksums, no native-code sections in cartridges, and no code generation until all source/assets are validated. |
-| R-11 | Lua familiarity drives the language toward dynamic general-purpose Lua and erodes predictable native layouts. | High | High | Freeze the Lua compatibility matrix, retain strong types/inference, fixed records/arrays/dictionaries, no universal table or GC, and reject features without a representative-game need. |
+| R-11 | Lua familiarity drives the language toward dynamic general-purpose Lua and erodes predictable native layouts. | High | High | Freeze the Lua compatibility matrix, retain explicit strong types, fixed records/arrays/dictionaries, no universal table or GC, and reject features without a representative-game need. |
 | R-12 | A 256-pixel-wide code editor is frustrating. | Medium | High | Test 5–6-pixel fonts early, guarantee horizontal scrolling and shortcuts, keep UI chrome minimal, and consider an optional hosted high-resolution editor only after the core workflow works. |
 | R-13 | Emulator success hides real Chip-RAM contention, interrupt behavior, or timing faults. | High | High | Real-hardware gate in every hardware-facing phase; use emulators for regression, never final timing sign-off; use the bounded exclusive-runtime harness for authoritative fine timings. |
 | R-14 | Physical floppy writes are slow or unreliable and safe replacement needs extra free space. | High | Medium | Keep projects in memory, show writes, use temporary-file replacement, encourage separate project disks/HD, verify after write, and never autosave to floppy by default. |
@@ -1534,8 +1600,8 @@ The following decisions must be recorded with measurements or prototypes:
 11. Runtime keyboard acquisition and emergency-stop mechanism.
 12. CIA-timed versus fractional-VBlank ProTracker scheduler.
 13. Selected GCC fork, commit, NDK, C runtime, target ABI, release flags, and host bootstrap procedure.
-14. Frozen MIGA Lua grammar, Lua 5.1 compatibility matrix, type inference rules, numeric semantics, and restricted feature set.
-15. Record/array/dictionary layouts, supported key types, hash/probing algorithm, capacities, load factor, and deterministic iteration order.
+14. Frozen MIGA Lua grammar, Lua 5.1 compatibility matrix, explicit type rules, numeric semantics, and restricted feature set.
+15. Record/array/dictionary layouts, zero-based array indexing, supported key types, hash/probing algorithm, capacities, load factor, and deterministic iteration order.
 16. Native 68020 ABI, exact register convention, Boolean/fixed-point representation, runtime-context convention, jump table, relocation model, code arena, stack rules, guards, traps, loop budgets, stop safe points, and cache-clear sequence.
 18. Final source, generated-code, packed-cartridge, resident-cartridge, undo, and module limits.
 19. Cartridge checksum and compression algorithms.

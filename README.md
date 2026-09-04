@@ -49,20 +49,26 @@ its typed-IR evaluator plus `-O1` renderer under `vamos` with:
 gmake compiler-amiga-test
 ```
 
-The implemented subset accepts one annotated `i32` function with up to three
-immutable parameters and 16 typed locals, initialized declarations,
-reassignment, a final `return`, decimal literals, parentheses, unary `-`, `+`,
-`-`, and `*`. The typed IR already carries one explicit entry basic block and
-bounded successor slots for the next `if`/`while` tranche. Assembly generation
-defaults to the value-IR `-O1` backend; `-O0` keeps the stack baseline for
-comparison. `-O1` removes dead assignments and creates bounded ABI frames and
-spill slots when its first eight-register plan is insufficient. See the [compiler
+The implemented subset accepts one explicitly annotated scalar function with
+up to three immutable `i32`/`bool` parameters and 16 explicitly typed locals,
+initialized declarations, reassignment, one final return, arithmetic, all six
+comparisons (`!=` aliases `~=`), and nested `if`/`then`/`else`/`end`. The typed
+IR carries up to 32 basic blocks. Assembly generation defaults to the value-IR
+`-O1` backend;
+`-O0` keeps the stack baseline for comparison. `-O1` removes dead assignments,
+creates typed join values, and uses bounded ABI frames when edge transfers or
+register pressure require them. See the [compiler
 bootstrap](documentation/MIGA-Lua-compiler-bootstrap.md)
 for its exact grammar, the [native ABI
 0.1](documentation/MIGA-Lua-native-ABI-v0.md) for the frozen register/stack
 core, and the [optimization
 strategy](documentation/MIGA-Lua-optimization-strategy.md) for the bounded
 on-Amiga compiler plan.
+
+The version 1 language contract is deliberately strict: parameter, return
+(including `void`), and local types are explicit; implicit conversions,
+polymorphic/union types, and multiple returns are excluded from version 1. Future
+fixed arrays are zero-based, with valid indices `0` through `N - 1`.
 
 Run the inverse dual-playfield decoder and compositor → C2P → decoder differential with:
 

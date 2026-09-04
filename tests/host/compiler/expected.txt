@@ -1,1 +1,1 @@
-PASS  compiler locals, entry block, value IR, O0/O1, and spill frames
+PASS  compiler bool/if CFG, locals, value IR, O0/O1, and spill frames

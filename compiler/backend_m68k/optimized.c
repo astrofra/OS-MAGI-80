@@ -45,31 +45,74 @@ static int fail(struct miga80_diagnostic *diagnostic, unsigned int line,
 static int opcode_has_left(enum miga80_value_opcode opcode)
 {
     return opcode == MIGA80_VALUE_NEG || opcode == MIGA80_VALUE_ADD ||
-           opcode == MIGA80_VALUE_SUB || opcode == MIGA80_VALUE_MUL;
+           opcode == MIGA80_VALUE_SUB || opcode == MIGA80_VALUE_MUL ||
+           (opcode >= MIGA80_VALUE_EQ && opcode <= MIGA80_VALUE_GE_I32) ||
+           opcode == MIGA80_VALUE_PHI;
 }
 
 static int opcode_has_right(enum miga80_value_opcode opcode)
 {
     return opcode == MIGA80_VALUE_ADD || opcode == MIGA80_VALUE_SUB ||
-           opcode == MIGA80_VALUE_MUL;
+           opcode == MIGA80_VALUE_MUL ||
+           (opcode >= MIGA80_VALUE_EQ && opcode <= MIGA80_VALUE_GE_I32) ||
+           opcode == MIGA80_VALUE_PHI;
 }
 
 static int opcode_is_commutative(enum miga80_value_opcode opcode)
 {
-    return opcode == MIGA80_VALUE_ADD || opcode == MIGA80_VALUE_MUL;
+    return opcode == MIGA80_VALUE_ADD || opcode == MIGA80_VALUE_MUL ||
+           opcode == MIGA80_VALUE_EQ || opcode == MIGA80_VALUE_NE;
 }
 
 static int validate_value_function(
     const struct miga80_value_function *function,
     struct miga80_diagnostic *diagnostic)
 {
+    unsigned char seen_blocks[MIGA80_MAX_BASIC_BLOCKS];
     unsigned int index;
 
     if (function->value_count == 0U ||
         function->value_count > MIGA80_MAX_VALUE_INSTRUCTIONS ||
         function->result >= function->value_count ||
-        !function->values[function->result].live) {
+        !function->values[function->result].live ||
+        function->block_count == 0U ||
+        function->block_count > MIGA80_MAX_BASIC_BLOCKS ||
+        function->block_order_count != function->block_count ||
+        function->entry_block >= function->block_count) {
         return fail(diagnostic, 0U, 0U, "invalid O1 value function");
+    }
+    (void)memset(seen_blocks, 0, sizeof(seen_blocks));
+    for (index = 0U; index < function->block_order_count; ++index) {
+        const unsigned int block_index = function->block_order[index];
+        const struct miga80_value_basic_block *block;
+        unsigned int edge;
+
+        if (block_index >= function->block_count || seen_blocks[block_index]) {
+            return fail(diagnostic, 0U, 0U,
+                        "invalid O1 basic-block order");
+        }
+        seen_blocks[block_index] = 1U;
+        block = &function->blocks[block_index];
+        if (block->first_value > function->value_count ||
+            block->value_count > function->value_count - block->first_value ||
+            block->successor_count > MIGA80_MAX_BLOCK_SUCCESSORS ||
+            block->terminator > MIGA80_VALUE_BRANCH ||
+            (block->terminator == MIGA80_VALUE_RETURN &&
+             block->successor_count != 0U) ||
+            (block->terminator == MIGA80_VALUE_JUMP &&
+             block->successor_count != 1U) ||
+            (block->terminator == MIGA80_VALUE_BRANCH &&
+             (block->successor_count != 2U ||
+              block->condition >= function->value_count ||
+              function->values[block->condition].type != MIGA80_TYPE_BOOL))) {
+            return fail(diagnostic, 0U, 0U, "invalid O1 basic block");
+        }
+        for (edge = 0U; edge < block->successor_count; ++edge) {
+            if (block->successors[edge] >= function->block_count) {
+                return fail(diagnostic, 0U, 0U,
+                            "invalid O1 basic-block successor");
+            }
+        }
     }
     for (index = 0U; index < function->value_count; ++index) {
         const struct miga80_value_instruction *value =
@@ -78,9 +121,10 @@ static int validate_value_function(
         if (!value->live) {
             continue;
         }
-        if (value->type != MIGA80_VALUE_I32 ||
+        if ((value->type != MIGA80_TYPE_I32 &&
+             value->type != MIGA80_TYPE_BOOL) ||
             value->opcode < MIGA80_VALUE_CONSTANT ||
-            value->opcode > MIGA80_VALUE_MUL) {
+            value->opcode > MIGA80_VALUE_PHI) {
             return fail(diagnostic, value->line, value->column,
                         "invalid O1 value instruction");
         }
@@ -90,10 +134,28 @@ static int validate_value_function(
                         "invalid O1 value operand");
         }
         if (value->opcode == MIGA80_VALUE_PARAMETER &&
-            value->parameter_index >= function->parameter_count) {
+            (value->parameter_index >= function->parameter_count ||
+             value->type !=
+                 function->parameter_types[value->parameter_index])) {
             return fail(diagnostic, value->line, value->column,
                         "invalid O1 parameter index");
         }
+        if (value->opcode == MIGA80_VALUE_PHI &&
+            (value->left_block >= function->block_count ||
+             value->right_block >= function->block_count ||
+             function->values[value->left].type != value->type ||
+             function->values[value->right].type != value->type)) {
+            return fail(diagnostic, value->line, value->column,
+                        "invalid O1 phi predecessor");
+        }
+        if (value->opcode == MIGA80_VALUE_CONSTANT &&
+            value->type == MIGA80_TYPE_BOOL && value->immediate > 1U) {
+            return fail(diagnostic, value->line, value->column,
+                        "invalid O1 bool constant");
+        }
+    }
+    if (function->values[function->result].type != function->result_type) {
+        return fail(diagnostic, 0U, 0U, "invalid O1 result type");
     }
     return 1;
 }
@@ -151,7 +213,39 @@ static int build_allocation_plan(const struct miga80_value_function *function,
             plan->last_use[value->right] = index;
         }
     }
+    for (index = 0U; index < function->block_count; ++index) {
+        const struct miga80_value_basic_block *block =
+            &function->blocks[index];
+
+        if (block->terminator == MIGA80_VALUE_BRANCH) {
+            const unsigned int end = block->first_value + block->value_count;
+            const unsigned int use = end == 0U ? 0U : end - 1U;
+
+            if (plan->last_use[block->condition] < use) {
+                plan->last_use[block->condition] = use;
+            }
+        }
+    }
     plan->last_use[function->result] = function->value_count;
+
+    for (index = 0U; index < function->value_count; ++index) {
+        const struct miga80_value_instruction *value =
+            &function->values[index];
+
+        if (value->live && value->opcode == MIGA80_VALUE_PHI) {
+            const unsigned int frame_size =
+                (plan->spill_slot_count + 1U) * 4U;
+
+            if (plan->spill_slot_count == MIGA80_MAX_VALUE_INSTRUCTIONS ||
+                !miga80_abi_frame_size_is_valid(frame_size)) {
+                return fail(diagnostic, value->line, value->column,
+                            "O1 phi frame exceeds ABI limit");
+            }
+            plan->spill_slots[index] = plan->spill_slot_count;
+            spill_owners[plan->spill_slot_count++] = index;
+            plan->saved_registers[MIGA80_SPILL_SCRATCH_REGISTER] = 1;
+        }
+    }
 
     for (index = 0U; index < function->value_count; ++index) {
         const struct miga80_value_instruction *value =
@@ -186,6 +280,25 @@ static int build_allocation_plan(const struct miga80_value_function *function,
         int destination = MIGA80_NO_REGISTER;
         unsigned int destination_spill = MIGA80_NO_SPILL_SLOT;
         unsigned int preferred = MIGA80_DATA_REGISTER_COUNT;
+        unsigned int owner_index;
+
+        for (owner_index = 0U; owner_index < register_count; ++owner_index) {
+            const unsigned int owner = owners[owner_index];
+
+            if (owner != MIGA80_INVALID_VALUE &&
+                plan->last_use[owner] < index) {
+                owners[owner_index] = MIGA80_INVALID_VALUE;
+            }
+        }
+        for (owner_index = 0U; owner_index < plan->spill_slot_count;
+             ++owner_index) {
+            const unsigned int owner = spill_owners[owner_index];
+
+            if (owner != MIGA80_INVALID_VALUE &&
+                plan->last_use[owner] < index) {
+                spill_owners[owner_index] = MIGA80_INVALID_VALUE;
+            }
+        }
 
         if (!value->live || value->opcode == MIGA80_VALUE_CONSTANT ||
             value->opcode == MIGA80_VALUE_PARAMETER) {
@@ -196,6 +309,28 @@ static int build_allocation_plan(const struct miga80_value_function *function,
         }
         if (opcode_has_right(value->opcode)) {
             right_register = plan->registers[value->right];
+        }
+
+        if (value->opcode == MIGA80_VALUE_PHI) {
+            if (left_register != MIGA80_NO_REGISTER &&
+                plan->last_use[value->left] == index) {
+                owners[left_register] = MIGA80_INVALID_VALUE;
+            }
+            if (right_register != MIGA80_NO_REGISTER &&
+                plan->last_use[value->right] == index) {
+                owners[right_register] = MIGA80_INVALID_VALUE;
+            }
+            if (plan->spill_slots[value->left] != MIGA80_NO_SPILL_SLOT &&
+                plan->last_use[value->left] == index) {
+                spill_owners[plan->spill_slots[value->left]] =
+                    MIGA80_INVALID_VALUE;
+            }
+            if (plan->spill_slots[value->right] != MIGA80_NO_SPILL_SLOT &&
+                plan->last_use[value->right] == index) {
+                spill_owners[plan->spill_slots[value->right]] =
+                    MIGA80_INVALID_VALUE;
+            }
+            continue;
         }
 
         if (function->result == index) {
@@ -462,6 +597,43 @@ static int store_spilled_result(FILE *output,
                        data_register_name(source), spill_offset(plan, index));
 }
 
+static int emit_comparison(FILE *output,
+                           const struct miga80_value_function *function,
+                           const struct allocation_plan *plan,
+                           enum miga80_value_opcode opcode,
+                           unsigned int source, int destination)
+{
+    const struct miga80_value_instruction *operand = &function->values[source];
+    const char *condition = "seq";
+    int compared;
+
+    if (opcode == MIGA80_VALUE_NE) {
+        condition = "sne";
+    } else if (opcode == MIGA80_VALUE_LT_I32) {
+        condition = "slt";
+    } else if (opcode == MIGA80_VALUE_LE_I32) {
+        condition = "sle";
+    } else if (opcode == MIGA80_VALUE_GT_I32) {
+        condition = "sgt";
+    } else if (opcode == MIGA80_VALUE_GE_I32) {
+        condition = "sge";
+    }
+    if (operand->opcode == MIGA80_VALUE_CONSTANT) {
+        compared = output_line(output, "        cmp.l   #0x%08x,%s\n",
+                               (unsigned int)operand->immediate,
+                               data_register_name(destination));
+    } else {
+        compared = emit_register_source(output, "cmp.l", plan, source,
+                                        destination);
+    }
+    return compared &&
+           output_line(output,
+                       "        %-7s %s\n"
+                       "        and.l   #1,%s\n",
+                       condition, data_register_name(destination),
+                       data_register_name(destination));
+}
+
 static int emit_value(FILE *output,
                       const struct miga80_value_function *function,
                       const struct allocation_plan *plan, unsigned int index)
@@ -490,6 +662,13 @@ static int emit_value(FILE *output,
         return 0;
     }
 
+    if (value->opcode >= MIGA80_VALUE_EQ &&
+        value->opcode <= MIGA80_VALUE_GE_I32) {
+        emitted = emit_comparison(output, function, plan, value->opcode,
+                                  source, destination);
+        return emitted &&
+               store_spilled_result(output, plan, index, destination);
+    }
     if (function->values[source].opcode == MIGA80_VALUE_CONSTANT) {
         if (value->opcode == MIGA80_VALUE_ADD) {
             emitted = emit_add_immediate(
@@ -540,6 +719,133 @@ static int build_saved_register_list(const struct allocation_plan *plan,
     return 1;
 }
 
+static int emit_phi_edge(FILE *output,
+                         const struct miga80_value_function *function,
+                         const struct allocation_plan *plan,
+                         unsigned int predecessor,
+                         unsigned int successor)
+{
+    const struct miga80_value_basic_block *block =
+        &function->blocks[successor];
+    unsigned int offset;
+
+    for (offset = 0U; offset < block->value_count; ++offset) {
+        const unsigned int phi_index = block->first_value + offset;
+        const struct miga80_value_instruction *phi =
+            &function->values[phi_index];
+        unsigned int source;
+
+        if (!phi->live || phi->opcode != MIGA80_VALUE_PHI) {
+            continue;
+        }
+        if (phi->left_block == predecessor) {
+            source = phi->left;
+        } else if (phi->right_block == predecessor) {
+            source = phi->right;
+        } else {
+            return 0;
+        }
+        if (plan->spill_slots[phi_index] == MIGA80_NO_SPILL_SLOT) {
+            return 0;
+        }
+        if (function->values[source].opcode == MIGA80_VALUE_CONSTANT) {
+            if (!output_line(output, "        move.l  #0x%08x,-%u(%%a6)\n",
+                             (unsigned int)function->values[source].immediate,
+                             spill_offset(plan, phi_index))) {
+                return 0;
+            }
+        } else if (plan->registers[source] != MIGA80_NO_REGISTER) {
+            if (!output_line(output, "        move.l  %s,-%u(%%a6)\n",
+                             data_register_name(plan->registers[source]),
+                             spill_offset(plan, phi_index))) {
+                return 0;
+            }
+        } else if (plan->spill_slots[source] ==
+                   plan->spill_slots[phi_index]) {
+            continue;
+        } else if (plan->spill_slots[source] != MIGA80_NO_SPILL_SLOT) {
+            if (!output_line(output,
+                             "        move.l  -%u(%%a6),%%d7\n"
+                             "        move.l  %%d7,-%u(%%a6)\n",
+                             spill_offset(plan, source),
+                             spill_offset(plan, phi_index))) {
+                return 0;
+            }
+        } else {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int emit_epilogue(FILE *output, const char *saved_registers,
+                         unsigned int frame_size)
+{
+    if (saved_registers[0] != '\0' &&
+        !output_line(output, "        movem.l (%%a7)+,%s\n",
+                     saved_registers)) {
+        return 0;
+    }
+    if (frame_size != 0U && !output_line(output, "        unlk    %%a6\n")) {
+        return 0;
+    }
+    return output_line(output, "        rts\n");
+}
+
+static int emit_jump_edge(FILE *output,
+                          const struct miga80_value_function *function,
+                          const struct allocation_plan *plan,
+                          unsigned int predecessor,
+                          unsigned int successor)
+{
+    return emit_phi_edge(output, function, plan, predecessor, successor) &&
+           output_line(output, "        bra     .L_%s_b%u\n", function->name,
+                       successor);
+}
+
+static int emit_branch(FILE *output,
+                       const struct miga80_value_function *function,
+                       const struct allocation_plan *plan,
+                       unsigned int block_index)
+{
+    const struct miga80_value_basic_block *block =
+        &function->blocks[block_index];
+    const struct miga80_value_instruction *condition =
+        &function->values[block->condition];
+
+    if (condition->opcode == MIGA80_VALUE_CONSTANT) {
+        const unsigned int successor =
+            condition->immediate != 0U ? block->successors[0]
+                                       : block->successors[1];
+
+        return emit_jump_edge(output, function, plan, block_index, successor);
+    }
+    if (plan->registers[block->condition] != MIGA80_NO_REGISTER) {
+        if (!output_line(output, "        tst.l   %s\n",
+                         data_register_name(
+                             plan->registers[block->condition]))) {
+            return 0;
+        }
+    } else if (plan->spill_slots[block->condition] != MIGA80_NO_SPILL_SLOT) {
+        if (!output_line(output,
+                         "        move.l  -%u(%%a6),%%d7\n"
+                         "        tst.l   %%d7\n",
+                         spill_offset(plan, block->condition))) {
+            return 0;
+        }
+    } else {
+        return 0;
+    }
+    return output_line(output, "        beq     .L_%s_b%u_false\n",
+                       function->name, block_index) &&
+           emit_jump_edge(output, function, plan, block_index,
+                          block->successors[0]) &&
+           output_line(output, ".L_%s_b%u_false:\n", function->name,
+                       block_index) &&
+           emit_jump_edge(output, function, plan, block_index,
+                          block->successors[1]);
+}
+
 static int emit_allocated_function(
     FILE *output, const struct miga80_value_function *function,
     const struct allocation_plan *plan,
@@ -547,7 +853,7 @@ static int emit_allocated_function(
 {
     char saved_registers[64];
     unsigned int frame_size;
-    unsigned int index;
+    unsigned int order_index;
 
     frame_size = plan->spill_slot_count * 4U;
     if (!miga80_abi_frame_size_is_valid(frame_size) ||
@@ -581,30 +887,48 @@ static int emit_allocated_function(
         return fail(diagnostic, 0U, 0U, "unable to write O1 prologue");
     }
 
-    for (index = 0U; index < function->value_count; ++index) {
-        const struct miga80_value_instruction *value =
-            &function->values[index];
+    for (order_index = 0U; order_index < function->block_order_count;
+         ++order_index) {
+        const unsigned int block_index = function->block_order[order_index];
+        const struct miga80_value_basic_block *block =
+            &function->blocks[block_index];
+        unsigned int offset;
 
-        if (value->live && value->opcode != MIGA80_VALUE_CONSTANT &&
-            value->opcode != MIGA80_VALUE_PARAMETER &&
-            !emit_value(output, function, plan, index)) {
-            return fail(diagnostic, value->line, value->column,
-                        "unable to write O1 value instruction");
+        if (!output_line(output, ".L_%s_b%u:\n", function->name,
+                         block_index)) {
+            return fail(diagnostic, 0U, 0U, "unable to write O1 block label");
+        }
+        for (offset = 0U; offset < block->value_count; ++offset) {
+            const unsigned int index = block->first_value + offset;
+            const struct miga80_value_instruction *value =
+                &function->values[index];
+
+            if (value->live && value->opcode != MIGA80_VALUE_CONSTANT &&
+                value->opcode != MIGA80_VALUE_PARAMETER &&
+                value->opcode != MIGA80_VALUE_PHI &&
+                !emit_value(output, function, plan, index)) {
+                return fail(diagnostic, value->line, value->column,
+                            "unable to write O1 value instruction");
+            }
+        }
+        if (block->terminator == MIGA80_VALUE_BRANCH) {
+            if (!emit_branch(output, function, plan, block_index)) {
+                return fail(diagnostic, 0U, 0U,
+                            "unable to write O1 conditional branch");
+            }
+        } else if (block->terminator == MIGA80_VALUE_JUMP) {
+            if (!emit_jump_edge(output, function, plan, block_index,
+                                block->successors[0])) {
+                return fail(diagnostic, 0U, 0U,
+                            "unable to write O1 jump edge");
+            }
+        } else if (!emit_move(output, function, plan, function->result, 0) ||
+                   !emit_epilogue(output, saved_registers, frame_size)) {
+            return fail(diagnostic, 0U, 0U,
+                        "unable to write O1 return");
         }
     }
-    if (!emit_move(output, function, plan, function->result, 0)) {
-        return fail(diagnostic, 0U, 0U, "unable to write O1 result");
-    }
-    if (saved_registers[0] != '\0' &&
-        !output_line(output, "        movem.l (%%a7)+,%s\n",
-                     saved_registers)) {
-        return fail(diagnostic, 0U, 0U, "unable to write O1 epilogue");
-    }
-    if (frame_size != 0U && !output_line(output, "        unlk    %%a6\n")) {
-        return fail(diagnostic, 0U, 0U, "unable to close O1 spill frame");
-    }
-    if (!output_line(output, "        rts\n") || fflush(output) != 0 ||
-        ferror(output)) {
+    if (fflush(output) != 0 || ferror(output)) {
         return fail(diagnostic, 0U, 0U, "unable to finish O1 assembly");
     }
     return 1;
