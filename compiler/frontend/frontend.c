@@ -10,6 +10,7 @@ enum token_kind {
     TOKEN_IDENTIFIER,
     TOKEN_INTEGER,
     TOKEN_FUNCTION,
+    TOKEN_LOCAL,
     TOKEN_RETURN,
     TOKEN_END,
     TOKEN_I32,
@@ -17,6 +18,7 @@ enum token_kind {
     TOKEN_RIGHT_PAREN,
     TOKEN_COLON,
     TOKEN_COMMA,
+    TOKEN_EQUAL,
     TOKEN_PLUS,
     TOKEN_MINUS,
     TOKEN_STAR
@@ -149,6 +151,8 @@ static struct token next_token(struct lexer *lexer)
         token.kind = TOKEN_IDENTIFIER;
         if (token_is_word(&token, "function")) {
             token.kind = TOKEN_FUNCTION;
+        } else if (token_is_word(&token, "local")) {
+            token.kind = TOKEN_LOCAL;
         } else if (token_is_word(&token, "return")) {
             token.kind = TOKEN_RETURN;
         } else if (token_is_word(&token, "end")) {
@@ -193,6 +197,9 @@ static struct token next_token(struct lexer *lexer)
     case ',':
         token.kind = TOKEN_COMMA;
         break;
+    case '=':
+        token.kind = TOKEN_EQUAL;
+        break;
     case '+':
         token.kind = TOKEN_PLUS;
         break;
@@ -222,6 +229,8 @@ static const char *token_name(enum token_kind kind)
         return "integer";
     case TOKEN_FUNCTION:
         return "'function'";
+    case TOKEN_LOCAL:
+        return "'local'";
     case TOKEN_RETURN:
         return "'return'";
     case TOKEN_END:
@@ -236,6 +245,8 @@ static const char *token_name(enum token_kind kind)
         return "':'";
     case TOKEN_COMMA:
         return "','";
+    case TOKEN_EQUAL:
+        return "'='";
     case TOKEN_PLUS:
         return "'+'";
     case TOKEN_MINUS:
@@ -287,7 +298,7 @@ static int copy_name(struct parser *parser, char *destination,
 
 static int add_node(struct parser *parser, enum miga80_ast_kind kind,
                     unsigned int line, unsigned int column, int left,
-                    int right, uint32_t value, unsigned int parameter_index)
+                    int right, uint32_t value, unsigned int symbol_index)
 {
     struct miga80_ast_node *node;
     const unsigned int index = parser->function->node_count;
@@ -306,7 +317,7 @@ static int add_node(struct parser *parser, enum miga80_ast_kind kind,
     node->left = left;
     node->right = right;
     node->value = value;
-    node->parameter_index = parameter_index;
+    node->symbol_index = symbol_index;
     ++parser->function->node_count;
     return (int)index;
 }
@@ -319,6 +330,21 @@ static int find_parameter(const struct miga80_ast_function *function,
     for (index = 0; index < function->parameter_count; ++index) {
         if (strlen(function->parameter_names[index]) == token->length &&
             memcmp(function->parameter_names[index], token->start,
+                   token->length) == 0) {
+            return (int)index;
+        }
+    }
+    return -1;
+}
+
+static int find_local(const struct miga80_ast_function *function,
+                      const struct token *token)
+{
+    unsigned int index;
+
+    for (index = 0U; index < function->local_count; ++index) {
+        if (strlen(function->local_names[index]) == token->length &&
+            memcmp(function->local_names[index], token->start,
                    token->length) == 0) {
             return (int)index;
         }
@@ -340,8 +366,9 @@ static int parse_primary(struct parser *parser)
     }
     if (token.kind == TOKEN_IDENTIFIER) {
         const int parameter = find_parameter(parser->function, &token);
+        const int local = find_local(parser->function, &token);
 
-        if (parameter < 0) {
+        if (parameter < 0 && local < 0) {
             set_diagnostic(parser->diagnostic, token.line, token.column,
                            "unknown identifier '%.*s'", (int)token.length,
                            token.start);
@@ -349,9 +376,15 @@ static int parse_primary(struct parser *parser)
             return MIGA80_INVALID_NODE;
         }
         parser_advance(parser);
-        return add_node(parser, MIGA80_AST_PARAMETER_I32, token.line,
+        if (parameter >= 0) {
+            return add_node(parser, MIGA80_AST_PARAMETER_I32, token.line,
+                            token.column, MIGA80_INVALID_NODE,
+                            MIGA80_INVALID_NODE, 0U,
+                            (unsigned int)parameter);
+        }
+        return add_node(parser, MIGA80_AST_LOCAL_I32, token.line,
                         token.column, MIGA80_INVALID_NODE,
-                        MIGA80_INVALID_NODE, 0U, (unsigned int)parameter);
+                        MIGA80_INVALID_NODE, 0U, (unsigned int)local);
     }
     if (token.kind == TOKEN_LEFT_PAREN) {
         int expression;
@@ -456,6 +489,112 @@ static int parse_parameter(struct parser *parser)
     return 1;
 }
 
+static int add_statement(struct parser *parser,
+                         enum miga80_ast_statement_kind kind,
+                         unsigned int local_index, int expression,
+                         unsigned int line, unsigned int column)
+{
+    struct miga80_ast_statement *statement;
+
+    if (parser->function->statement_count == MIGA80_MAX_STATEMENTS) {
+        set_diagnostic(parser->diagnostic, line, column,
+                       "function body exceeds %u statements",
+                       MIGA80_MAX_STATEMENTS);
+        parser->failed = 1;
+        return 0;
+    }
+    statement =
+        &parser->function->statements[parser->function->statement_count++];
+    statement->kind = kind;
+    statement->local_index = local_index;
+    statement->expression = expression;
+    statement->line = line;
+    statement->column = column;
+    return 1;
+}
+
+static int local_name_is_available(struct parser *parser,
+                                   const struct token *name)
+{
+    if (find_parameter(parser->function, name) >= 0 ||
+        find_local(parser->function, name) >= 0) {
+        set_diagnostic(parser->diagnostic, name->line, name->column,
+                       "duplicate local '%.*s'", (int)name->length,
+                       name->start);
+        parser->failed = 1;
+        return 0;
+    }
+    return 1;
+}
+
+static int parse_local_declaration(struct parser *parser)
+{
+    struct token name;
+    int expression;
+    unsigned int local_index;
+
+    parser_advance(parser);
+    name = parser->current;
+    if (!expect(parser, TOKEN_IDENTIFIER)) {
+        return 0;
+    }
+    if (parser->function->local_count == MIGA80_MAX_LOCALS) {
+        set_diagnostic(parser->diagnostic, name.line, name.column,
+                       "function exceeds %u local variables",
+                       MIGA80_MAX_LOCALS);
+        parser->failed = 1;
+        return 0;
+    }
+    if (!local_name_is_available(parser, &name) ||
+        !expect(parser, TOKEN_COLON) || !expect(parser, TOKEN_I32) ||
+        !expect(parser, TOKEN_EQUAL)) {
+        return 0;
+    }
+    expression = parse_expression(parser);
+    if (parser->failed) {
+        return 0;
+    }
+    local_index = parser->function->local_count;
+    if (!copy_name(parser, parser->function->local_names[local_index],
+                   &name)) {
+        return 0;
+    }
+    ++parser->function->local_count;
+    return add_statement(parser, MIGA80_AST_LOCAL_INITIALIZE_I32,
+                         local_index, expression, name.line, name.column);
+}
+
+static int parse_assignment(struct parser *parser)
+{
+    const struct token name = parser->current;
+    const int local = find_local(parser->function, &name);
+    int expression;
+
+    if (local < 0) {
+        if (find_parameter(parser->function, &name) >= 0) {
+            set_diagnostic(parser->diagnostic, name.line, name.column,
+                           "cannot assign to parameter '%.*s'",
+                           (int)name.length, name.start);
+        } else {
+            set_diagnostic(parser->diagnostic, name.line, name.column,
+                           "unknown local assignment target '%.*s'",
+                           (int)name.length, name.start);
+        }
+        parser->failed = 1;
+        return 0;
+    }
+    if (!expect(parser, TOKEN_IDENTIFIER) || !expect(parser, TOKEN_EQUAL)) {
+        return 0;
+    }
+    expression = parse_expression(parser);
+    if (parser->failed) {
+        return 0;
+    }
+    return add_statement(parser, MIGA80_AST_LOCAL_ASSIGN_I32,
+                         (unsigned int)local, expression, name.line,
+                         name.column);
+}
+
 int miga80_parse_function(const char *source, size_t source_size,
                           struct miga80_ast_function *function,
                           struct miga80_diagnostic *diagnostic)
@@ -499,12 +638,34 @@ int miga80_parse_function(const char *source, size_t source_size,
         }
     }
     if (!expect(&parser, TOKEN_RIGHT_PAREN) ||
-        !expect(&parser, TOKEN_COLON) || !expect(&parser, TOKEN_I32) ||
-        !expect(&parser, TOKEN_RETURN)) {
+        !expect(&parser, TOKEN_COLON) || !expect(&parser, TOKEN_I32)) {
         return 0;
     }
 
-    function->result = parse_expression(&parser);
+    while (!parser.failed && (parser.current.kind == TOKEN_LOCAL ||
+                              parser.current.kind == TOKEN_IDENTIFIER)) {
+        if (parser.current.kind == TOKEN_LOCAL) {
+            if (!parse_local_declaration(&parser)) {
+                return 0;
+            }
+        } else if (!parse_assignment(&parser)) {
+            return 0;
+        }
+    }
+    {
+        const struct token return_token = parser.current;
+
+        if (!expect(&parser, TOKEN_RETURN)) {
+            return 0;
+        }
+        function->result = parse_expression(&parser);
+        if (parser.failed ||
+            !add_statement(&parser, MIGA80_AST_RETURN_I32, 0U,
+                           function->result, return_token.line,
+                           return_token.column)) {
+            return 0;
+        }
+    }
     if (parser.failed || !expect(&parser, TOKEN_END) ||
         !expect(&parser, TOKEN_EOF)) {
         return 0;

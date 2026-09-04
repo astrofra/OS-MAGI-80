@@ -1,6 +1,6 @@
 # MIGA Lua Optimization Strategy
 
-**Status:** straight-line value IR, `-O1`, spilling, and frame layout implemented
+**Status:** typed locals, entry basic block, `-O1`, spilling, and frame layout implemented
 
 MIGA Lua is a statically typed, ahead-of-time compiled dialect designed for
 native 68EC020/68020 code. Familiar Lua syntax is a usability goal. Dynamic Lua
@@ -41,12 +41,15 @@ typed semantic IR
     -> shared low-level m68k instruction model
 ```
 
-The straight-line `i32` bootstrap now lowers into the value IR. It folds
+The typed stack IR now has an explicit entry basic block, bounded successor
+slots, and typed local load/store operations. The straight-line `i32` bootstrap
+renames each local to its current value while lowering into value IR. It folds
 constants with defined 32-bit wrapping, applies algebraic identities, marks
-dead values, computes live intervals, and allocates `D0-D7` with a bounded
-linear scan. Used `D3-D7` registers are preserved once with `MOVEM`; expression
-values are not pushed to `A7`. Constant multiplication by two or three is
-strength-reduced when the available registers make that profitable.
+dead values and overwritten assignments, computes live intervals, and
+allocates `D0-D7` with a bounded linear scan. Used `D3-D7` registers are
+preserved once with `MOVEM`; expression values are not pushed to `A7`. Constant
+multiplication by two or three is strength-reduced when the available
+registers make that profitable.
 
 The allocator first tries all eight data registers, so ordinary leaf functions
 do not lose `D7` merely to reserve a scratch register. If that plan needs a
@@ -57,11 +60,15 @@ negative `A6` offsets, consumes spilled operands directly as 68020 memory
 operands where possible, and preserves `D7` with the other used saved
 registers. Frame size is checked before any assembly is emitted.
 
-Basic blocks, copy propagation across control-flow joins, address-register
-allocation, frame layout for source locals, and the shared low-level m68k model
-remain pending. Global value numbering, expensive interprocedural optimization,
-speculative dynamic typing, and exhaustive instruction scheduling remain
-excluded until measurements justify their compiler cost.
+`-O0` gives every source local a physical negative `A6` slot after the
+parameter slots. `-O1` needs no local slot when straight-line renaming and
+liveness keep the value in registers; only allocator spills require a frame.
+Multi-block CFG construction for `if`/`while`, value merging at control-flow
+joins, copy propagation across those joins, address-register allocation, and
+the shared low-level m68k model remain pending. Global value numbering,
+expensive interprocedural optimization, speculative dynamic typing, and
+exhaustive instruction scheduling remain excluded until measurements justify
+their compiler cost.
 
 The first 68020-specific choices include keeping scalars in data registers,
 keeping future addresses in address registers, folding constant displacements
@@ -97,9 +104,9 @@ memory-operation widths. Stable curated kernels may receive reviewed limits.
 FS-UAE remains an integration check, while timing decisions require repeated
 measurements on a stock physical A1200 under a declared DMA and memory profile.
 
-The first optimization milestone is met. Across three reviewed expression
-corpora and six edge inputs each, both optimization levels agree with the typed
-IR under Musashi. The current regression measurements are shown as code bytes /
+The first optimization milestone is met. Across four reviewed source corpora
+and six edge inputs each, both optimization levels agree with the typed IR
+under Musashi. The current regression measurements are shown as code bytes /
 executed instructions / maximum callee stack bytes:
 
 | Corpus | `-O0` | `-O1` |
@@ -107,15 +114,16 @@ executed instructions / maximum callee stack bytes:
 | arithmetic and parameter reuse | 116 / 41 / 28 | 28 / 12 / 4 |
 | folding, negation, and identities | 132 / 46 / 28 | 28 / 10 / 4 |
 | register pressure and repeated products | 120 / 43 / 32 | 40 / 13 / 8 |
+| typed locals, reassignment, and dead store | 160 / 53 / 32 | 28 / 12 / 4 |
 
 The register-pressure corpus forces simultaneous `D3/D4` allocation and
 verifies their ABI preservation. A separate deliberately pressure-heavy value
 IR fixture forces three reusable spill slots; its 96-byte image executes 33
 instructions with 36 callee stack bytes and agrees with the source-level oracle
-for six edge inputs. This brings the current Musashi compiler total to 42
+for six edge inputs. This brings the current Musashi compiler total to 54
 executions.
 
-The `-Os` 68020/libnix compiler currently has a 28,468-byte linked
+The `-Os` 68020/libnix compiler currently has a 31,784-byte linked
 text/data/BSS footprint. Its host and Amiga builds emit byte-identical ordinary
-and spilling `-O1` assembly. These counts are regression signals, not A1200
-cycle claims.
+local-heavy and spilling `-O1` assembly. These counts are regression signals,
+not A1200 cycle claims.

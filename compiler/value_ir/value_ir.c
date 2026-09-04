@@ -201,6 +201,7 @@ int miga80_build_value_ir(const struct miga80_ir_function *source,
 {
     unsigned int stack[MIGA80_MAX_IR_STACK];
     unsigned int parameter_values[MIGA80_MAX_PARAMETERS];
+    unsigned int local_values[MIGA80_MAX_LOCALS];
     unsigned int stack_size = 0U;
     unsigned int index;
     int returned = 0;
@@ -213,8 +214,14 @@ int miga80_build_value_ir(const struct miga80_ir_function *source,
     (void)memcpy(result->name, source->name, sizeof(result->name));
     result->parameter_count = source->parameter_count;
     result->result = MIGA80_INVALID_VALUE;
+    if (!miga80_validate_straight_line_ir(source, diagnostic)) {
+        return 0;
+    }
     for (index = 0; index < MIGA80_MAX_PARAMETERS; ++index) {
         parameter_values[index] = MIGA80_INVALID_VALUE;
+    }
+    for (index = 0; index < MIGA80_MAX_LOCALS; ++index) {
+        local_values[index] = MIGA80_INVALID_VALUE;
     }
 
     for (index = 0; index < source->instruction_count; ++index) {
@@ -248,6 +255,24 @@ int miga80_build_value_ir(const struct miga80_ir_function *source,
                 parameter_values[instruction->operand] = value;
             }
             break;
+        case MIGA80_IR_PUSH_LOCAL_I32:
+            if (instruction->operand >= source->local_count ||
+                local_values[instruction->operand] == MIGA80_INVALID_VALUE) {
+                return fail(diagnostic, instruction->line,
+                            instruction->column,
+                            "typed IR local is invalid during value lowering");
+            }
+            value = local_values[instruction->operand];
+            break;
+        case MIGA80_IR_STORE_LOCAL_I32:
+            if (instruction->operand >= source->local_count ||
+                stack_size != 1U) {
+                return fail(diagnostic, instruction->line,
+                            instruction->column,
+                            "typed IR local store is invalid during value lowering");
+            }
+            local_values[instruction->operand] = stack[--stack_size];
+            continue;
         case MIGA80_IR_NEG_I32:
             if (stack_size < 1U) {
                 return fail(diagnostic, instruction->line,

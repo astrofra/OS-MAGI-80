@@ -35,7 +35,7 @@ balance, callee-saved registers, memory guards, and instruction limit, and
 retains a short disassembly trace on failure. It is the foundation for the Lua
 compiler path exercised below.
 
-Build the initial typed MIGA Lua expression compiler, verify native ABI 0.1,
+Build the initial typed MIGA Lua compiler, verify native ABI 0.1,
 and validate generated 68020 code against its typed-IR oracle with:
 
 ```sh
@@ -50,10 +50,13 @@ gmake compiler-amiga-test
 ```
 
 The implemented subset accepts one annotated `i32` function with up to three
-parameters, `return`, decimal literals, parentheses, unary `-`, `+`, `-`, and
-`*`. Assembly generation defaults to the value-IR `-O1` backend; `-O0` keeps
-the stack baseline for comparison. `-O1` creates bounded ABI frames and spill
-slots when its first eight-register plan is insufficient. See the [compiler
+immutable parameters and 16 typed locals, initialized declarations,
+reassignment, a final `return`, decimal literals, parentheses, unary `-`, `+`,
+`-`, and `*`. The typed IR already carries one explicit entry basic block and
+bounded successor slots for the next `if`/`while` tranche. Assembly generation
+defaults to the value-IR `-O1` backend; `-O0` keeps the stack baseline for
+comparison. `-O1` removes dead assignments and creates bounded ABI frames and
+spill slots when its first eight-register plan is insufficient. See the [compiler
 bootstrap](documentation/MIGA-Lua-compiler-bootstrap.md)
 for its exact grammar, the [native ABI
 0.1](documentation/MIGA-Lua-native-ABI-v0.md) for the frozen register/stack

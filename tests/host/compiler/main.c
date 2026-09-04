@@ -219,6 +219,109 @@ static int test_constant_folding(void)
     return emitted && closed == 0;
 }
 
+static int test_locals_and_entry_block(void)
+{
+    static const char source[] =
+        "function locals(a: i32, b: i32, c: i32): i32 "
+        "local x: i32 = a * 3 + b "
+        "local y: i32 = x + c "
+        "x = y - a y = x * 2 x = 12345 return y + c end";
+    static const uint32_t arguments[] = {7U, 5U, 2U};
+    struct miga80_ir_function ir;
+    struct miga80_value_function value_ir;
+    struct miga80_diagnostic diagnostic;
+    char assembly_text[4096];
+    unsigned int stores = 0U;
+    unsigned int local_loads = 0U;
+    unsigned int index;
+    uint32_t result;
+    size_t assembly_size;
+    FILE *assembly;
+    int dead_assignment_found = 0;
+    int emitted;
+    int closed;
+
+    if (!compile_source(source, &ir, &diagnostic) || ir.local_count != 2U ||
+        ir.block_count != 1U || ir.entry_block != 0U ||
+        ir.blocks[0].first_instruction != 0U ||
+        ir.blocks[0].instruction_count != ir.instruction_count ||
+        ir.blocks[0].successor_count != 0U ||
+        ir.blocks[0].successors[0] != MIGA80_INVALID_BLOCK ||
+        ir.blocks[0].successors[1] != MIGA80_INVALID_BLOCK ||
+        !miga80_evaluate_ir(&ir, arguments, ARRAY_COUNT(arguments), &result,
+                            &diagnostic) ||
+        result != 44U) {
+        return 0;
+    }
+    for (index = 0U; index < ir.instruction_count; ++index) {
+        if (ir.instructions[index].opcode == MIGA80_IR_STORE_LOCAL_I32) {
+            ++stores;
+        } else if (ir.instructions[index].opcode ==
+                   MIGA80_IR_PUSH_LOCAL_I32) {
+            ++local_loads;
+        }
+    }
+    if (stores != 5U || local_loads != 4U ||
+        !miga80_build_value_ir(&ir, &value_ir, &diagnostic)) {
+        return 0;
+    }
+    for (index = 0U; index < value_ir.value_count; ++index) {
+        if (value_ir.values[index].opcode == MIGA80_VALUE_CONSTANT &&
+            value_ir.values[index].immediate == 12345U) {
+            dead_assignment_found = !value_ir.values[index].live;
+        }
+    }
+    if (!dead_assignment_found) {
+        return 0;
+    }
+
+    assembly = tmpfile();
+    if (assembly == NULL) {
+        return 0;
+    }
+    emitted = miga80_emit_gnu_m68k(assembly, &ir, &diagnostic);
+    rewind(assembly);
+    assembly_size =
+        fread(assembly_text, 1U, sizeof(assembly_text) - 1U, assembly);
+    assembly_text[assembly_size] = '\0';
+    if (ferror(assembly) ||
+        strstr(assembly_text, "link.w  %a6,#-20") == NULL ||
+        strstr(assembly_text, "#0x00003039") == NULL) {
+        emitted = 0;
+    }
+    closed = fclose(assembly);
+    if (!emitted || closed != 0) {
+        return 0;
+    }
+
+    assembly = tmpfile();
+    if (assembly == NULL) {
+        return 0;
+    }
+    emitted = miga80_emit_gnu_m68k_o1(assembly, &value_ir, &diagnostic);
+    rewind(assembly);
+    assembly_size =
+        fread(assembly_text, 1U, sizeof(assembly_text) - 1U, assembly);
+    assembly_text[assembly_size] = '\0';
+    if (ferror(assembly) || strstr(assembly_text, "#0x00003039") != NULL ||
+        strstr(assembly_text, "link.w") != NULL) {
+        emitted = 0;
+    }
+    closed = fclose(assembly);
+    if (!emitted || closed != 0) {
+        return 0;
+    }
+
+    ir.block_count = 2U;
+    if (miga80_evaluate_ir(&ir, arguments, ARRAY_COUNT(arguments), &result,
+                           &diagnostic) ||
+        strstr(diagnostic.message, "control flow") == NULL) {
+        return 0;
+    }
+    return !miga80_build_value_ir(&ir, &value_ir, &diagnostic) &&
+           strstr(diagnostic.message, "control flow") != NULL;
+}
+
 static int test_spill_frame(void)
 {
     struct miga80_value_function value_ir;
@@ -280,6 +383,7 @@ int main(int argc, char **argv)
     }
 
     if (!test_valid_function() || !test_constant_folding() ||
+        !test_locals_and_entry_block() ||
         !test_spill_frame() ||
         !expect_error("function f(a): i32 return a end", 1U, 13U,
                       "expected ':'") ||
@@ -293,11 +397,22 @@ int main(int argc, char **argv)
                       20U, "duplicate parameter") ||
         !expect_error("function f(a: i32, b: i32, c: i32, d: i32): i32 "
                       "return a end",
-                      1U, 36U, "at most 3 parameters")) {
+                      1U, 36U, "at most 3 parameters") ||
+        !expect_error("function f(a: i32): i32 local a: i32 = 1 return a end",
+                      1U, 31U, "duplicate local") ||
+        !expect_error("function f(): i32 local x: i32 = 1 local x: i32 = 2 "
+                      "return x end",
+                      1U, 42U, "duplicate local") ||
+        !expect_error("function f(a: i32): i32 a = 1 return a end", 1U,
+                      25U, "cannot assign to parameter") ||
+        !expect_error("function f(): i32 x = 1 return x end", 1U, 19U,
+                      "unknown local assignment target") ||
+        !expect_error("function f(): i32 local x: i32 = x return x end", 1U,
+                      34U, "unknown identifier")) {
         fprintf(stderr, "compiler frontend/IR regression failed\n");
         return 1;
     }
 
-    printf("PASS  compiler frontend, typed/value IR, O0/O1 renderers, and spill frames\n");
+    printf("PASS  compiler locals, entry block, value IR, O0/O1, and spill frames\n");
     return 0;
 }

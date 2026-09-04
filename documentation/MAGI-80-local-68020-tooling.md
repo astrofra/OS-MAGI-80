@@ -565,15 +565,17 @@ circular disassembly trace for failures. Run it with `gmake miga68k-test`.
 ### Phase 1 — connect the compiler
 
 **Initial connection implemented:** `miga80c` parses one annotated `i32`
-function, lowers its expression to typed stack IR and value IR, renders GNU
-m68k assembly at `-O0` or `-O1`, and provides a host IR evaluator. The ordinary
-test path assembles both levels for three corpora and checks six inputs per
-corpus against Musashi. A fourth synthetic value-IR fixture forces three
-reusable spill slots in an `A6` frame and checks six more inputs, saved
-registers, stack balance, and maximum stack use. Host and 68020 test programs
-must render both ordinary and spilling assembly byte-identically. The current
-GNU toolchain retains an Amiga relocatable object; ELF linking, symbol
-manifests, and broader language semantics remain pending. See
+function with typed local declarations and assignments, lowers it to typed
+stack IR and value IR, renders GNU m68k assembly at `-O0` or `-O1`, and
+provides a host IR evaluator. The IR has an explicit entry block and bounded
+successor slots ready for the later `if`/`while` CFG. The ordinary test path
+assembles both levels for four corpora and checks six inputs per corpus against
+Musashi. A synthetic value-IR fixture forces three reusable spill slots in an
+`A6` frame and checks six more inputs, saved registers, stack balance, and
+maximum stack use. Host and 68020 test programs must render ordinary,
+local-heavy, and spilling assembly byte-identically. The current GNU toolchain
+retains an Amiga relocatable object; ELF linking, symbol manifests, and broader
+language semantics remain pending. See
 [MIGA Lua Compiler Bootstrap](./MIGA-Lua-compiler-bootstrap.md).
 
 - emit assembly for integer constants, arithmetic and return;
@@ -594,7 +596,8 @@ including a deliberate clobber negative control. See
 [MIGA Lua Native ABI 0.1](./MIGA-Lua-native-ABI-v0.md).
 
 - define register roles; **implemented for ABI 0.1**
-- add calls and source locals; **compiler-generated spill frames implemented**
+- add calls and source locals; **typed source locals, assignments, and
+  compiler-generated spill frames implemented; calls pending**
 - implement saved-register and stack guard checks; **implemented for the current
   entry path; nested calls remain pending**
 - define runtime traps;

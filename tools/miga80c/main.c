@@ -141,8 +141,8 @@ int main(int argc, char **argv)
 {
     char *source = NULL;
     size_t source_size = 0U;
-    struct miga80_ast_function ast;
-    struct miga80_ir_function ir;
+    struct miga80_ast_function *ast = NULL;
+    struct miga80_ir_function *ir = NULL;
     struct miga80_diagnostic diagnostic;
     unsigned int optimization_level = 1U;
     int option_index = 2;
@@ -155,9 +155,20 @@ int main(int argc, char **argv)
     if (!read_source(argv[1], &source, &source_size)) {
         return 1;
     }
-    if (!miga80_parse_function(source, source_size, &ast, &diagnostic) ||
-        !miga80_lower_function(&ast, &ir, &diagnostic)) {
+    ast = (struct miga80_ast_function *)malloc(sizeof(*ast));
+    ir = (struct miga80_ir_function *)malloc(sizeof(*ir));
+    if (ast == NULL || ir == NULL) {
+        fprintf(stderr, "%s: unable to allocate compiler arenas\n", argv[1]);
+        free(ir);
+        free(ast);
+        free(source);
+        return 1;
+    }
+    if (!miga80_parse_function(source, source_size, ast, &diagnostic) ||
+        !miga80_lower_function(ast, ir, &diagnostic)) {
         print_diagnostic(argv[1], &diagnostic);
+        free(ir);
+        free(ast);
         free(source);
         return 1;
     }
@@ -172,7 +183,7 @@ int main(int argc, char **argv)
         strcmp(argv[option_index + 1], "-o") == 0) {
         const char *output_path = argv[option_index + 2];
 
-        if (!write_assembly(output_path, &ir, optimization_level,
+        if (!write_assembly(output_path, ir, optimization_level,
                             &diagnostic)) {
             print_diagnostic(output_path, &diagnostic);
         } else {
@@ -184,9 +195,9 @@ int main(int argc, char **argv)
         unsigned int index;
         const unsigned int argument_count = (unsigned int)(argc - 3);
 
-        if (argument_count != ir.parameter_count) {
+        if (argument_count != ir->parameter_count) {
             fprintf(stderr, "%s: expected %u argument(s), got %u\n", argv[1],
-                    ir.parameter_count, argument_count);
+                    ir->parameter_count, argument_count);
         } else {
             for (index = 0; index < argument_count; ++index) {
                 if (!parse_argument(argv[index + 3U], &arguments[index])) {
@@ -196,7 +207,7 @@ int main(int argc, char **argv)
                 }
             }
             if (index == argument_count &&
-                miga80_evaluate_ir(&ir, arguments, argument_count, &result,
+                miga80_evaluate_ir(ir, arguments, argument_count, &result,
                                    &diagnostic)) {
                 printf("0x%08x\n", (unsigned int)result);
                 exit_code = 0;
@@ -209,6 +220,8 @@ int main(int argc, char **argv)
         exit_code = 2;
     }
 
+    free(ir);
+    free(ast);
     free(source);
     return exit_code;
 }

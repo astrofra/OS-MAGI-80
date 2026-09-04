@@ -1,1 +1,1 @@
-PASS  compiler frontend, typed/value IR, O0/O1 renderers, and spill frames
+PASS  compiler locals, entry block, value IR, O0/O1, and spill frames

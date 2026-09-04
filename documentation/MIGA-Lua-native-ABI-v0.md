@@ -79,9 +79,11 @@ of this register subset. The GNU assembly renderer obtains argument register
 names from it. The Musashi runner obtains its callee-saved set from it, gives
 `A5` a valid synthetic context address, checks four-byte stack alignment,
 measures maximum callee stack use, and uses a negative control to prove that a
-modified saved register is detected. The generated spill fixture additionally
-exercises a 12-byte `A6` frame, direct negative-offset reloads, and preservation
-of `D3-D7/A6` across six edge inputs.
+modified saved register is detected. The `-O0` typed-local corpus exercises a
+20-byte `A6` frame with parameter slots followed by source-local slots; its
+optimized counterpart erases those slots when values remain in registers. The
+generated spill fixture additionally exercises a 12-byte `A6` frame, direct
+negative-offset reloads, and preservation of `D3-D7/A6` across six edge inputs.
 
 Run the host contract and generated-code checks with:
 
