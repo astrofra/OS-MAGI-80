@@ -4,11 +4,13 @@
 
 #include <devices/audio.h>
 #include <devices/timer.h>
+#include <clib/cia_protos.h>
 #include <dos/dos.h>
 #include <dos/stdio.h>
 #include <exec/libraries.h>
 #include <exec/memory.h>
 #include <exec/execbase.h>
+#include <exec/interrupts.h>
 #include <exec/tasks.h>
 #include <graphics/gfx.h>
 #include <graphics/gfxbase.h>
@@ -17,6 +19,7 @@
 #include <graphics/videocontrol.h>
 #include <hardware/blit.h>
 #include <hardware/custom.h>
+#include <hardware/cia.h>
 #include <hardware/dmabits.h>
 #include <hardware/intbits.h>
 #include <intuition/intuition.h>
@@ -27,6 +30,7 @@
 #include <proto/graphics.h>
 #include <proto/intuition.h>
 #include <proto/timer.h>
+#include <resources/cia.h>
 #include <utility/tagitem.h>
 
 #include "graphics/c2p4_reference.h"
@@ -92,7 +96,7 @@
 #define BENCH_BLITTER_POLL_LIMIT 4000000UL
 #define BENCH_RASTER_START_LINE 32U
 #define BENCH_RASTER_POLL_LIMIT 4000000UL
-#define BENCH_TIMER_RETRY_LIMIT 32U
+#define BENCH_TIMER_RETRY_LIMIT 8U
 #define BENCH_REPORT_BUFFER_BYTES 32768L
 
 #define BENCH_ALL_CUSTOM_INTERRUPTS 0x7fffU
@@ -307,32 +311,58 @@ static ULONG exclusive_failure_detail;
 static ULONG exclusive_failure_observed;
 static ULONG exclusive_failure_expected;
 static int suite_status;
+static struct Library *exclusive_cia_resource;
+static volatile struct CIA *exclusive_cia;
+static struct Interrupt exclusive_cia_interrupts[2];
+static UBYTE exclusive_cia_timer_acquired[2];
+static UBYTE exclusive_cia_saved_cra;
+static UBYTE exclusive_cia_saved_crb;
+static const char *exclusive_cia_name;
 
 static volatile struct Custom *const custom =
     (volatile struct Custom *)(uintptr_t)0x00dff000UL;
+static volatile struct CIA *const ciaa_hardware =
+    (volatile struct CIA *)(uintptr_t)0x00bfe001UL;
+static volatile struct CIA *const ciab_hardware =
+    (volatile struct CIA *)(uintptr_t)0x00bfd000UL;
 
-static ULONG elapsed_ticks(const struct EClockVal *start,
-                           const struct EClockVal *end)
+static ULONG read_cia_timer16(volatile UBYTE *high,
+                              volatile UBYTE *low)
 {
-    return end->ev_lo - start->ev_lo;
+    UBYTE high_before;
+    UBYTE high_after;
+    UBYTE low_value;
+
+    do {
+        high_before = *high;
+        low_value = *low;
+        high_after = *high;
+    } while (high_before != high_after);
+    return ((ULONG)high_after << 8) | (ULONG)low_value;
 }
 
-static int measured_elapsed_ticks(const struct EClockVal *start,
-                                  const struct EClockVal *end,
-                                  ULONG *ticks)
+static ULONG read_exclusive_timer(void)
 {
-    ULONG high_delta = end->ev_hi - start->ev_hi;
-    ULONG elapsed;
+    ULONG upper_before;
+    ULONG upper_after;
+    ULONG lower;
 
-    if (high_delta == 0U && end->ev_lo >= start->ev_lo) {
-        elapsed = end->ev_lo - start->ev_lo;
-    } else if (high_delta == 1U && end->ev_lo < start->ev_lo) {
-        elapsed = (0xffffffffUL - start->ev_lo) + 1U + end->ev_lo;
-    } else {
-        return 0;
-    }
-    /* Every batch is designed to finish well below two PAL seconds. */
-    if (elapsed > eclock_hz * 2U) {
+    do {
+        upper_before = read_cia_timer16(&exclusive_cia->ciatbhi,
+                                        &exclusive_cia->ciatblo);
+        lower = read_cia_timer16(&exclusive_cia->ciatahi,
+                                 &exclusive_cia->ciatalo);
+        upper_after = read_cia_timer16(&exclusive_cia->ciatbhi,
+                                       &exclusive_cia->ciatblo);
+    } while (upper_before != upper_after);
+    return (upper_after << 16) | lower;
+}
+
+static int measured_elapsed_ticks(ULONG start, ULONG end, ULONG *ticks)
+{
+    ULONG elapsed = start - end;
+
+    if (elapsed > eclock_hz * 10U) {
         return 0;
     }
     *ticks = elapsed;
@@ -341,19 +371,133 @@ static int measured_elapsed_ticks(const struct EClockVal *start,
 
 static ULONG measure_timer_overhead(void)
 {
-    struct EClockVal start;
-    struct EClockVal end;
     ULONG minimum = 0xffffffffUL;
     size_t attempt;
 
     for (attempt = 0U; attempt < 32U; ++attempt) {
-        (void)ReadEClock(&start);
-        (void)ReadEClock(&end);
-        if (elapsed_ticks(&start, &end) < minimum) {
-            minimum = elapsed_ticks(&start, &end);
+        ULONG start = read_exclusive_timer();
+        ULONG end = read_exclusive_timer();
+        ULONG elapsed = start - end;
+
+        if (elapsed < minimum) {
+            minimum = elapsed;
         }
     }
     return minimum;
+}
+
+static void cia_timer_interrupt_stub(void)
+{
+}
+
+static int acquire_cia_timer_pair_from(struct Library *resource,
+                                       volatile struct CIA *cia,
+                                       const char *name)
+{
+    struct Interrupt *owner;
+    UBYTE cra_shared;
+    UBYTE crb_shared;
+
+    memset(exclusive_cia_interrupts, 0,
+           sizeof(exclusive_cia_interrupts));
+    exclusive_cia_interrupts[0].is_Node.ln_Type = NT_INTERRUPT;
+    exclusive_cia_interrupts[0].is_Node.ln_Name =
+        (char *)"MAGI-80 timer A reservation";
+    exclusive_cia_interrupts[0].is_Code = cia_timer_interrupt_stub;
+    exclusive_cia_interrupts[1].is_Node.ln_Type = NT_INTERRUPT;
+    exclusive_cia_interrupts[1].is_Node.ln_Name =
+        (char *)"MAGI-80 timer B reservation";
+    exclusive_cia_interrupts[1].is_Code = cia_timer_interrupt_stub;
+
+    Disable();
+    owner = AddICRVector(resource, CIAICRB_TA,
+                         &exclusive_cia_interrupts[0]);
+    if (owner != NULL) {
+        Enable();
+        return 0;
+    }
+    exclusive_cia_timer_acquired[0] = 1U;
+    owner = AddICRVector(resource, CIAICRB_TB,
+                         &exclusive_cia_interrupts[1]);
+    if (owner != NULL) {
+        RemICRVector(resource, CIAICRB_TA,
+                     &exclusive_cia_interrupts[0]);
+        exclusive_cia_timer_acquired[0] = 0U;
+        Enable();
+        return 0;
+    }
+    exclusive_cia_timer_acquired[1] = 1U;
+    exclusive_cia_resource = resource;
+    exclusive_cia = cia;
+    exclusive_cia_name = name;
+
+    (void)AbleICR(resource, CIAICRF_TA | CIAICRF_TB);
+    (void)SetICR(resource, CIAICRF_TA | CIAICRF_TB);
+    exclusive_cia_saved_cra = cia->ciacra;
+    exclusive_cia_saved_crb = cia->ciacrb;
+    cra_shared = (UBYTE)(exclusive_cia_saved_cra &
+                         (CIACRAF_SPMODE | CIACRAF_TODIN));
+    crb_shared =
+        (UBYTE)(exclusive_cia_saved_crb & CIACRBF_ALARM);
+
+    cia->ciacra = cra_shared;
+    cia->ciacrb = crb_shared;
+    cia->ciatalo = 0xffU;
+    cia->ciatahi = 0xffU;
+    cia->ciatblo = 0xffU;
+    cia->ciatbhi = 0xffU;
+    cia->ciacrb = (UBYTE)(crb_shared | CIACRBF_IN_TA |
+                          CIACRBF_LOAD | CIACRBF_START);
+    cia->ciacra =
+        (UBYTE)(cra_shared | CIACRAF_LOAD | CIACRAF_START);
+    Enable();
+    return 1;
+}
+
+static int acquire_exclusive_timer(void)
+{
+    struct Library *resource;
+
+    resource = OpenResource(CIAANAME);
+    if (resource != NULL &&
+        acquire_cia_timer_pair_from(resource, ciaa_hardware, "ciaa")) {
+        return 1;
+    }
+    resource = OpenResource(CIABNAME);
+    return resource != NULL &&
+           acquire_cia_timer_pair_from(resource, ciab_hardware, "ciab");
+}
+
+static void release_exclusive_timer(void)
+{
+    UBYTE cra_shared;
+    UBYTE crb_shared;
+
+    if (exclusive_cia_resource == NULL || exclusive_cia == NULL) {
+        return;
+    }
+    cra_shared = (UBYTE)(exclusive_cia_saved_cra &
+                         (CIACRAF_SPMODE | CIACRAF_TODIN));
+    crb_shared =
+        (UBYTE)(exclusive_cia_saved_crb & CIACRBF_ALARM);
+    Disable();
+    exclusive_cia->ciacra = cra_shared;
+    exclusive_cia->ciacrb = crb_shared;
+    (void)SetICR(exclusive_cia_resource,
+                 CIAICRF_TA | CIAICRF_TB);
+    if (exclusive_cia_timer_acquired[1] != 0U) {
+        RemICRVector(exclusive_cia_resource, CIAICRB_TB,
+                     &exclusive_cia_interrupts[1]);
+        exclusive_cia_timer_acquired[1] = 0U;
+    }
+    if (exclusive_cia_timer_acquired[0] != 0U) {
+        RemICRVector(exclusive_cia_resource, CIAICRB_TA,
+                     &exclusive_cia_interrupts[0]);
+        exclusive_cia_timer_acquired[0] = 0U;
+    }
+    Enable();
+    exclusive_cia_resource = NULL;
+    exclusive_cia = NULL;
 }
 
 static void sort_ticks(ULONG *values, size_t count)
@@ -778,8 +922,8 @@ static int run_raw_case(const struct DmaProfile *dma,
     attempt = 0U;
     while (sample < BENCH_RAW_SAMPLES) {
         struct BatchState state;
-        struct EClockVal start;
-        struct EClockVal end;
+        ULONG start;
+        ULONG end;
         ULONG batch_return = 0U;
         ULONG measured;
         ULONG iteration;
@@ -798,14 +942,14 @@ static int run_raw_case(const struct DmaProfile *dma,
         blitter_busy_at_kernel_start =
             dma->use_blitter != 0U && dma->blitter_hog == 0U &&
             (custom->dmaconr & DMAF_BLTDONE) != 0U;
-        (void)ReadEClock(&start);
+        start = read_exclusive_timer();
         for (iteration = 0U; iteration < BENCH_RAW_ITERATIONS;
              ++iteration) {
             batch_return += kernel->kernel(
                 raw_destination, raw_source, BENCH_RAW_BUFFER_BYTES,
                 kernel->seed);
         }
-        (void)ReadEClock(&end);
+        end = read_exclusive_timer();
         if (!end_batch(dma, &state, &blitter_busy_at_kernel_end)) {
             exclusive_failure_detail = 103U;
             return 0;
@@ -814,7 +958,7 @@ static int run_raw_case(const struct DmaProfile *dma,
         kernel_sink ^= batch_return;
         result->kernel_return_checksum = batch_return;
         if (attempt != 0U &&
-            measured_elapsed_ticks(&start, &end, &measured)) {
+            measured_elapsed_ticks(start, end, &measured)) {
             if (blitter_busy_at_kernel_end) {
                 ++result->blitter_busy_at_kernel_end_samples;
             }
@@ -1057,8 +1201,8 @@ static int run_c2p_case(const struct DmaProfile *dma,
     attempt = 0U;
     while (sample < BENCH_C2P_SAMPLES) {
         struct BatchState state;
-        struct EClockVal start;
-        struct EClockVal end;
+        ULONG start;
+        ULONG end;
         ULONG measured;
         ULONG iteration;
         int blitter_busy_at_kernel_start;
@@ -1076,7 +1220,7 @@ static int run_c2p_case(const struct DmaProfile *dma,
         blitter_busy_at_kernel_start =
             dma->use_blitter != 0U && dma->blitter_hog == 0U &&
             (custom->dmaconr & DMAF_BLTDONE) != 0U;
-        (void)ReadEClock(&start);
+        start = read_exclusive_timer();
         for (iteration = 0U; iteration < BENCH_C2P_ITERATIONS;
              ++iteration) {
             if (convert_c2p(profile, layout, backend) !=
@@ -1087,13 +1231,13 @@ static int run_c2p_case(const struct DmaProfile *dma,
                 return 0;
             }
         }
-        (void)ReadEClock(&end);
+        end = read_exclusive_timer();
         if (!end_batch(dma, &state, &blitter_busy_at_kernel_end)) {
             exclusive_failure_detail = 204U;
             return 0;
         }
         if (attempt != 0U &&
-            measured_elapsed_ticks(&start, &end, &measured)) {
+            measured_elapsed_ticks(start, end, &measured)) {
             if (blitter_busy_at_kernel_end) {
                 ++result->blitter_busy_at_kernel_end_samples;
             }
@@ -1330,7 +1474,7 @@ static int write_header(BPTR output)
                       "environment=" MAGI80_BENCHMARK_ENVIRONMENT "\n"
                       "timing_authority=" MAGI80_BENCHMARK_AUTHORITY "\n"
                       "timing_scope=exclusive_kernel_batch\n"
-                      "timing_source=eclock\n") &&
+                      "timing_source=cia_cascade_32\n") &&
            write_key_decimal(output, "exec_version=", exec_version) &&
            write_text(output, "\n") &&
            write_key_decimal(output, "exec_revision=", exec_revision) &&
@@ -1422,6 +1566,9 @@ static int write_header(BPTR output)
            write_text(output, "\n") &&
            write_key_decimal(output, "blitter_rows=",
                              BENCH_BLITTER_MAX_ROWS) &&
+           write_text(output, "\nexclusive_timer_resource=") &&
+           write_text(output, exclusive_cia_name) &&
+           write_text(output, "\nexclusive_timer_counter_bits=32") &&
            write_text(output, "\n");
 }
 
@@ -1818,6 +1965,13 @@ int main(int argc, char **argv)
     timer_open = 1;
     TimerBase = timer_request.tr_node.io_Device;
     eclock_hz = ReadEClock(&now);
+    CloseDevice((struct IORequest *)&timer_request);
+    timer_open = 0;
+    TimerBase = NULL;
+    if (!acquire_exclusive_timer()) {
+        failure = "claim_cia_timer_pair";
+        goto cleanup;
+    }
     timer_overhead_ticks = measure_timer_overhead();
     frame_budget_ticks = eclock_hz / 25U;
 
@@ -1987,6 +2141,7 @@ cleanup:
     }
     stop_audio_load();
     stop_sprite_load();
+    release_exclusive_timer();
     if (stack_allocation != NULL) {
         FreeMem(stack_allocation, BENCH_STACK_TOTAL_BYTES);
     }

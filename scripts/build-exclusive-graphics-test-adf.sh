@@ -55,6 +55,13 @@ MAGI80_PROGRAM_SHA256=$(/usr/bin/shasum -a 256 "$MAGI80_PROGRAM" | \
   printf 'program_sha256=%s\n' "$MAGI80_PROGRAM_SHA256"
   printf 'benchmark_environment=physical_a1200_pal_candidate\n'
   printf 'timing_authority=real_hardware_candidate\n'
+  printf 'report_format=2\n'
+  printf 'timing_source=cia_cascade_32\n'
+  printf 'controlled_sprite_count=7\n'
+  printf 'controlled_sprite_height=224\n'
+  printf 'controlled_sprite_fetch_bytes_per_video_frame=6328\n'
+  printf 'fair_blitter_copy_bytes=524288,2097152,4194176\n'
+  printf 'hog_blitter_copy_bytes=524288\n'
   printf 'report_path=MAGI80BENCH:RESULT.TXT\n'
   printf 'report_io=amigados_fwrite_setvbuf_32768\n'
   printf 'initial_report_footer=result=running\n'

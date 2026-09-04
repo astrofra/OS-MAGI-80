@@ -174,6 +174,53 @@ def ilford_hp5_plus(rgb: RGB) -> RGB:
     return encoded, encoded, encoded
 
 
+MACHADO_DEUTERANOPIA_2009 = (
+    (0.367322, 0.860646, -0.227968),
+    (0.280085, 0.672501, 0.047413),
+    (-0.011820, 0.042940, 0.968881),
+)
+MACHADO_PROTANOPIA_2009 = (
+    (0.152286, 1.052583, -0.204868),
+    (0.114503, 0.786281, 0.099216),
+    (-0.003882, -0.048116, 1.051998),
+)
+
+
+def simulate_color_vision(rgb: RGB, matrix: tuple[tuple[float, float, float], ...]) -> RGB:
+    linear = tuple(srgb_to_linear(channel) for channel in rgb)
+    simulated = mat_vec(matrix, linear)
+    return tuple(linear_to_srgb(channel) for channel in simulated)  # type: ignore[return-value]
+
+
+def deutan_vision_2009(rgb: RGB) -> RGB:
+    return simulate_color_vision(rgb, MACHADO_DEUTERANOPIA_2009)
+
+
+def protan_vision_2009(rgb: RGB) -> RGB:
+    return simulate_color_vision(rgb, MACHADO_PROTANOPIA_2009)
+
+
+def megadrive_1988(rgb: RGB) -> RGB:
+    # Pull colors only part-way toward the console's 3-bit-per-channel RGB
+    # vocabulary. This evokes its stepped palette without collapsing MAGI-80
+    # from 4,096 logical inputs to 512 colors. The purple offset is a MAGI-80
+    # art-direction choice, not a claim about the VDP DAC: a luminance bell
+    # confines it to mid-tones and makes it vanish at black and white.
+    quantized = tuple(round(channel * 7.0) / 7.0 for channel in rgb)
+    softly_quantized = tuple(
+        0.72 * rgb[index] + 0.28 * quantized[index] for index in range(3)
+    )
+    linear = tuple(srgb_to_linear(channel) for channel in softly_quantized)
+    y = clamp01(luminance(linear))
+    midtone = math.sin(math.pi * y) ** 2
+    biased = (
+        linear[0] + (1.0 - linear[0]) * 0.050 * midtone,
+        linear[1] * (1.0 - 0.040 * midtone),
+        linear[2] + (1.0 - linear[2]) * 0.070 * midtone,
+    )
+    return tuple(linear_to_srgb(channel) for channel in biased)  # type: ignore[return-value]
+
+
 def xy_to_xyz(x: float, y: float) -> RGB:
     return x / y, 1.0, (1.0 - x - y) / y
 
@@ -292,7 +339,15 @@ PROFILES: tuple[tuple[str, Transform], ...] = (
     ("06-ntsc-1953.png", ntsc_1953),
     ("07-pal-secam-625-1967.png", pal_secam_625),
     ("08-oskm-1960.png", oskm_1960),
+    ("09-deutan-machado-2009.png", deutan_vision_2009),
+    ("10-protan-machado-2009.png", protan_vision_2009),
+    ("11-megadrive-1988.png", megadrive_1988),
 )
+
+PROFILES_REQUIRING_4096_DISTINCT_OUTPUTS = {
+    "00-amiga-rgb12-vanilla-1985.png",
+    "11-megadrive-1988.png",
+}
 
 
 def byte_rgb(rgb: RGB) -> tuple[int, int, int]:
@@ -373,9 +428,15 @@ def render_grid(lut: tuple[tuple[int, int, int], ...]) -> tuple[int, int, list[t
 def main() -> None:
     for filename, transform in PROFILES:
         lut = build_lut(transform)
+        distinct = len(set(lut))
+        if filename in PROFILES_REQUIRING_4096_DISTINCT_OUTPUTS:
+            assert distinct == 4096, f"{filename} collapsed the logical RGB12 gamut"
+        if filename == "11-megadrive-1988.png":
+            assert lut[0x000] == (0, 0, 0)
+            assert lut[0xFFF] == (255, 255, 255)
         width, height, pixels = render_grid(lut)
         write_png(OUTPUT_DIR / filename, width, height, pixels)
-        print(f"generated {filename}: {width}x{height}, {len(set(lut))} distinct LUT colors")
+        print(f"generated {filename}: {width}x{height}, {distinct} distinct LUT colors")
 
 
 if __name__ == "__main__":

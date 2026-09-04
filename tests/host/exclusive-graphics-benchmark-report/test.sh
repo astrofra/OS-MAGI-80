@@ -44,10 +44,20 @@ if "$MAGI80_VALIDATOR" "$MAGI80_TEMP/invalid-blitter-span.txt" \
   exit 1
 fi
 
+/usr/bin/sed \
+  's/exclusive_timer_resource=ciaa/exclusive_timer_resource=timer.device/' \
+  "$MAGI80_VALID_V2" >"$MAGI80_TEMP/invalid-exclusive-timer.txt"
+if "$MAGI80_VALIDATOR" "$MAGI80_TEMP/invalid-exclusive-timer.txt" \
+    >/dev/null 2>&1; then
+  printf 'FAIL exclusive graphics report accepted an unreserved timer source\n'
+  exit 1
+fi
+
 printf 'PASS exclusive graphics report accepts the version 1 matrix contract\n'
 printf 'PASS exclusive graphics report accepts the version 2 contention contract\n'
 printf 'PASS exclusive graphics report rejects a mismatched DMA profile\n'
 printf 'PASS exclusive graphics report rejects checksum mismatches\n'
 printf 'PASS exclusive graphics report rejects implausible timer samples\n'
 printf 'PASS exclusive graphics report rejects incomplete blitter overlap\n'
+printf 'PASS exclusive graphics report rejects an unreserved timer source\n'
 printf 'result=pass\n'

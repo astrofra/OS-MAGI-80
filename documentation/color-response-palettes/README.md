@@ -1,6 +1,6 @@
 # MAGI-80 color-response palette studies
 
-These plates compare the same 256-color sample of MAGI-80's logical 12-bit RGB gamut after each proposed photographic-film or historical-video response. They are design references for the palette system described in the main specification, not claims of exact manufacturer-approved film simulation.
+These plates compare the same 256-color sample of MAGI-80's logical 12-bit RGB gamut after each proposed photographic-film, historical-video, color-vision, or console-inspired response. They are design references for the palette system described in the main specification, not claims of exact manufacturer-approved film simulation or individual human perception.
 
 ## Reading the grid
 
@@ -24,6 +24,9 @@ This gives `8 × 8 × 4 = 256` samples distributed regularly through RGB12. Ever
 | Video | NTSC 1953 | 1953 | [`06-ntsc-1953.png`](./06-ntsc-1953.png) |
 | Video | 625-line PAL/SECAM | 1967 | [`07-pal-secam-625-1967.png`](./07-pal-secam-625-1967.png) |
 | Video | Soviet OSKM (ОСКМ) | 1960 | [`08-oskm-1960.png`](./08-oskm-1960.png) |
+| Color vision | Deutan simulation, Machado model | 2009 | [`09-deutan-machado-2009.png`](./09-deutan-machado-2009.png) |
+| Color vision | Protan simulation, Machado model | 2009 | [`10-protan-machado-2009.png`](./10-protan-machado-2009.png) |
+| Console-inspired | Mega Drive midtone-purple response | 1988 | [`11-megadrive-1988.png`](./11-megadrive-1988.png) |
 
 ## Amiga RGB12 — vanilla (1985)
 
@@ -79,6 +82,28 @@ OSKM—`Одновременная совместимая система с кв
 
 ![Soviet OSKM response](./08-oskm-1960.png)
 
+## Deutan color-vision simulation (2009 model)
+
+This mode previews the complete deutan red–green deficiency endpoint using the linear-RGB matrix published with the physiologically based Machado–Oliveira–Fernandes model. Deutan deficiencies are the most prevalent color-vision-deficiency family. The 2009 date belongs to the simulation model, not to the condition.
+
+![Deutan color-vision simulation](./09-deutan-machado-2009.png)
+
+## Protan color-vision simulation (2009 model)
+
+This mode previews the corresponding complete protan red–green deficiency endpoint from the same model. Protan deficiencies are the other common red–green family and notably alter perceived red brightness. As with the deutan plate, one fixed transform cannot reproduce every observer or severity.
+
+![Protan color-vision simulation](./10-protan-machado-2009.png)
+
+These two modes are simulations for design review, not automatic accessibility corrections. MAGI-80 SHOULD use them to expose confusing palette pairs while keeping contrast, symbols, outlines, and redundant non-color cues as the actual accessibility controls.
+
+## Mega Drive-inspired midtone purple (1988)
+
+Each RGB12 component is pulled only 28% toward the nearest value in the Mega Drive's 3-bit-per-channel RGB vocabulary. This restrained posterization evokes the console's stepped palette without reducing MAGI-80 to 512 colors: all 4,096 logical inputs remain available to the profile. MAGI-80 then adds a luminance-gated violet bias: red and blue rise and green contracts around the middle of the tone range, while the bias mathematically falls to zero at black and white. The 1988 date is the Japanese Mega Drive launch year.
+
+The violet tendency is an explicit MAGI-80 art-direction choice inspired by the appearance of many Mega Drive titles; it is not presented as a measured property of every console VDP, encoder, cable, or display.
+
+![Mega Drive-inspired midtone-purple response](./11-megadrive-1988.png)
+
 ## Reproduction and fidelity
 
 Run the dependency-free generator from the repository root:
@@ -87,7 +112,7 @@ Run the dependency-free generator from the repository root:
 python3 documentation/color-response-palettes/generate_palettes.py
 ```
 
-The generator evaluates all 4,096 RGB12 inputs for each profile, validates 8-bit output bounds, and writes sRGB-tagged, 516 × 516 RGB PNGs. Its matrices, tone curves, gamut clipping, panchromatic weighting, and historical-video colorimetry are visible in [`generate_palettes.py`](./generate_palettes.py).
+The generator evaluates all 4,096 RGB12 inputs for each profile, validates 8-bit output bounds, and writes sRGB-tagged, 516 × 516 RGB PNGs. Its matrices, tone curves, gamut clipping, panchromatic weighting, historical-video colorimetry, color-vision matrices, and Mega Drive treatment are visible in [`generate_palettes.py`](./generate_palettes.py).
 
 The present film transforms are reproducible visual baselines. A release-quality claim of physical fidelity requires digitized manufacturer spectral-sensitivity, characteristic, and dye-density curves where available, plus controlled color-target captures for stocks whose makers do not publish enough data. The target stock, processing chemistry, illuminant, print or scanner path, reference white, and fitting error must all be recorded. A static 4,096-entry palette LUT can reproduce color and tone mapping, but not grain, halation, local exposure effects, optical flare, chroma delay, scanlines, or noise.
 
@@ -101,5 +126,9 @@ The present film transforms are reproducible visual baselines. A release-quality
 - [Lomography history](https://www.lomography.com/about/history) — the 2019 LomoChrome Metropolis introduction and stated muted-color direction.
 - [ILFORD HP5 PLUS technical information](https://www.ilfordphoto.com/amfile/file/download/file/1903/product/691/) and [ILFORD history](https://www.ilfordphoto.com/about-us/history/) — panchromatic sensitivity and 1989 introduction.
 - [Sokolov and Sudravskii, *Colour Amateur Television Receiver “Tsvet-2”* (1963), period scan](http://ca.cryptocom.ru/tmpfiles/mrb_0469.djvu) — primary-period technical material for OSKM reconstruction.
+- [Machado, Oliveira, and Fernandes, *A Physiologically-based Model for Simulation of Color Vision Deficiency* (2009)](https://doi.org/10.1109/TVCG.2009.113) — validated model and matrices for the deutan and protan simulations.
+- [Global prevalence study of congenital color-vision deficiency](https://www.aaojournal.org/article/S0161-6420%2825%2900465-8/fulltext) — deutan is the most prevalent family, followed by protan.
+- [SEGA Genesis Software Manual](https://segaretro.org/images/9/95/GenesisSoftwareManual.pdf) — original development documentation for the console's 3-bit-per-channel RGB color coding.
+- [SEGA corporate history](https://www.sega.jp/history/companyTimeline/en/) — Japanese Mega Drive release in October 1988.
 
 Film and product names identify response targets only. They do not imply manufacturer endorsement.

@@ -1,6 +1,6 @@
 # MAGI-80 Exclusive Graphics Benchmark Plan
 
-**Status:** Blanked/active display and additive DMA matrix implemented around the raw and C2P4 kernels and validated in FS-UAE; self-contained writable physical-test ADF available as a hardware candidate; expanded workloads, stress testing, and physical-hardware authority pending
+**Status:** Version 2 of the blanked/active DMA matrix now includes explicit sprite fetch traffic, adaptive sustained fair-blitter contention, a hog-mode preemption burst, and autonomous 32-bit CIA timing; all 126 cases pass under FS-UAE; physical-hardware authority, transition stress, and runtime-frame timing remain pending
 
 **Decision authority:** Only distributions produced by this harness on a physical stock PAL A1200 may select a graphics backend or certify a frame budget
 
@@ -8,7 +8,7 @@
 
 The hosted FS-UAE graphics benchmark proves byte-exact output, target ABI execution, Chip-RAM allocation, report generation, and clean OS-managed teardown. It deliberately does not provide fine timing. AmigaOS remains scheduled, system interrupt handlers remain active, and every sample is preceded by `WaitTOF()` outside the measured bracket.
 
-The `exclusive_kernel_batch` successor now wraps both the raw Chip-RAM kernels and the real pair-LUT/mask32 68020 C2P4 kernels. It switches an Intuition-managed eight-plane dual-playfield screen between a blanked fixture and additive display/Copper/sprite/audio/blitter DMA profiles, while retaining the dedicated stack, interrupt masking, E-Clock batching, exact checksums, restoration checks, and machine-readable failure output. It does not yet replace the system Copper list, install the MAGI-80 runtime interrupt path, or model a complete runtime frame.
+The `exclusive_kernel_batch` successor now wraps both the raw Chip-RAM kernels and the real pair-LUT/mask32 68020 C2P4 kernels. It switches an Intuition-managed eight-plane dual-playfield screen between a blanked fixture and additive display/Copper/sprite/audio/blitter DMA profiles, while retaining the dedicated stack, interrupt masking, autonomous CIA timing, exact checksums, restoration checks, and machine-readable failure output. It does not yet replace the system Copper list, install the MAGI-80 runtime interrupt path, or model a complete runtime frame.
 
 The exclusive harness separates two questions:
 
@@ -44,14 +44,18 @@ The seven profiles are additive so their deltas can be inspected:
 | `blanked` | off | off | off | off | off |
 | `display` | on | off | off | off | off |
 | `display_copper` | on | on | off | off | off |
-| `display_copper_sprite` | on | on | on | off | off |
-| `display_copper_sprite_audio` | on | on | on | four channels | off |
-| `display_copper_sprite_audio_blitter_fair` | on | on | on | four channels | one fair 32 KiB A-to-D copy |
-| `display_copper_sprite_audio_blitter_hog` | on | on | on | four channels | one hog 32 KiB A-to-D copy |
+| `display_copper_sprite` | on | on | seven controlled sprites | off | off |
+| `display_copper_sprite_audio` | on | on | seven controlled sprites | four channels | off |
+| `display_copper_sprite_audio_blitter_fair` | on | on | seven controlled sprites | four channels | adaptive 512 KiB, 2 MiB, or 4,194,176-byte fair A-to-D load |
+| `display_copper_sprite_audio_blitter_hog` | on | on | seven controlled sprites | four channels | 512 KiB hog-mode A-to-D preemption burst |
 
 Each profile runs the six raw kernels plus twelve C2P4 cases: Small, Medium, and Full viewports; packed4 and byte4 inputs; and the real pair-LUT and table-free mask32 68020 assembly cores. That produces 126 checked cases. C2P writes directly to the live PF1 planes and is compared with the hosted scalar oracle after the exclusive section. All measured CPU sources and lookup data are currently in Chip RAM, making this the stock-memory baseline.
 
-The audio profile uses real four-channel DMA at period 124 with volume zero. The sprite profile currently measures only the screen-managed sprite-DMA state; it does not yet create representative sprite fetch traffic. Likewise, the blitter profiles launch a real concurrent copy, but they are contention controls rather than C2P hybrids and do not sustain blitter work for the entire longest conversion. Those limits are explicit report metadata and must be closed before the combined-scene gate.
+The audio profile uses real four-channel DMA at period 124 with volume zero. Sprite channels 1 through 7 each display a 16-pixel-wide, 224-line `SimpleSprite`; their Chip-RAM streams account for a controlled minimum of 6,328 fetched bytes per video frame, in addition to the system pointer on channel 0. This is a deliberately heavy and repeatable fetch fixture, not yet the virtual-object scheduler or a multiplexing test.
+
+The blitter source and destination are 128-byte Chip-RAM working sets. Negative modulos repeatedly revisit that row while AGA `BLTSIZV`/`BLTSIZH` describe a much longer logical transfer. Fair mode scales the load to 512 KiB for raw and Small cases, 2 MiB for Medium, and 4,194,176 bytes for Full; every accepted fair sample verifies that the blitter is busy immediately before and after the CPU kernel. Hog mode always launches a 512 KiB burst. Because BLITHOG withholds the Chip-RAM bus, CPU-side status reads occur only after the CPU regains the bus; hog start/end observations are therefore diagnostic rather than proof of overlap. Both modes remain contention controls, not C2P hybrids.
+
+Version 2 also replaces `ReadEClock()` inside the long exclusive interval. The earlier implementation observed a lower-word wrap without the matching software-maintained upper-word advance after custom interrupts had remained masked for roughly 92 seconds. Before entering `Forbid()`, the harness now reserves Timer A and Timer B together from one CIA through `cia.resource`, disables their interrupt requests, runs Timer A from the E-clock and Timer B from Timer-A underflows, and reads the resulting descending 32-bit counter directly. It records the selected CIA and counter width, then stops and releases both timers during normal cleanup. Failure to reserve a complete pair is a controlled setup failure rather than an implicit timer conflict.
 
 Run and validate the complete matrix with:
 
@@ -59,7 +63,7 @@ Run and validate the complete matrix with:
 gmake exclusive-graphics-benchmark-fs-uae
 ```
 
-The validated report is written to `build/reports/exclusive-graphics-fs-uae.txt`, with size, symbol, map, and disassembly artifacts beside the other benchmark reports. The validator checks the exact DMA profile mapping, sampling contracts, traffic arithmetic, output hashes, timer plausibility, stack margin, state restoration, case count, and final footer. The passing FS-UAE run completed all 126 cases with 132 bytes of measured 16 KiB stack high water and no discarded timer sample. Its `timing_authority=protocol_only` label is deliberate: the values prove execution and instrumentation, not A1200 performance.
+The validated report is written to `build/reports/exclusive-graphics-fs-uae.txt`, with size, symbol, map, and disassembly artifacts beside the other benchmark reports. The validator checks the exact DMA profile mapping, sampling contracts, sprite and blitter workload invariants, traffic arithmetic, output hashes, timer plausibility, stack margin, state restoration, case count, and final footer. The passing version-2 FS-UAE run completed all 126 cases with 132 bytes of measured 16 KiB stack high water, a 24-tick timer-read overhead, and no discarded timer sample. Its `timing_authority=protocol_only` label is deliberate: the values prove execution and instrumentation, not A1200 performance.
 
 ### 1.3 Physical-test ADF
 
@@ -67,7 +71,7 @@ The validated report is written to `build/reports/exclusive-graphics-fs-uae.txt`
 
 The program first creates a closed `RESULT.TXT` containing `result=running`, before entering the exclusive section. On controlled completion it replaces that marker with either a full PASS report or failure diagnostics. An absent file therefore distinguishes startup or media-write trouble; a remaining `running` footer proves startup and writable media but classifies the run as incomplete. Raster waits and blitter waits are bounded so their controlled timeouts can unwind through the normal restoration path. The 68020 instruction cache is requested through `exec.library/CacheControl()` for a consistent benchmark state and its prior global state is restored during cleanup.
 
-The exact writable ADF now completes under the stock PAL A1200 FS-UAE profile. An unattended 180-second window produced and validated all 126 cases, preserved both restoration checks, reported 132 bytes of stack high water, and left no raster timeout or discarded timer sample. The apparent hang was post-measurement report I/O: the original writer issued thousands of small AmigaDOS `Write()` packets while the benchmark screen was still open. The corrected path restores all owned resources first, returns to the text display, and feeds `FWrite()` through a 32 KiB `SetVBuf()` buffer, reducing the 81 KiB OFS report to a few large flushes. This integration result remains non-authoritative for timing. The ADF is deliberately labelled `real_hardware_candidate`; only returned reports from declared physical machines can advance the real-hardware gate.
+The exact writable version-2 ADF completes under the stock PAL A1200 FS-UAE profile. Its fixed 240-second controller window extracted and validated all 126 cases, preserved both restoration checks, reported 132 bytes of stack high water and a 24-tick timer-read overhead, and left no raster timeout or discarded timer sample. The final report is approximately 105 KiB. The writer restores all owned resources first, returns to the text display, and feeds `FWrite()` through a 32 KiB `SetVBuf()` buffer so OFS receives only a few large flushes. This integration result remains non-authoritative for timing. The ADF is deliberately labelled `real_hardware_candidate`; only returned reports from declared physical machines can advance the real-hardware gate.
 
 The exact handoff, safety limit, observations, result-state meanings, return form, and extraction commands are in [MAGI-80 Physical A1200 Graphics Test](./physical-a1200-graphics-test.md).
 
@@ -169,7 +173,7 @@ Minimum kernels:
 | Display state | blanked, eight-plane 256 × 256 active |
 | DMA state | display only; display + Copper/sprites; display + blitter; representative display + sprites + Paula |
 
-Every physical-hardware result reports bytes per iteration, iteration count, raw E-Clock ticks, bracket overhead, minimum/median/maximum, decimal MB/s, binary MiB/s, alignment, source/destination memory domains, generated disassembly, display state, enabled DMA, and interrupt mode. Reads whose values do not affect an observable checksum are invalid because an optimizer may remove them. The implemented successor now records blanked/active and additive DMA profiles with observable checksums. Rate formatting, byte/word read variants, read/modify/write kernels, misalignment cases, Fast-RAM placements, explicit sprite payloads, and physical distributions remain open.
+Every physical-hardware result reports bytes per iteration, iteration count, raw E-Clock ticks, bracket overhead, minimum/median/maximum, decimal MB/s, binary MiB/s, alignment, source/destination memory domains, generated disassembly, display state, enabled DMA, and interrupt mode. Reads whose values do not affect an observable checksum are invalid because an optimizer may remove them. The implemented successor now records blanked/active and additive DMA profiles, explicit sprite traffic, adaptive fair/hog blitter traffic, and observable checksums. Rate formatting, byte/word read variants, read/modify/write kernels, misalignment cases, Fast-RAM placements, and physical distributions remain open.
 
 ## 7. Graphics Case Requirements
 
@@ -214,9 +218,10 @@ Until this gate passes, both the hosted and exclusive FS-UAE C2P4 matrices remai
 The immediate implementation sequence is:
 
 1. **Completed:** wrap the raw and C2P4 assembly kernels in blanked/active screen fixtures and the seven-profile DMA matrix, with guarded-stack, checksum, state-restoration, and report validation under FS-UAE;
-2. distribute the validated candidate ADF using the physical-test handoff and collect repeated stock PAL A1200 reports; then add explicit sprite payloads, sustained/repeated blitter load, missing raw read/mixed/alignment cases, and optional Fast-source variants;
-3. implement genuine C2P4 CPU/blitter merge candidates, dirty/no-change cases, and safe publication, preserving the same oracle and DMA profiles;
-4. add the reviewed minimal Level-3 path for `exclusive_runtime_frame`, then stress at least 100 transitions and forced failures before the final physical selection run.
+2. **Completed under FS-UAE:** add seven explicit sprite payloads, adaptive sustained fair-blitter load, a separately identified hog-mode preemption burst, report-format-2 workload counters, and an exclusive 32-bit CIA timer that does not depend on system interrupt service;
+3. distribute the refreshed candidate ADF using the physical-test handoff and collect repeated stock PAL A1200 reports; in parallel, complete missing raw read/mixed/alignment cases and optional Fast-source variants;
+4. implement genuine C2P4 CPU/blitter merge candidates, dirty/no-change cases, and safe publication, preserving the same oracle and DMA profiles;
+5. add the reviewed minimal Level-3 path for `exclusive_runtime_frame`, then stress at least 100 transitions and forced failures before the final physical selection run.
 
 ## 9. Primary References
 
@@ -224,6 +229,8 @@ The immediate implementation sequence is:
 - [exec.library/Disable autodoc](https://amigadev.elowar.com/read/ADCD_2.1/Includes_and_Autodocs_2._guide/node034A.html)
 - [exec.library/SetIntVector autodoc](https://amigadev.elowar.com/read/ADCD_2.1/Includes_and_Autodocs_3._guide/node0239.html)
 - [exec.library/ReadEClock autodoc](https://amigadev.elowar.com/read/ADCD_2.1/Includes_and_Autodocs_2._guide/node04FB.html)
+- [cia.resource/AddICRVector autodoc](https://amigadev.elowar.com/read/ADCD_2.1/Includes_and_Autodocs_2._guide/node05B5.html)
+- [Amiga Hardware Reference Manual — Timer B counting Timer A underflows](https://amigadev.elowar.com/read/ADCD_2.1/Hardware_Manual_guide/node0148.html)
 - [exec.library/StackSwap autodoc](https://amigadev.elowar.com/read/ADCD_2.1/Includes_and_Autodocs_2._guide/node0382.html)
 - [Amiga ROM Kernel Reference Manual — Interrupt Servers](https://amigadev.elowar.com/read/ADCD_2.1/Libraries_Manual_guide/node030B.html)
 - [Amiga Hardware Reference Manual — Interrupt Control Registers](https://amigadev.elowar.com/read/ADCD_2.1/Hardware_Manual_guide/node0164.html)

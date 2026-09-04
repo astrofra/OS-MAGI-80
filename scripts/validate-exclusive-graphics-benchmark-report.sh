@@ -100,6 +100,8 @@ BEGIN {
   header_name[45] = "controlled_sprite_fetch_bytes_per_video_frame"
   header_name[46] = "blitter_working_set_bytes"
   header_name[47] = "blitter_rows"
+  header_name[48] = "exclusive_timer_resource"
+  header_name[49] = "exclusive_timer_counter_bits"
 
   common[1] = "case"
   common[2] = "kind"
@@ -161,7 +163,7 @@ NR == 1 {
   header_value[header_name[NR]] = value
   report_format = value + 0
   if (value == "2") {
-    header_count = 47
+    header_count = 49
   } else if (value != "1") {
     reject("unsupported benchmark format")
   }
@@ -225,7 +227,8 @@ $0 == "result=pass" {
       (field["median_ticks"] + 0) > (field["maximum_ticks"] + 0)) {
     reject("unordered timing values on line " NR)
   }
-  maximum_plausible_ticks = (header_value["eclock_hz"] + 0) * 2
+  maximum_plausible_seconds = report_format == 2 ? 10 : 2
+  maximum_plausible_ticks = (header_value["eclock_hz"] + 0) * maximum_plausible_seconds
   if ((field["maximum_ticks"] + 0) > maximum_plausible_ticks) {
     reject("implausible timing sample on line " NR)
   }
@@ -259,7 +262,6 @@ $0 == "result=pass" {
     if (report_format == 2) {
       expected_sprite_fetch = profile_sprite[profile] == "active" ? 6328 : 0
       actual_sprite_fetch = field["minimum_controlled_sprite_fetch_bytes_per_video_frame"] + 0
-      expected_start_busy_samples = profile_blitter[profile] == "inactive" ? 0 : field["samples"] + 0
       actual_start_busy_samples = field["blitter_busy_at_kernel_start_samples"] + 0
       actual_busy_samples = field["blitter_busy_at_kernel_end_samples"] + 0
       expected_launch_samples = profile_blitter[profile] == "inactive" ? 0 : field["samples"] + 0
@@ -286,7 +288,7 @@ $0 == "result=pass" {
           fair_start_mismatch || inactive_start_mismatch || hog_start_invalid ||
           fair_end_mismatch || inactive_end_mismatch || hog_end_invalid ||
           (field["blitter_copy_bytes"] + 0) != expected_case_blitter_bytes) {
-        reject("contention load does not span the kernel for profile " profile " on line " NR)
+        reject("contention metadata does not match profile " profile " on line " NR)
       }
     }
   }
@@ -366,7 +368,6 @@ END {
       (authority != "protocol_only" &&
        authority != "real_hardware_candidate") ||
       header_value["timing_scope"] != "exclusive_kernel_batch" ||
-      header_value["timing_source"] != "eclock" ||
       (header_value["initial_instruction_cache"] != "active" &&
        header_value["initial_instruction_cache"] != "inactive") ||
       header_value["benchmark_instruction_cache"] != "active" ||
@@ -384,13 +385,18 @@ END {
     reject("bad environment or execution metadata")
   }
   if (report_format == 1 &&
-      (header_value["sprite_load"] != "screen_managed" ||
+      (header_value["timing_source"] != "eclock" ||
+       header_value["sprite_load"] != "screen_managed" ||
        header_value["blitter_load"] != "single_copy_a_to_d")) {
     reject("bad version 1 contention metadata")
   }
   if (report_format == 2 &&
-      (header_value["sprite_load"] != "seven_simple_16x224_plus_system_pointer" ||
-       header_value["blitter_load"] != "adaptive_fair_overlap_and_hog_burst_a_to_d")) {
+      (header_value["timing_source"] != "cia_cascade_32" ||
+       header_value["sprite_load"] != "seven_simple_16x224_plus_system_pointer" ||
+       header_value["blitter_load"] != "adaptive_fair_overlap_and_hog_burst_a_to_d" ||
+       (header_value["exclusive_timer_resource"] != "ciaa" &&
+        header_value["exclusive_timer_resource"] != "ciab") ||
+       header_value["exclusive_timer_counter_bits"] != "32")) {
     reject("bad version 2 contention metadata")
   }
   if (authority == "real_hardware_candidate" &&
@@ -428,7 +434,8 @@ END {
     version2_positive[3] = "controlled_sprite_fetch_bytes_per_video_frame"
     version2_positive[4] = "blitter_working_set_bytes"
     version2_positive[5] = "blitter_rows"
-    for (number = 1; number <= 5; ++number) {
+    version2_positive[6] = "exclusive_timer_counter_bits"
+    for (number = 1; number <= 6; ++number) {
       key = version2_positive[number]
       if (!positive_decimal(header_value[key])) {
         reject("bad version 2 header decimal " key)

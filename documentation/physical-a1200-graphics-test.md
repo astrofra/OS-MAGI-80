@@ -1,6 +1,6 @@
 # MAGI-80 Physical A1200 Graphics Test
 
-**Status:** Physical-hardware candidate. The exact writable ADF boots under the stock PAL A1200 FS-UAE profile, completes all 126 cases, restores the hosted display, writes an 81 KiB report through buffered AmigaDOS I/O, and passes the strict report validator after an unattended 180-second window. A physical result remains required and is not a release certification by itself.
+**Status:** Report-format-2 physical-hardware candidate. The exact writable ADF boots under the stock PAL A1200 FS-UAE profile, completes all 126 cases, restores the hosted display, writes an approximately 105 KiB report through buffered AmigaDOS I/O, and passes the strict report validator within the controller's fixed 240-second window. A physical result remains required and is not a release certification by itself.
 
 ## 1. What to Send
 
@@ -73,8 +73,8 @@ Use a stopwatch or phone timer. If possible, arrange a camera so that both the d
 2. Cold-boot the Amiga from that copy.
 3. Start the timer when the drive begins booting.
 4. Do not press keys or move the mouse while the benchmark is running.
-5. Expect an initial text message, followed by screen blanking, size changes, or flicker while DMA profiles are changed. Audio is deliberately muted; audible noise is unexpected and should be reported.
-6. After the measured section, the normal text screen should return and print `MAGI-80 measurements complete; writing report.` The drive may then remain active briefly while the buffered 81 KiB report is committed.
+5. Expect an initial text message, followed by a patterned graphics screen, blanking, or flicker while DMA profiles are changed. Seven tall controlled sprites and the system pointer may be visible during sprite-active profiles. Audio is deliberately muted; audible noise is unexpected and should be reported.
+6. After the measured section, the normal text screen should return and print `MAGI-80 measurements complete; writing report.` The drive may then remain active briefly while the buffered report is committed.
 7. Wait for one of the explicit verdicts below.
 8. Stop the timer when the verdict appears.
 9. Photograph the final screen. Wait until the drive LED has been inactive for at least five seconds before ejecting the disk, deselecting the ADF, resetting, or powering off.
@@ -173,7 +173,9 @@ Before using its timings, also verify:
 - `power_supply_hz=50`;
 - `available_fast_bytes_before_setup=0`;
 - `benchmark_instruction_cache=active`;
+- `timing_source=cia_cascade_32` and `exclusive_timer_counter_bits=32`;
 - `raster_timeout_count=0`;
+- `timer_discarded_samples=0`;
 - `interrupt_restore=pass` and `dma_restore=pass`;
 - the tester's machine declaration agrees with the report.
 
@@ -181,8 +183,10 @@ Before using its timings, also verify:
 
 ## 9. Scope and Limitations
 
-This ADF measures six raw Chip-RAM kernels and two real 68020 C2P4 kernels over three viewport sizes, two source layouts, and seven additive DMA profiles. It checks 126 cases against deterministic checksums. It uses a guarded dedicated stack, direct raster polling, real four-channel muted Paula DMA, and fair/hog blitter-copy controls. It restores the caller's custom-chip and instruction-cache state before writing the final verdict.
+This ADF measures six raw Chip-RAM kernels and two real 68020 C2P4 kernels over three viewport sizes, two source layouts, and seven additive DMA profiles. It checks 126 cases against deterministic checksums. It uses a guarded dedicated stack, direct raster polling, real four-channel muted Paula DMA, seven controlled 16 × 224 sprites, adaptive repeated-row fair-blitter traffic, and a separate hog-mode preemption burst. A resource-reserved Timer-A/Timer-B CIA cascade supplies a direct 32-bit counter while custom interrupts are masked. It restores the caller's custom-chip and instruction-cache state and stops and releases the owned CIA timers before writing the final verdict.
 
-It does not yet provide representative sprite payloads, sustained blitter work for the whole longest conversion, a genuine CPU/blitter C2P merge, safe frame publication, or the future MAGI-80 Level-3 runtime interrupt path. A PASS therefore validates this matrix and its restoration behavior; it does not alone select the final graphics architecture or prove the 25 Hz frame budget.
+The sprite fixture is a deterministic heavy fetch load, not yet a direct/attached/multiplexed virtual-object workload. The blitter fixture measures contention but does not perform useful C2P work. The ADF also does not yet provide a genuine CPU/blitter C2P merge, safe frame publication, or the future MAGI-80 Level-3 runtime interrupt path. A PASS therefore validates this matrix and its restoration behavior; it does not alone select the final graphics architecture or prove the 25 Hz frame budget.
+
+The validator remains backward compatible with report format 1 so results from candidate ADFs distributed before this version can still be checked. Keep their results separate: format 1 used only the screen-managed sprite state, a single 32 KiB blit, and `ReadEClock()` timing, so its distributions are not comparable with format 2.
 
 The complete physical-test contract and interpretation rules are maintained in [Exclusive Graphics Benchmark Plan](./graphics-exclusive-benchmark.md).
