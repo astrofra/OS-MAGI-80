@@ -2,7 +2,7 @@
 
 ## Fast compiler development without launching UAE
 
-**Status:** Phase 0 Musashi runner foundation implemented; compiler connection pending
+**Status:** Phase 0 runner and initial typed-expression compiler connection implemented
 
 **Primary target:** stock Amiga 1200, 68EC020 at approximately 14 MHz  
 **Host platforms:** macOS, Linux, and Windows  
@@ -558,9 +558,17 @@ circular disassembly trace for failures. Run it with `gmake miga68k-test`.
 - assert a return value;
 - print a short disassembly trace on failure.
 
-**Exit condition:** a native executable runs a hand-written `mul_add` 68k function and verifies its result without UAE.
+**Exit condition (met):** a native executable runs a hand-written `mul_add` 68k function and verifies its result without UAE.
 
 ### Phase 1 — connect the compiler
+
+**Initial connection implemented:** `miga80c` parses one annotated `i32`
+function, lowers its expression to typed stack IR, renders GNU m68k assembly,
+and provides a host IR evaluator. The ordinary test path assembles the result,
+extracts a flat image, and checks six inputs against Musashi. The current GNU
+toolchain retains an Amiga relocatable object; ELF linking, symbol manifests,
+and broader language semantics remain pending. See
+[MIGA Lua Compiler Bootstrap](./MIGA-Lua-compiler-bootstrap.md).
 
 - emit assembly for integer constants, arithmetic and return;
 - assemble and link automatically;
@@ -568,7 +576,7 @@ circular disassembly trace for failures. Run it with `gmake miga68k-test`.
 - execute generated functions from the test suite;
 - preserve deterministic test artefacts on failure.
 
-**Exit condition:** `miga80c` compiles a Lua function and a local test invokes it with several inputs.
+**Exit condition (met for the bootstrap subset):** `miga80c` compiles a Lua function and a local test invokes it with several inputs.
 
 ### Phase 2 — freeze the ABI
 

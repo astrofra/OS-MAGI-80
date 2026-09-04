@@ -1,5 +1,8 @@
+#include <errno.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "m68k.h"
@@ -7,7 +10,7 @@
 
 #define ARRAY_COUNT(values) (sizeof(values) / sizeof((values)[0]))
 #define TRACE_CAPACITY 16U
-#define MAX_INSTRUCTIONS 64U
+#define MAX_INSTRUCTIONS 4096U
 #define MAX_FIXTURE_SIZE ((size_t)(MIGA68K_CODE_END - MIGA68K_CODE_START))
 #define STACK_POISON UINT8_C(0xa5)
 #define STACK_GUARD_SIZE 16U
@@ -24,6 +27,7 @@ struct test_case {
     const char *name;
     uint32_t a;
     uint32_t b;
+    uint32_t c;
     uint32_t expected;
 };
 
@@ -51,9 +55,9 @@ enum stop_reason {
 static const uint8_t mul_add_code[] = {
     0x24, 0x00, 0xd0, 0x80, 0xd0, 0x82, 0xd0, 0x81, 0x4e, 0x75
 };
-static uint8_t loaded_mul_add_code[MAX_FIXTURE_SIZE];
-static const uint8_t *active_mul_add_code = mul_add_code;
-static size_t active_mul_add_code_size = sizeof(mul_add_code);
+static uint8_t loaded_program_code[MAX_FIXTURE_SIZE];
+static const uint8_t *active_program_code = mul_add_code;
+static size_t active_program_code_size = sizeof(mul_add_code);
 
 /* MOVE.L (A0),D0; RTS -- used to prove that unmapped reads are rejected. */
 static const uint8_t invalid_read_code[] = {0x20, 0x10, 0x4e, 0x75};
@@ -142,7 +146,7 @@ static int preserved_registers_are_valid(void)
     return 1;
 }
 
-static int load_mul_add_fixture(const char *path)
+static int load_program_image(const char *path)
 {
     FILE *fixture = fopen(path, "rb");
     size_t size;
@@ -152,7 +156,7 @@ static int load_mul_add_fixture(const char *path)
         fprintf(stderr, "Unable to open 68k fixture: %s\n", path);
         return 0;
     }
-    size = fread(loaded_mul_add_code, 1U, sizeof(loaded_mul_add_code), fixture);
+    size = fread(loaded_program_code, 1U, sizeof(loaded_program_code), fixture);
     extra_byte = fgetc(fixture);
     if (ferror(fixture) || size == 0U || extra_byte != EOF) {
         fprintf(stderr, "Invalid or oversized 68k fixture: %s\n", path);
@@ -164,13 +168,31 @@ static int load_mul_add_fixture(const char *path)
         return 0;
     }
 
-    active_mul_add_code = loaded_mul_add_code;
-    active_mul_add_code_size = size;
+    active_program_code = loaded_program_code;
+    active_program_code_size = size;
+    return 1;
+}
+
+static int parse_u32(const char *text, uint32_t *value)
+{
+    char *end;
+    long long parsed;
+
+    errno = 0;
+    end = NULL;
+    parsed = strtoll(text, &end, 0);
+    if (errno != 0 || end == text || *end != '\0' ||
+        parsed < (long long)INT32_MIN ||
+        parsed > (long long)UINT32_MAX) {
+        return 0;
+    }
+    *value = (uint32_t)parsed;
     return 1;
 }
 
 static int prepare_program(const char *name, const uint8_t *code,
-                           size_t code_size, uint32_t d0, uint32_t d1)
+                           size_t code_size, uint32_t d0, uint32_t d1,
+                           uint32_t d2)
 {
     size_t index;
 
@@ -192,6 +214,7 @@ static int prepare_program(const char *name, const uint8_t *code,
     (void)m68k_execute(1);
     m68k_set_reg(M68K_REG_D0, d0);
     m68k_set_reg(M68K_REG_D1, d1);
+    m68k_set_reg(M68K_REG_D2, d2);
     for (index = 0; index < ARRAY_COUNT(preserved_registers); ++index) {
         m68k_set_reg(preserved_registers[index].reg,
                      preserved_registers[index].value);
@@ -232,8 +255,9 @@ static int run_case(const struct test_case *test)
     const char *failure = NULL;
 
     (void)memset(&trace, 0, sizeof(trace));
-    if (!prepare_program(test->name, active_mul_add_code,
-                         active_mul_add_code_size, test->a, test->b)) {
+    if (!prepare_program(test->name, active_program_code,
+                         active_program_code_size, test->a, test->b,
+                         test->c)) {
         active_trace = NULL;
         return 0;
     }
@@ -283,7 +307,7 @@ static int run_memory_guard_test(void)
 
     (void)memset(&trace, 0, sizeof(trace));
     if (!prepare_program("guard/invalid_read", invalid_read_code,
-                         sizeof(invalid_read_code), 0U, 0U)) {
+                         sizeof(invalid_read_code), 0U, 0U, 0U)) {
         return 0;
     }
     m68k_set_reg(M68K_REG_A0, MIGA68K_STACK_END);
@@ -310,7 +334,7 @@ static int run_instruction_limit_test(void)
 
     (void)memset(&trace, 0, sizeof(trace));
     if (!prepare_program("guard/instruction_limit", infinite_loop_code,
-                         sizeof(infinite_loop_code), 0U, 0U)) {
+                         sizeof(infinite_loop_code), 0U, 0U, 0U)) {
         return 0;
     }
     stop = execute_program(&trace, &instruction_count);
@@ -333,19 +357,45 @@ static int run_instruction_limit_test(void)
 int main(int argc, char **argv)
 {
     static const struct test_case cases[] = {
-        {"zero", 0U, 0U, 0U},
-        {"positive", 7U, 5U, 26U},
-        {"negative_a", UINT32_C(0xfffffffc), 1U, UINT32_C(0xfffffff5)},
-        {"negative_b", 3U, UINT32_C(0xfffffff9), 2U},
-        {"wrap_u32", UINT32_C(0x7fffffff), 4U, UINT32_C(0x80000001)}
+        {"zero", 0U, 0U, 0U, 0U},
+        {"positive", 7U, 5U, 0U, 26U},
+        {"negative_a", UINT32_C(0xfffffffc), 1U, 0U,
+         UINT32_C(0xfffffff5)},
+        {"negative_b", 3U, UINT32_C(0xfffffff9), 0U, 2U},
+        {"wrap_u32", UINT32_C(0x7fffffff), 4U, 0U,
+         UINT32_C(0x80000001)}
     };
+    struct test_case command_line_case;
     size_t index;
 
-    if (argc > 2) {
-        fprintf(stderr, "Usage: %s [mul_add.bin]\n", argv[0]);
+    if (argc == 8 && strcmp(argv[1], "--case") == 0) {
+        command_line_case.name = argv[3];
+        if (!load_program_image(argv[2]) ||
+            !parse_u32(argv[4], &command_line_case.a) ||
+            !parse_u32(argv[5], &command_line_case.b) ||
+            !parse_u32(argv[6], &command_line_case.c) ||
+            !parse_u32(argv[7], &command_line_case.expected)) {
+            fprintf(stderr, "Invalid --case arguments.\n");
+            return 2;
+        }
+        m68k_init();
+        m68k_set_instr_hook_callback(instruction_hook);
+        if (!run_case(&command_line_case)) {
+            return 1;
+        }
+        printf("PASS  %s D0=%08x\n", command_line_case.name,
+               (unsigned int)command_line_case.expected);
+        return 0;
+    }
+
+    if (argc > 2 || (argc == 2 && strcmp(argv[1], "--case") == 0)) {
+        fprintf(stderr,
+                "Usage: %s [mul_add.bin]\n"
+                "       %s --case image.bin name D0 D1 D2 expected\n",
+                argv[0], argv[0]);
         return 2;
     }
-    if (argc == 2 && !load_mul_add_fixture(argv[1])) {
+    if (argc == 2 && !load_program_image(argv[1])) {
         return 2;
     }
 

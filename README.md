@@ -8,7 +8,12 @@ The first hosted AmigaOS bootstrap can be built and tested from macOS with:
 gmake check
 ```
 
-This runs the native legacy eight-plane and new four-plane chunky-to-planar golden vectors, three-layer graphics oracle, inverse AGA decoder differential, and graphics-report schema tests; it also compiles and inspects the Hunk executables, runs the hosted bootstrap through `vamos` and FS-UAE, then executes the 256 × 256 AGA screen regression under FS-UAE.
+This runs the native compiler/typed-IR tests, generated 68020 code under
+Musashi, the legacy eight-plane and new four-plane chunky-to-planar golden
+vectors, three-layer graphics oracle, inverse AGA decoder differential, and
+graphics-report schema tests. It also compiles and inspects the Hunk
+executables, runs the hosted bootstrap through `vamos` and FS-UAE, then
+executes the 256 × 256 AGA screen regression under FS-UAE.
 
 Run only the portable three-layer graphics oracle natively with:
 
@@ -28,7 +33,19 @@ SHA-256 checksum. The current Phase 0 harness executes a reviewed `mul_add`
 assembly fixture through GNU `as`/`objcopy`, checks its 32-bit result, stack
 balance, callee-saved registers, memory guards, and instruction limit, and
 retains a short disassembly trace on failure. It is the foundation for the Lua
-compiler path; no Lua frontend is implemented yet.
+compiler path exercised below.
+
+Build the initial typed MIGA Lua expression compiler and validate generated
+68020 code against its typed-IR oracle with:
+
+```sh
+gmake compiler-test compiler-execute-test
+```
+
+The implemented subset accepts one annotated `i32` function with up to three
+parameters, `return`, decimal literals, parentheses, unary `-`, `+`, `-`, and
+`*`. See the [compiler bootstrap](documentation/MIGA-Lua-compiler-bootstrap.md)
+for its exact grammar and current exclusions.
 
 Run the inverse dual-playfield decoder and compositor → C2P → decoder differential with:
 

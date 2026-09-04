@@ -55,6 +55,30 @@ MIGA68K_TEST_OBJECTS := \
 	$(MIGA68K_TEST_BUILD_DIR)/m68kdasm.o \
 	$(MIGA68K_TEST_BUILD_DIR)/m68kops.o \
 	$(MIGA68K_TEST_BUILD_DIR)/softfloat.o
+COMPILER_CPPFLAGS := -I.
+COMPILER_FRONTEND_SOURCE := compiler/frontend/frontend.c
+COMPILER_FRONTEND_HEADER := compiler/frontend/frontend.h
+COMPILER_IR_SOURCE := compiler/ir/ir.c
+COMPILER_IR_HEADER := compiler/ir/ir.h
+COMPILER_BACKEND_SOURCE := compiler/backend_m68k/backend.c
+COMPILER_BACKEND_HEADER := compiler/backend_m68k/backend.h
+COMPILER_SOURCES := $(COMPILER_FRONTEND_SOURCE) $(COMPILER_IR_SOURCE) \
+	$(COMPILER_BACKEND_SOURCE)
+COMPILER_HEADERS := $(COMPILER_FRONTEND_HEADER) $(COMPILER_IR_HEADER) \
+	$(COMPILER_BACKEND_HEADER)
+MIGA80C_SOURCE := tools/miga80c/main.c
+MIGA80C_BUILD_DIR := $(HOST_BUILD_DIR)/miga80c
+MIGA80C_PROGRAM := $(MIGA80C_BUILD_DIR)/miga80c
+COMPILER_TEST_SOURCE := tests/host/compiler/main.c
+COMPILER_TEST_EXPECTED := tests/host/compiler/expected.txt
+COMPILER_TEST_BUILD_DIR := $(HOST_BUILD_DIR)/compiler
+COMPILER_TEST_PROGRAM := $(COMPILER_TEST_BUILD_DIR)/test
+COMPILER_TEST_REPORT := $(REPORT_DIR)/compiler-host.txt
+COMPILER_PIPELINE_SOURCE := tests/compile/arithmetic.lua
+COMPILER_PIPELINE_EXPECTED := tests/compile/pipeline.expected
+COMPILER_PIPELINE_SCRIPT := scripts/test-compiler-pipeline.sh
+COMPILER_PIPELINE_BUILD_DIR := $(HOST_BUILD_DIR)/compiler-pipeline
+COMPILER_PIPELINE_REPORT := $(REPORT_DIR)/compiler-pipeline-host.txt
 C2P_HOST_BUILD_DIR := $(HOST_BUILD_DIR)/c2p-reference
 C2P_HOST_TEST_SOURCE := tests/host/c2p-reference/main.c
 C2P_HOST_TEST_PROGRAM := $(C2P_HOST_BUILD_DIR)/test
@@ -184,7 +208,7 @@ C2P_BENCHMARK_CFLAGS = $(filter-out -Os,$(TARGET_CFLAGS)) -O2
 
 .PHONY: all amiga stage inspect vamos-test fs-uae-smoke c2p-test \
 	c2p4-test graphics-reference-test aga-reference-test \
-	miga68k-test \
+	miga68k-test miga80c compiler-test compiler-execute-test \
 	graphics-report-test chipram-report-test \
 	exclusive-graphics-report-test \
 	aga-screen aga-screen-inspect aga-screen-smoke c2p-benchmark \
@@ -295,6 +319,33 @@ $(MIGA68K_TEST_FIXTURE_OBJECT): $(MIGA68K_TEST_FIXTURE_SOURCE)
 
 $(MIGA68K_TEST_FIXTURE_BINARY): $(MIGA68K_TEST_FIXTURE_OBJECT)
 	$(TARGET_OBJCOPY) -O binary -j .text $< $@
+
+miga80c: $(MIGA80C_PROGRAM)
+
+$(MIGA80C_PROGRAM): $(MIGA80C_SOURCE) $(COMPILER_SOURCES) \
+		$(COMPILER_HEADERS) Makefile
+	@mkdir -p $(MIGA80C_BUILD_DIR)
+	$(HOST_CC) $(COMPILER_CPPFLAGS) $(HOST_CFLAGS) $(COMPILER_SOURCES) \
+		$(MIGA80C_SOURCE) -o $@
+
+compiler-test: $(COMPILER_TEST_PROGRAM) $(COMPILER_TEST_EXPECTED)
+	@mkdir -p $(REPORT_DIR)
+	$(COMPILER_TEST_PROGRAM) >$(COMPILER_TEST_REPORT)
+	diff -u $(COMPILER_TEST_EXPECTED) $(COMPILER_TEST_REPORT)
+
+$(COMPILER_TEST_PROGRAM): $(COMPILER_TEST_SOURCE) $(COMPILER_SOURCES) \
+		$(COMPILER_HEADERS) Makefile
+	@mkdir -p $(COMPILER_TEST_BUILD_DIR)
+	$(HOST_CC) $(COMPILER_CPPFLAGS) $(HOST_CFLAGS) $(COMPILER_SOURCES) \
+		$(COMPILER_TEST_SOURCE) -o $@
+
+compiler-execute-test: $(MIGA80C_PROGRAM) $(MIGA68K_TEST_PROGRAM) \
+		$(COMPILER_PIPELINE_SOURCE) $(COMPILER_PIPELINE_EXPECTED) \
+		$(COMPILER_PIPELINE_SCRIPT)
+	$(COMPILER_PIPELINE_SCRIPT) $(MIGA80C_PROGRAM) \
+		$(MIGA68K_TEST_PROGRAM) $(COMPILER_PIPELINE_SOURCE) \
+		$(COMPILER_PIPELINE_BUILD_DIR) $(TARGET_AS) $(TARGET_OBJCOPY) \
+		$(COMPILER_PIPELINE_REPORT) $(COMPILER_PIPELINE_EXPECTED)
 
 c2p-test: $(C2P_HOST_TEST_PROGRAM)
 	@mkdir -p $(REPORT_DIR)
@@ -539,8 +590,8 @@ exclusive-graphics-test-adf-fs-uae: $(EXCLUSIVE_GRAPHICS_TEST_ADF) \
 runtime-compare:
 	./scripts/compare-c-runtimes.sh
 
-check: miga68k-test c2p-test c2p4-test graphics-reference-test \
-	aga-reference-test \
+check: miga68k-test compiler-test compiler-execute-test c2p-test \
+	c2p4-test graphics-reference-test aga-reference-test \
 	graphics-report-test chipram-report-test exclusive-graphics-report-test \
 	chipram-benchmark exclusive-graphics-benchmark inspect vamos-test \
 	aga-screen-smoke
