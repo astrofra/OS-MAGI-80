@@ -6,8 +6,9 @@ no accelerator. Kickstart 3.0 or 3.1 is accepted.
 Keep this disk writable. Cold-boot the Amiga from it and do not press keys
 while the benchmark is running. Screen changes and silence are expected.
 The benchmark first writes RESULT.TXT with result=running, then replaces it
-with the full report after cleanup. A successful run returns to the text
-screen and prints:
+with the full report after cleanup. When measurements finish, the text screen
+returns and announces that the buffered report is being written. A successful
+run then prints:
 
 MAGI-80 BENCHMARK RESULT: PASS
 

@@ -95,6 +95,11 @@ BEGIN {
   header_name[40] = "dma_restore"
   header_name[41] = "checksum_algorithm"
   header_name[42] = "case_count"
+  header_name[43] = "controlled_sprite_count"
+  header_name[44] = "controlled_sprite_height"
+  header_name[45] = "controlled_sprite_fetch_bytes_per_video_frame"
+  header_name[46] = "blitter_working_set_bytes"
+  header_name[47] = "blitter_rows"
 
   common[1] = "case"
   common[2] = "kind"
@@ -118,6 +123,11 @@ BEGIN {
   common[20] = "expected_checksum"
   common[21] = "actual_checksum"
   common[22] = "result"
+  common[23] = "minimum_controlled_sprite_fetch_bytes_per_video_frame"
+  common[24] = "blitter_busy_at_kernel_end_samples"
+  common[25] = "blitter_copy_bytes"
+  common[26] = "blitter_busy_at_kernel_start_samples"
+  common[27] = "blitter_launch_samples"
 
   numeric[1] = "batch_iterations"
   numeric[2] = "samples"
@@ -131,6 +141,11 @@ BEGIN {
   numeric[10] = "expected_checksum"
   numeric[11] = "actual_checksum"
   numeric[12] = "display_plane_fetch_bytes_per_video_frame"
+  numeric[13] = "minimum_controlled_sprite_fetch_bytes_per_video_frame"
+  numeric[14] = "blitter_busy_at_kernel_end_samples"
+  numeric[15] = "blitter_copy_bytes"
+  numeric[16] = "blitter_busy_at_kernel_start_samples"
+  numeric[17] = "blitter_launch_samples"
 
   expect_dma("blanked", "inactive", "inactive", "inactive", "inactive", "inactive")
   expect_dma("display", "active", "inactive", "inactive", "inactive", "inactive")
@@ -139,6 +154,18 @@ BEGIN {
   expect_dma("display_copper_sprite_audio", "active", "active", "active", "active", "inactive")
   expect_dma("display_copper_sprite_audio_blitter_fair", "active", "active", "active", "active", "busy_fair")
   expect_dma("display_copper_sprite_audio_blitter_hog", "active", "active", "active", "active", "busy_hog")
+}
+
+NR == 1 {
+  value = parse_header(header_name[NR])
+  header_value[header_name[NR]] = value
+  report_format = value + 0
+  if (value == "2") {
+    header_count = 47
+  } else if (value != "1") {
+    reject("unsupported benchmark format")
+  }
+  next
 }
 
 NR <= header_count {
@@ -175,11 +202,15 @@ $0 == "result=pass" {
     if (key in field) reject("duplicate field " key " on line " NR)
     field[key] = value
   }
-  for (number = 1; number <= 22; ++number) require_field(common[number])
+  common_count = report_format == 2 ? 27 : 22
+  for (number = 1; number <= common_count; ++number) {
+    require_field(common[number])
+  }
   if (field["case"] in case_seen) reject("duplicate case " field["case"])
   case_seen[field["case"]] = 1
 
-  for (number = 1; number <= 12; ++number) {
+  numeric_count = report_format == 2 ? 17 : 12
+  for (number = 1; number <= numeric_count; ++number) {
     key = numeric[number]
     if (!unsigned_decimal(field[key])) reject("bad decimal " key " on line " NR)
   }
@@ -224,6 +255,39 @@ $0 == "result=pass" {
         field["audio_dma"] != profile_audio[profile] ||
         field["blitter_dma"] != profile_blitter[profile]) {
       reject("DMA state does not match profile " profile " on line " NR)
+    }
+    if (report_format == 2) {
+      expected_sprite_fetch = profile_sprite[profile] == "active" ? 6328 : 0
+      actual_sprite_fetch = field["minimum_controlled_sprite_fetch_bytes_per_video_frame"] + 0
+      expected_start_busy_samples = profile_blitter[profile] == "inactive" ? 0 : field["samples"] + 0
+      actual_start_busy_samples = field["blitter_busy_at_kernel_start_samples"] + 0
+      actual_busy_samples = field["blitter_busy_at_kernel_end_samples"] + 0
+      expected_launch_samples = profile_blitter[profile] == "inactive" ? 0 : field["samples"] + 0
+      actual_launch_samples = field["blitter_launch_samples"] + 0
+      expected_case_blitter_bytes = 0
+      if (profile_blitter[profile] != "inactive") {
+        if (profile_blitter[profile] == "busy_hog" ||
+            field["kind"] == "raw" || field["width"] == "160") {
+          expected_case_blitter_bytes = 524288
+        } else if (field["width"] == "192") {
+          expected_case_blitter_bytes = 2097152
+        } else if (field["width"] == "256") {
+          expected_case_blitter_bytes = 4194176
+        }
+      }
+      fair_start_mismatch = profile_blitter[profile] == "busy_fair" && actual_start_busy_samples != (field["samples"] + 0)
+      inactive_start_mismatch = profile_blitter[profile] == "inactive" && actual_start_busy_samples != 0
+      hog_start_invalid = profile_blitter[profile] == "busy_hog" && actual_start_busy_samples > (field["samples"] + 0)
+      fair_end_mismatch = profile_blitter[profile] == "busy_fair" && actual_busy_samples != (field["samples"] + 0)
+      inactive_end_mismatch = profile_blitter[profile] == "inactive" && actual_busy_samples != 0
+      hog_end_invalid = profile_blitter[profile] == "busy_hog" && actual_busy_samples > (field["samples"] + 0)
+      if (actual_sprite_fetch != expected_sprite_fetch ||
+          actual_launch_samples != expected_launch_samples ||
+          fair_start_mismatch || inactive_start_mismatch || hog_start_invalid ||
+          fair_end_mismatch || inactive_end_mismatch || hog_end_invalid ||
+          (field["blitter_copy_bytes"] + 0) != expected_case_blitter_bytes) {
+        reject("contention load does not span the kernel for profile " profile " on line " NR)
+      }
     }
   }
 
@@ -293,7 +357,7 @@ $0 == "result=pass" {
 }
 
 END {
-  if (header_value["exclusive_graphics_benchmark_format"] != "1" ||
+  if ((report_format != 1 && report_format != 2) ||
       header_value["benchmark"] != "chipram_c2p4") {
     reject("unsupported benchmark format")
   }
@@ -313,13 +377,21 @@ END {
       header_value["video_hz"] != "50" ||
       header_value["screen_owner"] != "intuition" ||
       header_value["publication"] != "direct_visible_pf1" ||
-      header_value["sprite_load"] != "screen_managed" ||
       header_value["audio_load"] != "four_channel_period124_muted" ||
-      header_value["blitter_load"] != "single_copy_a_to_d" ||
       header_value["interrupt_restore"] != "pass" ||
       header_value["dma_restore"] != "pass" ||
       header_value["checksum_algorithm"] != "fnv1a32") {
     reject("bad environment or execution metadata")
+  }
+  if (report_format == 1 &&
+      (header_value["sprite_load"] != "screen_managed" ||
+       header_value["blitter_load"] != "single_copy_a_to_d")) {
+    reject("bad version 1 contention metadata")
+  }
+  if (report_format == 2 &&
+      (header_value["sprite_load"] != "seven_simple_16x224_plus_system_pointer" ||
+       header_value["blitter_load"] != "adaptive_fair_overlap_and_hog_burst_a_to_d")) {
+    reject("bad version 2 contention metadata")
   }
   if (authority == "real_hardware_candidate" &&
       header_value["environment"] != "physical_a1200_pal_candidate") {
@@ -350,6 +422,19 @@ END {
     key = positive_header[number]
     if (!positive_decimal(header_value[key])) reject("bad header decimal " key)
   }
+  if (report_format == 2) {
+    version2_positive[1] = "controlled_sprite_count"
+    version2_positive[2] = "controlled_sprite_height"
+    version2_positive[3] = "controlled_sprite_fetch_bytes_per_video_frame"
+    version2_positive[4] = "blitter_working_set_bytes"
+    version2_positive[5] = "blitter_rows"
+    for (number = 1; number <= 5; ++number) {
+      key = version2_positive[number]
+      if (!positive_decimal(header_value[key])) {
+        reject("bad version 2 header decimal " key)
+      }
+    }
+  }
   if (!unsigned_decimal(header_value["timer_overhead_ticks"]) ||
       !unsigned_decimal(header_value["timer_discarded_samples"]) ||
       !unsigned_decimal(header_value["raster_timeout_count"]) ||
@@ -358,11 +443,20 @@ END {
       !unsigned_decimal(header_value["available_fast_bytes_before_setup"])) {
     reject("bad timer metadata")
   }
+  expected_blitter_bytes = report_format == 2 ? 4194176 : 32768
   if (header_value["raster_start_line"] != "32" ||
       header_value["dma_profile_count"] != "7" ||
       header_value["audio_channels"] != "4" ||
-      header_value["blitter_copy_bytes"] != "32768") {
+      (header_value["blitter_copy_bytes"] + 0) != expected_blitter_bytes) {
     reject("unexpected matrix contract")
+  }
+  if (report_format == 2 &&
+      (header_value["controlled_sprite_count"] != "7" ||
+       header_value["controlled_sprite_height"] != "224" ||
+       header_value["controlled_sprite_fetch_bytes_per_video_frame"] != "6328" ||
+       header_value["blitter_working_set_bytes"] != "128" ||
+       header_value["blitter_rows"] != "32767")) {
+    reject("unexpected version 2 contention contract")
   }
   high_water = header_value["stack_high_water_bytes"] + 0
   stack_size = header_value["dedicated_stack_bytes"] + 0

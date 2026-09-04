@@ -1,6 +1,6 @@
 # MAGI-80 Physical A1200 Graphics Test
 
-**Status:** Physical-hardware candidate. The ADF boots in FS-UAE and creates its on-disk `running` marker. The complete 126-case binary passes when launched through the project's host-backed FS-UAE volume, but completion from the writable ADF path has not yet been observed within the automated 240-second window. A physical result is evidence for this investigation, not a release certification by itself.
+**Status:** Physical-hardware candidate. The exact writable ADF boots under the stock PAL A1200 FS-UAE profile, completes all 126 cases, restores the hosted display, writes an 81 KiB report through buffered AmigaDOS I/O, and passes the strict report validator after an unattended 180-second window. A physical result remains required and is not a release certification by itself.
 
 ## 1. What to Send
 
@@ -74,10 +74,11 @@ Use a stopwatch or phone timer. If possible, arrange a camera so that both the d
 3. Start the timer when the drive begins booting.
 4. Do not press keys or move the mouse while the benchmark is running.
 5. Expect an initial text message, followed by screen blanking, size changes, or flicker while DMA profiles are changed. Audio is deliberately muted; audible noise is unexpected and should be reported.
-6. Wait for the text screen to return with one of the explicit verdicts below.
-7. Stop the timer when the verdict appears.
-8. Photograph the final screen. Wait until the drive LED has been inactive for at least five seconds before ejecting the disk, deselecting the ADF, resetting, or powering off.
-9. Preserve the modified disk or ADF under its run identifier.
+6. After the measured section, the normal text screen should return and print `MAGI-80 measurements complete; writing report.` The drive may then remain active briefly while the buffered 81 KiB report is committed.
+7. Wait for one of the explicit verdicts below.
+8. Stop the timer when the verdict appears.
+9. Photograph the final screen. Wait until the drive LED has been inactive for at least five seconds before ejecting the disk, deselecting the ADF, resetting, or powering off.
+10. Preserve the modified disk or ADF under its run identifier.
 
 A successful run prints:
 

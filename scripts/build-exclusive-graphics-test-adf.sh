@@ -56,6 +56,7 @@ MAGI80_PROGRAM_SHA256=$(/usr/bin/shasum -a 256 "$MAGI80_PROGRAM" | \
   printf 'benchmark_environment=physical_a1200_pal_candidate\n'
   printf 'timing_authority=real_hardware_candidate\n'
   printf 'report_path=MAGI80BENCH:RESULT.TXT\n'
+  printf 'report_io=amigados_fwrite_setvbuf_32768\n'
   printf 'initial_report_footer=result=running\n'
   printf 'successful_report_footer=result=pass\n'
   printf '\nfilesystem_listing:\n'

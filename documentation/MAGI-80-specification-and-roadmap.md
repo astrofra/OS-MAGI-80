@@ -103,7 +103,7 @@ The adopted graphics direction is defined in [MAGI-80 Graphics Architecture — 
 - Enter and leave exclusive runtime mode repeatedly without rebooting or damaging the prior display, audio, input, or filesystem state.
 - Compile strongly typed MIGA Lua source directly to bounded native 68020 code on the Amiga itself.
 - Render a 256 × 256 three-layer virtual display: a full-screen native planar layer, a configurable 4-bit chunky viewport, and a virtual object layer.
-- Map the planar and pixel layers onto AGA's 4+4-bitplane dual playfields, using 16 opaque base colors and 15 opaque overlay colors selected from a deliberately restricted 12-bit RGB space of 4,096 colors.
+- Map the planar and pixel layers onto AGA's 4+4-bitplane dual playfields, using 16 opaque base colors and 15 opaque overlay colors selected from a deliberately restricted 12-bit RGB space of 4,096 logical colors, then render them through a cartridge-selected photographic or historical-video response profile into AGA's 24-bit hardware palette.
 - Schedule virtual objects onto AGA sprites when possible and use a deterministic, budgeted fallback when hardware sprite capacity is exceeded.
 - Import and play conventional four-channel, 31-sample ProTracker modules.
 - Read projects and assets from mounted OFS and FFS volumes through AmigaDOS.
@@ -135,7 +135,7 @@ The adopted graphics direction is defined in [MAGI-80 Graphics Architecture — 
 | A-03 | MAGI-80 is an AmigaOS-hosted environment, not a bare-metal kernel. | OFS/FFS access through `dos.library`, safe HD launch, and continued AmigaOS operation during editing require a hosted process. | If literal bare-metal operation becomes mandatory, split it into a separate product track with its own loader, filesystem, input, and device work. |
 | A-04 | A standard DD ADF is 901,120 bytes raw, conventionally called 880 KiB. | This is the distribution ceiling and matches a stock internal drive. | The release pipeline MUST build and boot-test the exact image rather than relying only on summed file sizes. |
 | A-05 | The safe filesystem payload budget is initially 800 KiB. | OFS overhead, boot metadata, and future headroom make the raw ADF size an unsafe payload target. | Generate both OFS and FFS candidate images in Phase 0, select one boot format, and replace this estimate with measured free-block budgets. |
-| A-06 | The virtual palette remains 12-bit RGB even though AGA can display 24-bit palette values. | The requested 4,096-color source space is a meaningful fantasy-machine constraint and gives compact assets and simple editing. | Expand each 4-bit component to AGA's 8-bit component when programming the hardware palette. |
+| A-06 | The virtual palette remains a 12-bit RGB index space even though AGA palette entries are 24-bit. A versioned response-profile LUT maps every logical `0xRGB` value to one `0xRRGGBB` hardware value. | The 4,096-color authoring space preserves the intended fantasy-machine constraint, while AGA's precision can express a film- or video-derived response without increasing cartridge color precision. | Generate and validate all 4,096 mappings offline from documented response data; retain direct nibble replication only as a neutral reference and diagnostic fallback. |
 | A-07 | MIGA Lua compiles ahead of time directly to native 68020 machine code in RAM. | Strong static types, fixed layouts, direct API calls, and removal of interpreter dispatch maximize the limited stock CPU. | Phase 0 must prove a minimal on-target emitter, cache synchronization, bounded-loop instrumentation, compile time, code size, and safe abort. A bytecode VM would be a fallback redesign, not a parallel 1.0 runtime. |
 | A-08 | Baseline simulation is 25 updates per second with 50 Hz video synchronization; 50 updates per second is an optional cartridge mode. | Native planar work, viewport C2P, object scheduling, compiled game logic, and audio must share a stock 68EC020 and Chip RAM. | Phase 0 benchmarks determine the certified workload for each rate. Frame rate MUST never change adaptively without the cartridge knowing. |
 | A-09 | Runtime file I/O is prohibited. | DOS file calls may wait, which breaks the scheduling freeze and conflicts with direct hardware ownership. | Preload the compiled cartridge and all assets before takeover. Save only after restoration. |
@@ -339,11 +339,13 @@ The MAGI-80 UI SHOULD use the same 256 × 256 logical surface as cartridges so t
 | SPR-003 | It MUST provide horizontal and vertical flip and 90-degree rotation for square selections. |
 | SPR-004 | It MUST support at least 8 × 8, 16 × 16, and 32 × 32 logical cells. It SHOULD support hardware-friendly 16-, 32-, and 64-pixel-wide object frames with bounded height. |
 | SPR-005 | It MUST show a zoomed editing grid and a 1:1 preview on both light and dark checker backgrounds. |
-| SPR-006 | It MUST edit all 31 opaque logical palette entries as 12-bit RGB values and clearly mark overlay/object index 0 as transparent. |
+| SPR-006 | It MUST edit all 31 opaque logical palette entries as 12-bit RGB values, show each entry's mapped 24-bit AGA value under the selected response profile, and clearly mark overlay/object index 0 as transparent. |
 | SPR-007 | Palette edits MUST update previews immediately and be undoable. |
 | SPR-008 | Sprite and tile sheets MUST use the same packed asset representation consumed by the runtime or lossless, deterministic build-time transformations into planar, attached-sprite, and fallback caches. |
 | SPR-009 | The editor MUST prevent a planar/overlay asset-role or palette mismatch from silently changing pixel indices. |
 | SPR-010 | The editor MUST present virtual objects and tiles, not physical AGA channels. It MAY report whether an asset is eligible for direct, attached, multiplexed, or fallback rendering, but channel assignment remains a runtime concern. |
+| SPR-011 | The palette editor MUST offer the five photographic and three historical-video response profiles defined in section 11.4.1, preview them through the same lookup table used by the runtime, and identify the selected profile and version. |
+| SPR-012 | Changing a response profile MUST preserve every stored 12-bit logical color and pixel index; only the deterministic 24-bit AGA rendering changes. |
 
 ### 9.4 ProTracker import and playback
 
@@ -381,7 +383,7 @@ The MAGI-80 UI SHOULD use the same 256 × 256 logical surface as cartridges so t
 
 | ID | Requirement |
 | --- | --- |
-| CART-001 | A project MUST contain metadata, MIGA Lua source, palettes, tile/object assets, a declared graphics profile, optional map data, and optional ProTracker music. Native code and source line mappings are generated in RAM by the trusted compiler. |
+| CART-001 | A project MUST contain metadata, MIGA Lua source, logical 12-bit palettes, a color-response profile identifier and version, tile/object assets, a declared graphics profile, optional map data, and optional ProTracker music. Native code and source line mappings are generated in RAM by the trusted compiler. |
 | CART-002 | A shareable cartridge SHOULD be a single file with magic, format version, section directory, declared lengths, checksums, and no native pointers. |
 | CART-003 | Multi-byte fields MUST use a documented byte order; big-endian is preferred to minimize target conversion. |
 | CART-004 | Every section MUST be independently bounds-checked before use. Unknown optional sections MUST be skippable. Unknown mandatory sections MUST reject the cartridge. |
@@ -391,6 +393,7 @@ The MAGI-80 UI SHOULD use the same 256 × 256 logical surface as cartridges so t
 | CART-008 | The shell MUST show packed disk size and worst-case resident size before saving. |
 | CART-009 | A malformed cartridge MUST never reach native code generation with an unchecked section, offset, count, or decompression result. |
 | CART-010 | The cartridge MUST identify its container, MIGA Lua language, and target-profile versions. Compiler and native ABI versions belong to the MAGI-80 system and trusted in-session compiled image, not to an executable cartridge payload. |
+| CART-011 | A cartridge MUST store logical palette values and the response-profile identifier, not a private replacement LUT. An unknown mandatory profile or incompatible profile version MUST reject the cartridge with a specific diagnostic rather than silently changing its colors. |
 
 ## 10. MIGA Lua language and native compiler
 
@@ -664,7 +667,7 @@ The baseline composition is `OBJECTS` over `PIXEL` over `PLANAR`, with no blendi
 - `PLANAR` has 16 visible colors numbered 0–15.
 - `PIXEL` has transparent index 0 and 15 visible colors numbered 1–15.
 - `OBJECTS` use transparent index 0 and the overlay palette so hardware and fallback rendering can remain visually equivalent.
-- The resulting portable playfield palette contains 31 opaque colors, each selected from 12-bit RGB (`0xRGB`, four bits per component).
+- The resulting portable playfield palette contains 31 opaque logical colors, each selected from the 12-bit RGB index space (`0xRGB`, four bits per component); the selected response profile maps them to 24-bit AGA register values.
 - Coordinates are integer with the origin at the top left of the 256 × 256 display.
 - Each layer has independent dirty state and an independent scroll/camera offset. A common camera operation MAY update several offsets together.
 - Out-of-bounds drawing is clipped, never wrapped unless an individual API explicitly requests wrapping.
@@ -724,7 +727,38 @@ The exact PF1/PF2 assignment, palette-register and sprite-bank mapping, playfiel
 
 The first hosted Phase 0 smoke test provisionally maps the transparent overlay to PF1 (BPL1/3/5/7, palette base 0) and the opaque base to PF2 (BPL2/4/6/8, palette base 16). An Intuition-managed PAL 256 × 256 × 8 dual-playfield screen passes mode, palette, Chip-RAM, reference-C2P output, raster-pattern, and repeated restoration checks under FS-UAE/Kickstart 3.0. The C2P4 benchmark exercises a native-planar PF2 base with packed4/byte4 viewport conversion into PF1, including real pair-LUT and mask32 68020 assembly and staged `BltBitMap()` publication paths. Its exclusive successor now runs those two assembly cores directly into the live PF1 planes under blanked display and six additive active-DMA profiles, including four Paula channels and fair/hog concurrent blits, with exact output and state-restoration checks. These FS-UAE results prove mapping, integration, and protocol—not final performance or safe display publication. A private Copper/runtime interrupt path, representative sprite work, object scheduling, genuine hybrid C2P, Kickstart 3.1, stress tests, and real-A1200 gates remain open. See [Hosted AGA Screen Smoke Test](./aga-screen-smoke.md), [Four-Plane C2P Reference and Benchmark](./c2p4-benchmark.md), and [Exclusive Graphics Benchmark Plan](./graphics-exclusive-benchmark.md).
 
-Although AGA palette entries accept more precision, MAGI-80 expands each virtual 4-bit component to an 8-bit hardware component by nibble replication. Copper palette changes are not part of the base cartridge API; this keeps the portable color limit stable.
+#### 11.4.1 Logical 12-bit gamut and color-response profiles
+
+MAGI-80 presents exactly 4,096 colors to cartridge code and asset tools, following the classic Amiga `0xRGB` convention. These values are logical color coordinates, not literal AGA register contents. Each built-in response profile owns an immutable 4,096-entry lookup table:
+
+```text
+logical 0xRGB (12-bit) -> profile LUT[4096] -> hardware 0xRRGGBB (24-bit AGA)
+```
+
+Consequently, a predefined MAGI-80 gamut may draw each of its 4,096 entries from anywhere in AGA's approximately 16.7-million-color space while the cartridge still sees only 4,096 possible colors. Only the 31 opaque colors selected by the current dual-playfield palette are resident simultaneously; the lookup table does not change that display limit. Different logical colors MAY converge after quantization or by design, most notably in the monochrome profile.
+
+Version 1.0 MUST provide exactly five photographic-stock profiles and three historical-video profiles:
+
+| Profile family | Version 1.0 response target | Reference year |
+| --- | --- | ---: |
+| Photographic negative | Kodak Professional PORTRA 400 | 2010 |
+| Photographic reversal | Kodak Professional EKTACHROME E100 | 2018 |
+| Instant film | Polaroid Color 600 | 1981 |
+| Photographic negative | Lomography LomoChrome Metropolis | 2019 |
+| Panchromatic monochrome | ILFORD HP5 PLUS | 1989 |
+| Historical video | NTSC 1953 colorimetry | 1953 |
+| Historical video | 625-line PAL/SECAM colorimetry | 1967 |
+| Historical Soviet video | OSKM (ОСКМ, «Одновременная совместимая система с квадратурной модуляцией»), the experimental Soviet 625/50 quadrature system used before SECAM adoption | 1960 |
+
+The stock names are response targets, not claims of manufacturer endorsement or exact chemical reproduction; public preset naming remains subject to trademark review. The profile is selected per cartridge and applies uniformly to editor preview, reference rendering, hardware sprites, planar fallback, and exclusive runtime output. Copper palette changes are not part of the base cartridge API.
+
+The generator MUST model color in linear light before final display encoding and 8-bit quantization. For each film stock it SHOULD use published spectral-sensitivity, characteristic, and dye-density data where available, supplemented by a calibrated color-target capture of the named stock, processing chemistry, scan or print path, illuminant, and reference white. For each video profile it MUST use documented primaries, white point, transfer behavior, luma coefficients, and the static color effect of its encode/decode path. OSKM is modeled as a documented historical reconstruction and MUST be labelled as such wherever surviving source data leaves a parameter uncertain.
+
+Each response contracts red, green, and blue sensitivity and tone range according to its source measurements. The transform MAY also include a 3 × 3 linear-light cross-channel matrix, per-channel characteristic curves, and bounded gamut mapping where physically warranted; three arbitrary independent RGB multipliers are not sufficient evidence of fidelity. ILFORD HP5 PLUS MUST derive one luminance response from its panchromatic spectral sensitivity and emit neutral `R = G = B` output unless a separately documented paper or viewing tint is later approved. Grain, halation, scanlines, chroma delay, noise, and other spatial or temporal artifacts are outside this palette-only contract.
+
+Every shipped LUT MUST record its profile ID and version, source-data provenance, illuminant and white-point assumptions, transform parameters, generator revision, and checksum. Tests MUST cover all 4,096 inputs, deterministic rounding, black/white behavior, neutral-ramp behavior, gamut bounds, representative color-chart patches, editor/runtime identity, and hardware register output. Direct nibble replication (`0xRGB -> 0xRRGGBB`) remains a non-creative reference path for diagnostics and differential tests, not one of the eight selectable profiles.
+
+The initial 256-color grids and their reproducible generator are documented in [MAGI-80 Color-Response Palette Studies](./color-response-palettes/README.md).
 
 ### 11.5 Dirty updates, C2P, and buffering
 
@@ -897,7 +931,7 @@ Section directory[]
 Sections
   META  cartridge metadata, graphics profile, and limits
   SRC   canonical MIGA Lua source
-  PAL   31 virtual 12-bit colors
+  PAL   31 logical 12-bit colors + response-profile ID/version
   GFX   packed tile and virtual-object image data
   MAP   optional map data
   MOD   optional validated module
@@ -1114,7 +1148,7 @@ Cartridges and modules are untrusted input. Host builds MUST run their parsers u
 1. **Native host unit tests:** lexer, Lua-like grammar, type inference/rules, typed IR, record/array/dictionary layouts, instruction encoding and relocation, fixed-point math, cartridge parser, compression, MOD effect state, and the three-layer graphics reference model.
 2. **Property and fuzz tests:** cartridge/MOD parsing, decompression, source lexer/parser, typed IR, relocation inputs, dictionary operations, checked arithmetic, and malformed or nonterminating generated programs.
 3. **Local 68EC020 execution:** run generated functions under Musashi; assert results, side effects, ABI preservation, stack balance, guards, runtime calls, controlled traps, and instruction limits. A curated edge corpus SHOULD later run under Moira as an independent CPU oracle.
-4. **Golden and differential tests:** three-layer composite hashes, planar operation output, four-plane C2P bytes, palette mapping, object-scheduler/fallback traces, selected normalized 68020 disassembly, direct-encoder behavior versus the host typed-IR oracle and assembly route, source error locations, runtime traces, and MOD tick traces.
+4. **Golden and differential tests:** three-layer composite hashes, planar operation output, four-plane C2P bytes, complete 4,096-entry color-response LUTs and palette mapping, editor/runtime/hardware color identity, object-scheduler/fallback traces, selected normalized 68020 disassembly, direct-encoder behavior versus the host typed-IR oracle and assembly route, source error locations, runtime traces, and MOD tick traces.
 5. **UAE integration:** PAL A1200, 68EC020, AGA, exactly 2 MiB Chip RAM, no Fast RAM; generated-code cache synchronization, native ABI integration, floppy boot, HD launch, disk swaps, error paths, hosted/exclusive timing-scope labeling, and crash-versus-timeout diagnostics.
 6. **Real-hardware tests:** at least two stock A1200 units if available, original or representative floppy drive/media, CRT and modern display adapter where relevant; authoritative graphics runs use the bounded exclusive harness and repeat the Chip-RAM calibration under recorded DMA states.
 7. **Soak tests:** editor idle, music preview, generated-code replacement, runtime, repeated run/stop, repeated save/load, and low-memory behavior.
@@ -1154,7 +1188,7 @@ MAGI-80 1.0 is complete only when all of the following are true:
 
 The estimates below are engineering effort for one experienced developer, not calendar promises. They include implementation and ordinary testing but not large hardware-procurement or licensing delays. The critical path is the hybrid graphics freeze on real hardware first, then safe on-target native compilation and the content workflow, then hardening. The local CPU-runner workstream is independent of AGA work and does not block the next graphics benchmarks.
 
-Current Phase 0 evidence includes the reproducible cross-toolchain, native C2P golden vectors, the initial three-layer C99 reference compositor and goldens, an inverse dual-playfield decoder, validated graphics-report schemas, Amiga Hunk benchmark harnesses, and an Intuition-managed 4+4 dual-playfield smoke test under FS-UAE. The architecture-aligned C2P4 tranche includes packed4/byte4 scalar oracles, C99 and 68020 pair-LUT implementations, table-free C99 and 68020 32-pixel transposes, a staged blitter-publication negative control, all three viewport profiles, payload traffic accounting, and exact full-frame canonical differentials under host tests and FS-UAE. The 24-case hosted run remains `hosted_cooperative`. Its 126-case `exclusive_kernel_batch` successor now combines seven additive display/DMA profiles with six raw Chip-RAM kernels and twelve real 68020 C2P4 cases per profile. It runs from a guarded 16 KiB dedicated stack inside `Forbid()`, raster-polls blanking transitions without per-sample `WaitTOF()`, uses short `Disable()` handovers, drives four real muted Paula channels, overlaps fair/hog 32 KiB blits, validates output hashes, and verifies `DMACON`/`INTENA` restoration. The passing FS-UAE report measured 132 bytes of stack high water. A bootable writable OFS hardware-candidate ADF and manifest now provide `running`/FAIL/PASS on-disk result states, bounded raster and blitter waits, instruction-cache state restoration, and a tester handoff. Its boot and writable preflight pass in FS-UAE; complete execution from the writable ADF remains an integration investigation, while the same kernels under the physical-candidate configuration pass from the host-backed volume. Emulator reports remain `protocol_only`, and physical stock-A1200 distributions, explicit sprite payloads, sustained blitter load, raw alignment/mixed cases, safe publication, a genuine hybrid, Level-3 runtime timing, and stress/fault tests remain open. See [MAGI-80 Physical A1200 Graphics Test](./physical-a1200-graphics-test.md). The older two-layer scalar runs remain solely as regression fixtures. The Musashi-based runner is an accepted development direction but is not yet counted as implemented evidence.
+Current Phase 0 evidence includes the reproducible cross-toolchain, native C2P golden vectors, the initial three-layer C99 reference compositor and goldens, an inverse dual-playfield decoder, validated graphics-report schemas, Amiga Hunk benchmark harnesses, and an Intuition-managed 4+4 dual-playfield smoke test under FS-UAE. The architecture-aligned C2P4 tranche includes packed4/byte4 scalar oracles, C99 and 68020 pair-LUT implementations, table-free C99 and 68020 32-pixel transposes, a staged blitter-publication negative control, all three viewport profiles, payload traffic accounting, and exact full-frame canonical differentials under host tests and FS-UAE. The 24-case hosted run remains `hosted_cooperative`. Its 126-case `exclusive_kernel_batch` successor now combines seven additive display/DMA profiles with six raw Chip-RAM kernels and twelve real 68020 C2P4 cases per profile. It runs from a guarded 16 KiB dedicated stack inside `Forbid()`, raster-polls blanking transitions without per-sample `WaitTOF()`, uses short `Disable()` handovers, drives four real muted Paula channels, overlaps fair/hog 32 KiB blits, validates output hashes, and verifies `DMACON`/`INTENA` restoration. The passing FS-UAE report measured 132 bytes of stack high water. A bootable writable OFS hardware-candidate ADF and manifest now provide `running`/FAIL/PASS on-disk result states, bounded raster and blitter waits, instruction-cache state restoration, and a tester handoff. The exact ADF completes and validates under the stock PAL A1200 FS-UAE profile after moving report I/O behind resource restoration and buffering its 81 KiB output into a few large DOS writes. Emulator reports remain non-authoritative for physical timing, and stock-A1200 distributions, explicit sprite payloads, sustained blitter load, raw alignment/mixed cases, safe publication, a genuine hybrid, Level-3 runtime timing, and stress/fault tests remain open. See [MAGI-80 Physical A1200 Graphics Test](./physical-a1200-graphics-test.md). The older two-layer scalar runs remain solely as regression fixtures. The Musashi-based runner is an accepted development direction but is not yet counted as implemented evidence.
 
 ### Phase 0 — Feasibility and irreversible decisions
 
@@ -1167,6 +1201,7 @@ Deliverables:
 - exact empty-boot and Workbench-launch memory measurements;
 - portable reference compositor for `PLANAR`, positioned `PIXEL`, and `OBJECTS`, including deterministic object fallback;
 - AGA 256 × 256 4+4 dual-playfield display with a native planar base, transparent four-plane overlay, and frozen 31-color playfield mapping;
+- versioned offline color-response LUT generator, provenance manifests, 4,096-entry goldens for the five film and three video profiles, and verified 24-bit AGA palette programming;
 - a reproducible graphics benchmark suite covering source construction, draw operations, conversion, safe publication, and checksums;
 - stock-versus-Fast-assisted placement measurements for generated code, runtime stack, packed4 source, and CPU-only scratch, without changing cartridge semantics;
 - reference C and optimized CPU-only, blitter-assisted, and CPU/blitter-hybrid four-plane C2P candidates;
@@ -1189,7 +1224,7 @@ Exit gate:
 - The display is stable on real PAL A1200 hardware.
 - A frozen Standard profile sustains 25 Hz on a stock A1200 with audio enabled and at least 20% measured CPU headroom in representative planar, pixel-viewport, object-heavy, and combined scenes.
 - Small, Medium, and Full chunky profiles have measured packed-versus-byte source results; Full may remain explicitly expensive, but its correct behavior and budget are documented.
-- The project has selected its four-plane C2P path, scroll margin, object/palette/priority contract, direct/attached/multiplex limits, and deterministic fallback policy from real-hardware evidence.
+- The project has selected its four-plane C2P path, scroll margin, object/palette/priority contract, color-response data and transforms, direct/attached/multiplex limits, and deterministic fallback policy from real-hardware evidence.
 - The local runner executes hand-written and compiler-generated arithmetic/control-flow functions, detects nonreturn and invalid memory, and verifies the provisional ABI without UAE.
 - At least one generated function produces matching observable results under the typed-IR oracle, Musashi, UAE, and the on-target direct emitter; target cache synchronization and guards remain part of that proof.
 - The native compiler can emit, relocate, validate, cache-synchronize, run, budget-stop, and discard a small guarded 68020 program without destabilizing AmigaOS.
@@ -1206,7 +1241,7 @@ The next graphics work MUST proceed in this order so each result has an oracle a
 Step 1 is complete for dual-playfield output. The later object tranche must extend canonical decoding with a hardware-sprite adapter, without changing the playfield contract.
 
 1. **Completed:** establish the portable compositor, inverse AGA dual-playfield decoder, exact differential path, and common benchmark report schema. Use identical logical scenes and canonical hashes across every backend.
-2. **In progress:** benchmark four-plane C2P at 160 × 128, 192 × 160, and 256 × 256 for packed and byte-per-pixel sources. The hosted matrix compares C99 and 68020 pair-LUT CPU paths, a table-free 32-pixel 68020 transpose, and a staged blitter-publication negative control. The exclusive successor now wraps the real pair-LUT and mask32 68020 cores plus six raw kernels in blanked display and six additive active-DMA profiles, with real four-channel Paula and fair/hog blitter contention controls. Its 126-case host-backed FS-UAE run is protocol-valid, and its hardware-candidate ADF has a documented physical handoff and recoverable on-disk status. Before selecting a path, resolve the writable-ADF completion discrepancy, collect repeated physical stock-A1200 distributions, add explicit sprite payloads and sustained blitter load, complete raw alignment/mixed and Fast-assisted placements, then implement genuine CPU/blitter merges, dirty/no-change cases, safe publication, and Level-3 runtime-frame timing.
+2. **In progress:** benchmark four-plane C2P at 160 × 128, 192 × 160, and 256 × 256 for packed and byte-per-pixel sources. The hosted matrix compares C99 and 68020 pair-LUT CPU paths, a table-free 32-pixel 68020 transpose, and a staged blitter-publication negative control. The exclusive successor now wraps the real pair-LUT and mask32 68020 cores plus six raw kernels in blanked display and six additive active-DMA profiles, with real four-channel Paula and fair/hog blitter contention controls. Its 126-case host-backed and writable-ADF FS-UAE runs are protocol-valid, and the hardware-candidate ADF has a documented physical handoff and recoverable on-disk status. Before selecting a path, collect repeated physical stock-A1200 distributions, add explicit sprite payloads and sustained blitter load, complete raw alignment/mixed and Fast-assisted placements, then implement genuine CPU/blitter merges, dirty/no-change cases, safe publication, and Level-3 runtime-frame timing.
 3. Benchmark native planar clears, fills, tiles, text, cached planar sprites, whole-screen pointer scroll, fine scroll, and incremental exposed-row/column updates.
 4. Compare no scroll margin, ±16 pixels, and ±32 pixels, including Chip-RAM footprint, rebase spikes, and worst-case refill cost.
 5. Benchmark the virtual object scheduler with direct four-color sprites, attached 16-color pairs, realistic vertical multiplexing, channel exhaustion, priority conflicts, and planar fallback.
@@ -1299,7 +1334,7 @@ Deliverables:
 - versioned `.m80` container and bounded compression;
 - safe-load and safe-save workflow;
 - source editor with navigation, diagnostics, search, and bounded undo;
-- tile/object/palette editor with required tools, hardware-eligibility diagnostics, and reference-composited preview;
+- tile/object/palette editor with required tools, all eight color-response profile previews, logical/mapped color inspection, hardware-eligibility diagnostics, and reference-composited preview;
 - budget meters and project metadata;
 - integrated compile/run/stop loop preserving editor state;
 - example cartridge graphics and source.
@@ -1455,6 +1490,7 @@ The following decisions must be recorded with measurements or prototypes:
 23. Development assembler/linker and syntax, ELF layout, symbol manifest, flat-image extraction, disassembly normalization, and direct-encoder convergence criteria.
 24. CPU regression metrics, reviewed kernels, comparison policy, and thresholds that cannot be presented as hardware timing.
 25. Fast-assisted allocation policy, fallback behavior, profiler labels, and stock-versus-Fast benchmark results for generated code, stack, chunky source, and CPU-only scratch.
+26. Frozen color-response profile IDs and versions, source-data provenance, calibration targets, illuminant/white-point assumptions, transform and gamut-mapping method, LUT generator revision, trademark-safe public names, and golden checksums for all eight profiles.
 
 ## 23. Recommended first vertical slice
 
@@ -1490,6 +1526,12 @@ These sources inform the assumptions above; they are not runtime dependencies:
 - [AmigaOS Documentation Wiki — Basic Input and Output Programming](https://wiki.amigaos.net/wiki/Basic_Input_and_Output_Programming), for AmigaDOS locks and file-handle operations.
 - [Commodore Amiga Hardware Reference Manual mirror — Forming a Dual-Playfield Display](https://amigadev.elowar.com/read/ADCD_2.1/Hardware_Manual_guide/node0078.html), for odd/even bitplane grouping, transparency, palette grouping, and playfield priority.
 - [Commodore AA Chip Set Functional Specification mirror](https://shanson.com/spencer/Amiga-AA-Chipset.pdf), for AGA's eight-bitplane, palette-bank, fetch-mode, and `PF2OF` extensions.
+- [MAGI-80 Color-Response Palette Studies](./color-response-palettes/README.md), containing the common 256-color RGB12 sample grid, all nine comparison PNGs, the reproducible generator, dates, assumptions, and source links.
+- [ITU-R BT.470-6 — Conventional Television Systems](https://www.itu.int/dms_pubrec/itu-r/rec/bt/r-rec-bt.470-6-199811-s!!pdf-e.pdf), especially the historical NTSC and 625-line PAL/SECAM primary chromaticities and reference whites.
+- [Kodak Professional PORTRA 400 technical data](https://www.kodakprofessional.com/sites/default/files/wysiwyg/pro/resources/e4050_portra_400.pdf) and [EKTACHROME E100 technical data](https://www.kodakprofessional.com/sites/default/files/wysiwyg/pro/resources/e4000_ektachrome_100.pdf), including characteristic, spectral-sensitivity, and dye-density curves.
+- [ILFORD HP5 PLUS technical information](https://www.ilfordphoto.com/amfile/file/download/file/1903/product/691/), including its panchromatic spectral-sensitivity and characteristic curves.
+- [Polaroid Color 600 product specification](https://www.polaroid.com/en_gb/products/color-600-instant-film) and [Lomography history](https://www.lomography.com/about/history), to be supplemented by calibrated target captures because the published product material is not sufficient to derive complete colorimetric transforms.
+- [Sokolov and Sudravskii — *Colour Amateur Television Receiver “Tsvet-2”* (1963)](http://ca.cryptocom.ru/tmpfiles/mrb_0469.djvu), an original-period technical source for reconstructing the experimental Soviet OSKM system; later historical summaries may be used only to locate and cross-check primary material.
 - [NXP/Freescale MC68020/MC68EC020 User's Manual](https://www.nxp.com/docs/en/data-sheet/MC68020UM.pdf), for the certified code generator's instruction set, cache, exception, and timing model.
 - [Lua 5.1 Reference Manual](https://www.lua.org/manual/5.1/manual.html) and [official Lua 5.1 source](https://www.lua.org/source/5.1/), used to define and test the documented boundary between familiar Lua syntax and MIGA Lua's static semantics.
 - [AmigaPorts m68k-amigaos-gcc](https://github.com/AmigaPorts/m68k-amigaos-gcc), the preferred starting point for the cross-compilation toolchain.

@@ -5,6 +5,7 @@
 #include <devices/audio.h>
 #include <devices/timer.h>
 #include <dos/dos.h>
+#include <dos/stdio.h>
 #include <exec/libraries.h>
 #include <exec/memory.h>
 #include <exec/execbase.h>
@@ -12,6 +13,7 @@
 #include <graphics/gfx.h>
 #include <graphics/gfxbase.h>
 #include <graphics/modeid.h>
+#include <graphics/sprite.h>
 #include <graphics/videocontrol.h>
 #include <hardware/blit.h>
 #include <hardware/custom.h>
@@ -72,13 +74,26 @@
 #define BENCH_AUDIO_CHANNELS 4U
 #define BENCH_AUDIO_SAMPLE_BYTES 16384U
 #define BENCH_AUDIO_PERIOD 124U
-#define BENCH_BLITTER_BYTES 32768U
+#define BENCH_SPRITE_FIRST 1U
+#define BENCH_SPRITE_COUNT 7U
+#define BENCH_SPRITE_HEIGHT 224U
+#define BENCH_SPRITE_WORDS ((BENCH_SPRITE_HEIGHT * 2U) + 4U)
+#define BENCH_SPRITE_BYTES (BENCH_SPRITE_WORDS * sizeof(UWORD))
+#define BENCH_SPRITE_FETCH_BYTES_PER_FRAME \
+    (BENCH_SPRITE_COUNT * BENCH_SPRITE_BYTES)
+#define BENCH_BLITTER_ROW_BYTES 128U
 #define BENCH_BLITTER_WORDS_PER_ROW 64U
-#define BENCH_BLITTER_ROWS 256U
+#define BENCH_BLITTER_BASE_ROWS 4096U
+#define BENCH_BLITTER_MEDIUM_ROWS 16384U
+#define BENCH_BLITTER_MAX_ROWS 32767U
+#define BENCH_BLITTER_WORKING_BYTES BENCH_BLITTER_ROW_BYTES
+#define BENCH_BLITTER_MAX_COPY_BYTES \
+    (BENCH_BLITTER_ROW_BYTES * BENCH_BLITTER_MAX_ROWS)
 #define BENCH_BLITTER_POLL_LIMIT 4000000UL
 #define BENCH_RASTER_START_LINE 32U
 #define BENCH_RASTER_POLL_LIMIT 4000000UL
-#define BENCH_TIMER_RETRY_LIMIT 8U
+#define BENCH_TIMER_RETRY_LIMIT 32U
+#define BENCH_REPORT_BUFFER_BYTES 32768L
 
 #define BENCH_ALL_CUSTOM_INTERRUPTS 0x7fffU
 #define BENCH_MANAGED_DMA \
@@ -166,6 +181,10 @@ struct RawResult {
     ULONG expected_checksum;
     ULONG actual_checksum;
     ULONG kernel_return_checksum;
+    ULONG blitter_launch_samples;
+    ULONG blitter_busy_at_kernel_start_samples;
+    ULONG blitter_busy_at_kernel_end_samples;
+    ULONG blitter_copy_bytes;
 };
 
 struct C2PResult {
@@ -183,6 +202,10 @@ struct C2PResult {
     ULONG plane_write_bytes;
     ULONG lookup_traffic_bytes;
     ULONG minimum_chip_traffic_bytes;
+    ULONG blitter_launch_samples;
+    ULONG blitter_busy_at_kernel_start_samples;
+    ULONG blitter_busy_at_kernel_end_samples;
+    ULONG blitter_copy_bytes;
 };
 
 struct BatchState {
@@ -236,6 +259,8 @@ static struct IOAudio audio_play[BENCH_AUDIO_CHANNELS];
 static struct MsgPort *audio_port;
 static UBYTE audio_allocation_map[] = {0x0fU};
 static UBYTE audio_play_started[BENCH_AUDIO_CHANNELS];
+static struct SimpleSprite benchmark_sprites[BENCH_SPRITE_COUNT];
+static UBYTE benchmark_sprite_acquired[BENCH_SPRITE_COUNT];
 
 static UBYTE *raw_source;
 static UBYTE *raw_destination;
@@ -244,6 +269,7 @@ static UBYTE *byte_source;
 static uint32_t *pair_lut;
 static UBYTE *oracle_planes_allocation;
 static UBYTE *audio_sample;
+static UWORD *sprite_data_allocation;
 static UBYTE *blitter_source;
 static UBYTE *blitter_destination;
 static UBYTE *stack_allocation;
@@ -277,6 +303,9 @@ static ULONG stack_guard_mismatch_index;
 static ULONG stack_guard_mismatch_value;
 static ULONG blitter_timeout_count;
 static ULONG raster_timeout_count;
+static ULONG exclusive_failure_detail;
+static ULONG exclusive_failure_observed;
+static ULONG exclusive_failure_expected;
 static int suite_status;
 
 static volatile struct Custom *const custom =
@@ -501,19 +530,21 @@ static UWORD profile_dma_bits(const struct DmaProfile *profile)
     return bits;
 }
 
-static void launch_blitter_copy(void)
+static void launch_blitter_copy(UWORD rows)
 {
     custom->bltcon0 = (UWORD)(BC0F_SRCA | BC0F_DEST | A_TO_D);
     custom->bltcon1 = 0U;
     custom->bltafwm = 0xffffU;
     custom->bltalwm = 0xffffU;
-    custom->bltamod = 0U;
-    custom->bltdmod = 0U;
+    /* Revisit one 128-byte row thousands of times.  Signed negative modulos
+     * keep both DMA pointers inside their small Chip-RAM working sets while
+     * BLTSIZV/H generate a long, deterministic AGA contention load. */
+    custom->bltamod = (UWORD)(0U - BENCH_BLITTER_ROW_BYTES);
+    custom->bltdmod = (UWORD)(0U - BENCH_BLITTER_ROW_BYTES);
     custom->bltapt = (APTR)blitter_source;
     custom->bltdpt = (APTR)blitter_destination;
-    custom->bltsize =
-        (UWORD)((BENCH_BLITTER_ROWS << HSIZEBITS) |
-                (BENCH_BLITTER_WORDS_PER_ROW & HSIZEMASK));
+    custom->bltsizv = rows;
+    custom->bltsizh = (UWORD)BENCH_BLITTER_WORDS_PER_ROW;
 }
 
 static int wait_for_blitter(void)
@@ -562,7 +593,8 @@ static int restore_batch_state(const struct BatchState *state)
 }
 
 static int begin_batch(const struct DmaProfile *profile,
-                       struct BatchState *state)
+                       struct BatchState *state,
+                       UWORD blitter_rows)
 {
     UWORD wanted = profile_dma_bits(profile);
     UWORD active;
@@ -583,19 +615,23 @@ static int begin_batch(const struct DmaProfile *profile,
         return restore_batch_state(state) && 0;
     }
     if (profile->use_blitter != 0U) {
-        launch_blitter_copy();
+        launch_blitter_copy(blitter_rows);
     }
     return 1;
 }
 
 static int end_batch(const struct DmaProfile *profile,
-                     const struct BatchState *state)
+                     const struct BatchState *state,
+                     int *blitter_busy_at_kernel_end)
 {
     int success = 1;
 
+    *blitter_busy_at_kernel_end =
+        profile->use_blitter != 0U &&
+        (custom->dmaconr & DMAF_BLTDONE) != 0U;
     if (profile->use_blitter != 0U) {
         if (!wait_for_blitter() ||
-            fnv1a32(blitter_destination, BENCH_BLITTER_BYTES) !=
+            fnv1a32(blitter_destination, BENCH_BLITTER_WORKING_BYTES) !=
                 expected_blitter_checksum) {
             success = 0;
         }
@@ -666,6 +702,64 @@ static ULONG expected_raw_read_checksum(void)
     return checksum * BENCH_RAW_ITERATIONS;
 }
 
+static int start_sprite_load(struct Screen *screen)
+{
+    size_t sprite_index;
+
+    for (sprite_index = 0U; sprite_index < BENCH_SPRITE_COUNT;
+         ++sprite_index) {
+        struct SimpleSprite *sprite = &benchmark_sprites[sprite_index];
+        UWORD *data = sprite_data_allocation +
+                      (sprite_index * BENCH_SPRITE_WORDS);
+        size_t row;
+        WORD acquired;
+
+        memset(sprite, 0, sizeof(*sprite));
+        for (row = 0U; row < BENCH_SPRITE_HEIGHT; ++row) {
+            data[2U + (row * 2U)] =
+                (UWORD)(0xaaaaU ^ (UWORD)(sprite_index * 0x1111U));
+            data[3U + (row * 2U)] =
+                (UWORD)(0x5555U ^ (UWORD)(row * 0x0101U));
+        }
+        acquired = GetSprite(sprite,
+                             (LONG)(BENCH_SPRITE_FIRST + sprite_index));
+        if (acquired != (WORD)(BENCH_SPRITE_FIRST + sprite_index)) {
+            return 0;
+        }
+        benchmark_sprite_acquired[sprite_index] = 1U;
+        sprite->height = BENCH_SPRITE_HEIGHT;
+        ChangeSprite(&screen->ViewPort, sprite, data);
+        MoveSprite(&screen->ViewPort, sprite,
+                   (LONG)(16U + (sprite_index * 32U)), 16L);
+        if (sprite->posctldata != data || sprite->num != (UWORD)acquired ||
+            (TypeOfMem(data) & MEMF_CHIP) == 0U) {
+            return 0;
+        }
+    }
+    WaitTOF();
+    WaitTOF();
+    return 1;
+}
+
+static void stop_sprite_load(void)
+{
+    size_t sprite_index;
+    int released = 0;
+
+    for (sprite_index = 0U; sprite_index < BENCH_SPRITE_COUNT;
+         ++sprite_index) {
+        if (benchmark_sprite_acquired[sprite_index] != 0U) {
+            FreeSprite((LONG)benchmark_sprites[sprite_index].num);
+            benchmark_sprite_acquired[sprite_index] = 0U;
+            released = 1;
+        }
+    }
+    if (released) {
+        WaitTOF();
+        WaitTOF();
+    }
+}
+
 static int run_raw_case(const struct DmaProfile *dma,
                         const struct RawKernel *kernel,
                         struct RawResult *result)
@@ -677,6 +771,10 @@ static int run_raw_case(const struct DmaProfile *dma,
     prepare_raw_destination(kernel->operation);
     result->dma = dma;
     result->kernel = kernel;
+    result->blitter_copy_bytes =
+        dma->use_blitter != 0U
+            ? BENCH_BLITTER_ROW_BYTES * BENCH_BLITTER_BASE_ROWS
+            : 0U;
     attempt = 0U;
     while (sample < BENCH_RAW_SAMPLES) {
         struct BatchState state;
@@ -685,14 +783,21 @@ static int run_raw_case(const struct DmaProfile *dma,
         ULONG batch_return = 0U;
         ULONG measured;
         ULONG iteration;
+        int blitter_busy_at_kernel_start;
+        int blitter_busy_at_kernel_end;
 
         if (attempt >= BENCH_RAW_SAMPLES + 1U +
                            BENCH_TIMER_RETRY_LIMIT) {
+            exclusive_failure_detail = 101U;
             return 0;
         }
-        if (!begin_batch(dma, &state)) {
+        if (!begin_batch(dma, &state, BENCH_BLITTER_BASE_ROWS)) {
+            exclusive_failure_detail = 102U;
             return 0;
         }
+        blitter_busy_at_kernel_start =
+            dma->use_blitter != 0U && dma->blitter_hog == 0U &&
+            (custom->dmaconr & DMAF_BLTDONE) != 0U;
         (void)ReadEClock(&start);
         for (iteration = 0U; iteration < BENCH_RAW_ITERATIONS;
              ++iteration) {
@@ -701,7 +806,8 @@ static int run_raw_case(const struct DmaProfile *dma,
                 kernel->seed);
         }
         (void)ReadEClock(&end);
-        if (!end_batch(dma, &state)) {
+        if (!end_batch(dma, &state, &blitter_busy_at_kernel_end)) {
+            exclusive_failure_detail = 103U;
             return 0;
         }
 
@@ -709,6 +815,15 @@ static int run_raw_case(const struct DmaProfile *dma,
         result->kernel_return_checksum = batch_return;
         if (attempt != 0U &&
             measured_elapsed_ticks(&start, &end, &measured)) {
+            if (blitter_busy_at_kernel_end) {
+                ++result->blitter_busy_at_kernel_end_samples;
+            }
+            if (blitter_busy_at_kernel_start) {
+                ++result->blitter_busy_at_kernel_start_samples;
+            }
+            if (dma->use_blitter != 0U) {
+                ++result->blitter_launch_samples;
+            }
             ticks[sample++] = measured;
         } else if (attempt != 0U) {
             ++timer_discarded_samples;
@@ -743,10 +858,42 @@ static int run_raw_case(const struct DmaProfile *dma,
             fnv1a32(raw_destination, BENCH_RAW_BUFFER_BYTES);
     }
     if (result->expected_checksum != result->actual_checksum) {
+        exclusive_failure_detail = 104U;
+        exclusive_failure_observed = result->actual_checksum;
+        exclusive_failure_expected = result->expected_checksum;
         return 0;
     }
-    return kernel->operation != RAW_READ_LONG4 ||
-           result->kernel_return_checksum == expected_raw_read_checksum();
+    if (dma->use_blitter != 0U &&
+        result->blitter_launch_samples != BENCH_RAW_SAMPLES) {
+        exclusive_failure_detail = 108U;
+        exclusive_failure_observed = result->blitter_launch_samples;
+        exclusive_failure_expected = BENCH_RAW_SAMPLES;
+        return 0;
+    }
+    if (dma->use_blitter != 0U && dma->blitter_hog == 0U &&
+        result->blitter_busy_at_kernel_start_samples != BENCH_RAW_SAMPLES) {
+        exclusive_failure_detail = 107U;
+        exclusive_failure_observed =
+            result->blitter_busy_at_kernel_start_samples;
+        exclusive_failure_expected = BENCH_RAW_SAMPLES;
+        return 0;
+    }
+    if (dma->use_blitter != 0U && dma->blitter_hog == 0U &&
+        result->blitter_busy_at_kernel_end_samples != BENCH_RAW_SAMPLES) {
+        exclusive_failure_detail = 105U;
+        exclusive_failure_observed =
+            result->blitter_busy_at_kernel_end_samples;
+        exclusive_failure_expected = BENCH_RAW_SAMPLES;
+        return 0;
+    }
+    if (kernel->operation == RAW_READ_LONG4 &&
+        result->kernel_return_checksum != expected_raw_read_checksum()) {
+        exclusive_failure_detail = 106U;
+        exclusive_failure_observed = result->kernel_return_checksum;
+        exclusive_failure_expected = expected_raw_read_checksum();
+        return 0;
+    }
+    return 1;
 }
 
 static UBYTE source_color(ULONG x, ULONG y)
@@ -829,6 +976,17 @@ static enum Magi80C2P4Status convert_c2p(
         BENCH_SCREEN_WIDTH >> 3, pair_lut);
 }
 
+static UWORD c2p_blitter_rows(size_t profile_index)
+{
+    if (profile_index == 0U) {
+        return BENCH_BLITTER_BASE_ROWS;
+    }
+    if (profile_index == 1U) {
+        return BENCH_BLITTER_MEDIUM_ROWS;
+    }
+    return BENCH_BLITTER_MAX_ROWS;
+}
+
 static int prepare_c2p_oracles(void)
 {
     UBYTE *oracle_planes[MAGI80_C2P4_PLANE_COUNT];
@@ -882,12 +1040,20 @@ static int run_c2p_case(const struct DmaProfile *dma,
     ULONG attempt;
     ULONG sample = 0U;
     ULONG pixels = profile->width * profile->height;
+    UWORD blitter_rows =
+        dma->blitter_hog != 0U
+            ? BENCH_BLITTER_BASE_ROWS
+            : c2p_blitter_rows(profile_index);
 
     clear_front_planes();
     result->dma = dma;
     result->profile = profile;
     result->layout = layout;
     result->backend = backend;
+    result->blitter_copy_bytes =
+        dma->use_blitter != 0U
+            ? BENCH_BLITTER_ROW_BYTES * (ULONG)blitter_rows
+            : 0U;
     attempt = 0U;
     while (sample < BENCH_C2P_SAMPLES) {
         struct BatchState state;
@@ -895,29 +1061,48 @@ static int run_c2p_case(const struct DmaProfile *dma,
         struct EClockVal end;
         ULONG measured;
         ULONG iteration;
+        int blitter_busy_at_kernel_start;
+        int blitter_busy_at_kernel_end;
 
         if (attempt >= BENCH_C2P_SAMPLES + 1U +
                            BENCH_TIMER_RETRY_LIMIT) {
+            exclusive_failure_detail = 201U;
             return 0;
         }
-        if (!begin_batch(dma, &state)) {
+        if (!begin_batch(dma, &state, blitter_rows)) {
+            exclusive_failure_detail = 202U;
             return 0;
         }
+        blitter_busy_at_kernel_start =
+            dma->use_blitter != 0U && dma->blitter_hog == 0U &&
+            (custom->dmaconr & DMAF_BLTDONE) != 0U;
         (void)ReadEClock(&start);
         for (iteration = 0U; iteration < BENCH_C2P_ITERATIONS;
              ++iteration) {
             if (convert_c2p(profile, layout, backend) !=
                 MAGI80_C2P4_OK) {
-                (void)end_batch(dma, &state);
+                (void)end_batch(dma, &state,
+                                &blitter_busy_at_kernel_end);
+                exclusive_failure_detail = 203U;
                 return 0;
             }
         }
         (void)ReadEClock(&end);
-        if (!end_batch(dma, &state)) {
+        if (!end_batch(dma, &state, &blitter_busy_at_kernel_end)) {
+            exclusive_failure_detail = 204U;
             return 0;
         }
         if (attempt != 0U &&
             measured_elapsed_ticks(&start, &end, &measured)) {
+            if (blitter_busy_at_kernel_end) {
+                ++result->blitter_busy_at_kernel_end_samples;
+            }
+            if (blitter_busy_at_kernel_start) {
+                ++result->blitter_busy_at_kernel_start_samples;
+            }
+            if (dma->use_blitter != 0U) {
+                ++result->blitter_launch_samples;
+            }
             ticks[sample++] = measured;
         } else if (attempt != 0U) {
             ++timer_discarded_samples;
@@ -946,7 +1131,36 @@ static int run_c2p_case(const struct DmaProfile *dma,
     result->expected_checksum =
         c2p_expected_checksum[profile_index][layout];
     result->actual_checksum = hash_front_planes(physical_planes);
-    return result->expected_checksum == result->actual_checksum;
+    if (result->expected_checksum != result->actual_checksum) {
+        exclusive_failure_detail = 205U;
+        exclusive_failure_observed = result->actual_checksum;
+        exclusive_failure_expected = result->expected_checksum;
+        return 0;
+    }
+    if (dma->use_blitter != 0U &&
+        result->blitter_launch_samples != BENCH_C2P_SAMPLES) {
+        exclusive_failure_detail = 208U;
+        exclusive_failure_observed = result->blitter_launch_samples;
+        exclusive_failure_expected = BENCH_C2P_SAMPLES;
+        return 0;
+    }
+    if (dma->use_blitter != 0U && dma->blitter_hog == 0U &&
+        result->blitter_busy_at_kernel_start_samples != BENCH_C2P_SAMPLES) {
+        exclusive_failure_detail = 207U;
+        exclusive_failure_observed =
+            result->blitter_busy_at_kernel_start_samples;
+        exclusive_failure_expected = BENCH_C2P_SAMPLES;
+        return 0;
+    }
+    if (dma->use_blitter != 0U && dma->blitter_hog == 0U &&
+        result->blitter_busy_at_kernel_end_samples != BENCH_C2P_SAMPLES) {
+        exclusive_failure_detail = 206U;
+        exclusive_failure_observed =
+            result->blitter_busy_at_kernel_end_samples;
+        exclusive_failure_expected = BENCH_C2P_SAMPLES;
+        return 0;
+    }
+    return 1;
 }
 
 static int run_exclusive_suite(void)
@@ -1025,7 +1239,7 @@ static void __attribute__((noinline)) run_on_dedicated_stack(void)
 static int write_bytes(BPTR output, const char *text, size_t length)
 {
     return output != (BPTR)0 && length <= 0x7fffffffUL &&
-           Write(output, text, (LONG)length) == (LONG)length;
+           FWrite(output, (APTR)text, (LONG)length, 1L) == 1L;
 }
 
 static int write_text(BPTR output, const char *text)
@@ -1079,6 +1293,10 @@ static int write_dma_fields(BPTR output, const struct DmaProfile *profile)
     UWORD bits = profile_dma_bits(profile);
     ULONG display_fetch =
         (bits & DMAF_RASTER) != 0U ? BENCH_DISPLAY_BYTES : 0U;
+    ULONG sprite_fetch =
+        (bits & DMAF_SPRITE) != 0U
+            ? (ULONG)BENCH_SPRITE_FETCH_BYTES_PER_FRAME
+            : 0U;
 
     return write_text(output, " dma_profile=") &&
            write_text(output, profile->name) &&
@@ -1097,13 +1315,17 @@ static int write_dma_fields(BPTR output, const struct DmaProfile *profile)
            write_text(output, blitter_token(profile)) &&
            write_key_decimal(
                output, " display_plane_fetch_bytes_per_video_frame=",
-               display_fetch);
+               display_fetch) &&
+           write_key_decimal(
+               output,
+               " minimum_controlled_sprite_fetch_bytes_per_video_frame=",
+               sprite_fetch);
 }
 
 static int write_header(BPTR output)
 {
     return write_text(output,
-                      "exclusive_graphics_benchmark_format=1\n"
+                      "exclusive_graphics_benchmark_format=2\n"
                       "benchmark=chipram_c2p4\n"
                       "environment=" MAGI80_BENCHMARK_ENVIRONMENT "\n"
                       "timing_authority=" MAGI80_BENCHMARK_AUTHORITY "\n"
@@ -1150,9 +1372,9 @@ static int write_header(BPTR output)
                       "video_hz=50\n"
                       "screen_owner=intuition\n"
                       "publication=direct_visible_pf1\n"
-                      "sprite_load=screen_managed\n"
+                      "sprite_load=seven_simple_16x224_plus_system_pointer\n"
                       "audio_load=four_channel_period124_muted\n"
-                      "blitter_load=single_copy_a_to_d\n") &&
+                      "blitter_load=adaptive_fair_overlap_and_hog_burst_a_to_d\n") &&
            write_key_decimal(output, "raster_start_line=",
                              BENCH_RASTER_START_LINE) &&
            write_text(output, "\n") &&
@@ -1163,7 +1385,7 @@ static int write_header(BPTR output)
                              BENCH_AUDIO_CHANNELS) &&
            write_text(output, "\n") &&
            write_key_decimal(output, "blitter_copy_bytes=",
-                             BENCH_BLITTER_BYTES) &&
+                             BENCH_BLITTER_MAX_COPY_BYTES) &&
            write_text(output, "\n") &&
            write_key_decimal(output, "dedicated_stack_bytes=",
                              BENCH_STACK_BYTES) &&
@@ -1184,6 +1406,22 @@ static int write_header(BPTR output)
                       "dma_restore=pass\n"
                       "checksum_algorithm=fnv1a32\n") &&
            write_key_decimal(output, "case_count=", BENCH_CASE_COUNT) &&
+           write_text(output, "\n") &&
+           write_key_decimal(output, "controlled_sprite_count=",
+                             BENCH_SPRITE_COUNT) &&
+           write_text(output, "\n") &&
+           write_key_decimal(output, "controlled_sprite_height=",
+                             BENCH_SPRITE_HEIGHT) &&
+           write_text(output, "\n") &&
+           write_key_decimal(
+               output, "controlled_sprite_fetch_bytes_per_video_frame=",
+               BENCH_SPRITE_FETCH_BYTES_PER_FRAME) &&
+           write_text(output, "\n") &&
+           write_key_decimal(output, "blitter_working_set_bytes=",
+                             BENCH_BLITTER_WORKING_BYTES) &&
+           write_text(output, "\n") &&
+           write_key_decimal(output, "blitter_rows=",
+                             BENCH_BLITTER_MAX_ROWS) &&
            write_text(output, "\n");
 }
 
@@ -1226,6 +1464,17 @@ static int write_raw_result(BPTR output, const struct RawResult *result)
            write_text(output, result->kernel->operation_name) &&
            write_text(output, " access_width=") &&
            write_text(output, result->kernel->access_width) &&
+           write_key_decimal(
+               output, " blitter_launch_samples=",
+               result->blitter_launch_samples) &&
+           write_key_decimal(
+               output, " blitter_busy_at_kernel_start_samples=",
+               result->blitter_busy_at_kernel_start_samples) &&
+           write_key_decimal(
+               output, " blitter_busy_at_kernel_end_samples=",
+               result->blitter_busy_at_kernel_end_samples) &&
+           write_key_decimal(output, " blitter_copy_bytes=",
+                             result->blitter_copy_bytes) &&
            write_timing_fields(
                output, BENCH_RAW_ITERATIONS, BENCH_RAW_SAMPLES, bytes,
                bytes * result->kernel->traffic_multiplier,
@@ -1265,6 +1514,17 @@ static int write_c2p_result(BPTR output, const struct C2PResult *result)
            write_text(output, layout_name(result->layout)) &&
            write_text(output, " backend=") &&
            write_text(output, backend_name(result->backend)) &&
+           write_key_decimal(
+               output, " blitter_launch_samples=",
+               result->blitter_launch_samples) &&
+           write_key_decimal(
+               output, " blitter_busy_at_kernel_start_samples=",
+               result->blitter_busy_at_kernel_start_samples) &&
+           write_key_decimal(
+               output, " blitter_busy_at_kernel_end_samples=",
+               result->blitter_busy_at_kernel_end_samples) &&
+           write_key_decimal(output, " blitter_copy_bytes=",
+                             result->blitter_copy_bytes) &&
            write_key_decimal(output, " width=", result->profile->width) &&
            write_key_decimal(output, " height=", result->profile->height) &&
            write_key_decimal(output, " source_bytes=",
@@ -1328,6 +1588,12 @@ static int report_failure(BPTR output, const char *failure)
     (void)write_decimal(output, raster_timeout_count);
     (void)write_text(output, "\ntimer_discarded_samples=");
     (void)write_decimal(output, timer_discarded_samples);
+    (void)write_text(output, "\nexclusive_failure_detail=");
+    (void)write_decimal(output, exclusive_failure_detail);
+    (void)write_text(output, "\nexclusive_failure_observed=");
+    (void)write_decimal(output, exclusive_failure_observed);
+    (void)write_text(output, "\nexclusive_failure_expected=");
+    (void)write_decimal(output, exclusive_failure_expected);
     (void)write_text(output, "\nresult=fail\n");
     return RETURN_ERROR;
 }
@@ -1453,6 +1719,7 @@ int main(int argc, char **argv)
     size_t index;
     int timer_open = 0;
     int blitter_owned = 0;
+    int measurements_complete = 0;
     const char *failure = NULL;
 
     if (argc == 3 && strcmp(argv[1], "--report") == 0) {
@@ -1595,15 +1862,21 @@ int main(int argc, char **argv)
         MEMF_PUBLIC | MEMF_CLEAR);
     audio_sample = (UBYTE *)AllocMem(BENCH_AUDIO_SAMPLE_BYTES,
                                      MEMF_CHIP | MEMF_CLEAR);
+    sprite_data_allocation = (UWORD *)AllocMem(
+        BENCH_SPRITE_COUNT * BENCH_SPRITE_BYTES,
+        MEMF_CHIP | MEMF_CLEAR);
     blitter_source =
-        (UBYTE *)AllocMem(BENCH_BLITTER_BYTES, MEMF_CHIP | MEMF_CLEAR);
+        (UBYTE *)AllocMem(BENCH_BLITTER_WORKING_BYTES,
+                          MEMF_CHIP | MEMF_CLEAR);
     blitter_destination =
-        (UBYTE *)AllocMem(BENCH_BLITTER_BYTES, MEMF_CHIP | MEMF_CLEAR);
+        (UBYTE *)AllocMem(BENCH_BLITTER_WORKING_BYTES,
+                          MEMF_CHIP | MEMF_CLEAR);
     stack_allocation =
         (UBYTE *)AllocMem(BENCH_STACK_TOTAL_BYTES, MEMF_PUBLIC);
     if (raw_source == NULL || raw_destination == NULL ||
         packed_source == NULL || byte_source == NULL || pair_lut == NULL ||
         oracle_planes_allocation == NULL || audio_sample == NULL ||
+        sprite_data_allocation == NULL ||
         blitter_source == NULL || blitter_destination == NULL ||
         stack_allocation == NULL) {
         failure = "allocate_benchmark_memory";
@@ -1615,6 +1888,7 @@ int main(int argc, char **argv)
         (TypeOfMem(byte_source) & MEMF_CHIP) == 0U ||
         (TypeOfMem(pair_lut) & MEMF_CHIP) == 0U ||
         (TypeOfMem(audio_sample) & MEMF_CHIP) == 0U ||
+        (TypeOfMem(sprite_data_allocation) & MEMF_CHIP) == 0U ||
         (TypeOfMem(blitter_source) & MEMF_CHIP) == 0U ||
         (TypeOfMem(blitter_destination) & MEMF_CHIP) == 0U) {
         failure = "verify_chip_memory";
@@ -1631,11 +1905,11 @@ int main(int argc, char **argv)
     for (index = 0U; index < BENCH_AUDIO_SAMPLE_BYTES; ++index) {
         audio_sample[index] = (UBYTE)((index * 29U) & 0xffU);
     }
-    for (index = 0U; index < BENCH_BLITTER_BYTES; ++index) {
+    for (index = 0U; index < BENCH_BLITTER_WORKING_BYTES; ++index) {
         blitter_source[index] = (UBYTE)((index * 13U + 7U) & 0xffU);
     }
     expected_blitter_checksum =
-        fnv1a32(blitter_source, BENCH_BLITTER_BYTES);
+        fnv1a32(blitter_source, BENCH_BLITTER_WORKING_BYTES);
 
     memset(stack_allocation, BENCH_STACK_LOWER_GUARD,
            BENCH_STACK_GUARD_BYTES);
@@ -1660,6 +1934,10 @@ int main(int argc, char **argv)
         goto cleanup;
     }
 
+    if (!start_sprite_load(screen)) {
+        failure = "start_seven_sprite_load";
+        goto cleanup;
+    }
     if (!start_audio_load()) {
         failure = "start_four_channel_audio_load";
         goto cleanup;
@@ -1699,30 +1977,7 @@ int main(int argc, char **argv)
         failure = "dma_restore";
         goto cleanup;
     }
-    if (report_path != NULL) {
-        report_file = Open(report_path, MODE_NEWFILE);
-        if (report_file == (BPTR)0) {
-            failure = "open_report_after_exclusive";
-            goto cleanup;
-        }
-        report_output = report_file;
-    }
-    if (!write_header(report_output)) {
-        failure = "write_report_header";
-        goto cleanup;
-    }
-    for (index = 0U; index < BENCH_RAW_RESULT_COUNT; ++index) {
-        if (!write_raw_result(report_output, &raw_results[index])) {
-            failure = "write_raw_result";
-            goto cleanup;
-        }
-    }
-    for (index = 0U; index < BENCH_C2P_RESULT_COUNT; ++index) {
-        if (!write_c2p_result(report_output, &c2p_results[index])) {
-            failure = "write_c2p_result";
-            goto cleanup;
-        }
-    }
+    measurements_complete = 1;
 
 cleanup:
     progress_phase = PHASE_CLEANUP;
@@ -1731,14 +1986,23 @@ cleanup:
         DisownBlitter();
     }
     stop_audio_load();
+    stop_sprite_load();
     if (stack_allocation != NULL) {
         FreeMem(stack_allocation, BENCH_STACK_TOTAL_BYTES);
     }
     if (blitter_destination != NULL) {
-        FreeMem(blitter_destination, BENCH_BLITTER_BYTES);
+        FreeMem(blitter_destination, BENCH_BLITTER_WORKING_BYTES);
     }
     if (blitter_source != NULL) {
-        FreeMem(blitter_source, BENCH_BLITTER_BYTES);
+        FreeMem(blitter_source, BENCH_BLITTER_WORKING_BYTES);
+    }
+    if (screen != NULL && !CloseScreen(screen) && failure == NULL) {
+        failure = "close_screen";
+    }
+    screen = NULL;
+    if (sprite_data_allocation != NULL) {
+        FreeMem(sprite_data_allocation,
+                BENCH_SPRITE_COUNT * BENCH_SPRITE_BYTES);
     }
     if (audio_sample != NULL) {
         FreeMem(audio_sample, BENCH_AUDIO_SAMPLE_BYTES);
@@ -1764,9 +2028,6 @@ cleanup:
     if (raw_source != NULL) {
         FreeMem(raw_source, BENCH_RAW_BUFFER_BYTES);
     }
-    if (screen != NULL && !CloseScreen(screen) && failure == NULL) {
-        failure = "close_screen";
-    }
     if (timer_open) {
         CloseDevice((struct IORequest *)&timer_request);
         TimerBase = NULL;
@@ -1784,41 +2045,58 @@ cleanup:
         cache_controlled = 0;
     }
     if (failure != NULL) {
-        if (report_path != NULL && report_file == (BPTR)0) {
-            report_file = Open(report_path, MODE_NEWFILE);
-            if (report_file != (BPTR)0) {
-                report_output = report_file;
-            }
+        goto emit_failure;
+    }
+    if (!measurements_complete) {
+        failure = "incomplete_measurement_state";
+        goto emit_failure;
+    }
+
+    if (report_path != NULL) {
+        (void)write_text(console_output,
+                         "MAGI-80 measurements complete; writing report.\n");
+        report_file = Open(report_path, MODE_NEWFILE);
+        if (report_file == (BPTR)0) {
+            failure = "open_report_after_cleanup";
+            goto emit_failure;
         }
-        (void)report_failure(report_output, failure);
-        if (report_file != (BPTR)0) {
-            (void)Close(report_file);
-            (void)write_text(console_output,
-                             "\nMAGI-80 BENCHMARK RESULT: FAIL\n"
-                             "Keep the disk and photograph this screen.\n"
-                             "Diagnostic report: ");
-            (void)write_text(console_output, report_path);
-            (void)write_text(console_output, "\n");
+        if (SetVBuf(report_file, NULL, BUF_FULL,
+                    BENCH_REPORT_BUFFER_BYTES) != 0L) {
+            failure = "configure_report_buffer";
+            goto emit_failure;
         }
-        return RETURN_ERROR;
+        report_output = report_file;
+    }
+    if (!write_header(report_output)) {
+        failure = "write_report_header";
+        goto emit_failure;
+    }
+    for (index = 0U; index < BENCH_RAW_RESULT_COUNT; ++index) {
+        if (!write_raw_result(report_output, &raw_results[index])) {
+            failure = "write_raw_result";
+            goto emit_failure;
+        }
+    }
+    for (index = 0U; index < BENCH_C2P_RESULT_COUNT; ++index) {
+        if (!write_c2p_result(report_output, &c2p_results[index])) {
+            failure = "write_c2p_result";
+            goto emit_failure;
+        }
     }
     progress_phase = PHASE_COMPLETE;
     if (!write_text(report_output, "result=pass\n")) {
-        if (report_file != (BPTR)0) {
-            (void)Close(report_file);
-            (void)write_text(console_output,
-                             "\nMAGI-80 BENCHMARK RESULT: FAIL\n"
-                             "The report footer could not be written.\n");
-        }
-        return RETURN_ERROR;
+        failure = "write_report_footer";
+        goto emit_failure;
     }
     if (report_file != (BPTR)0) {
         if (!Close(report_file)) {
+            report_file = (BPTR)0;
             (void)write_text(console_output,
                              "\nMAGI-80 BENCHMARK RESULT: FAIL\n"
                              "The report file could not be closed.\n");
             return RETURN_ERROR;
         }
+        report_file = (BPTR)0;
         (void)write_text(console_output,
                          "\nMAGI-80 BENCHMARK RESULT: PASS\n"
                          "Wait for the floppy LED to stop before ejecting.\n"
@@ -1827,4 +2105,28 @@ cleanup:
         (void)write_text(console_output, "\n");
     }
     return RETURN_OK;
+
+emit_failure:
+    if (report_file != (BPTR)0) {
+        (void)Close(report_file);
+        report_file = (BPTR)0;
+    }
+    report_output = console_output;
+    if (report_path != NULL) {
+        report_file = Open(report_path, MODE_NEWFILE);
+        if (report_file != (BPTR)0) {
+            report_output = report_file;
+        }
+    }
+    (void)report_failure(report_output, failure);
+    if (report_file != (BPTR)0) {
+        (void)Close(report_file);
+        (void)write_text(console_output,
+                         "\nMAGI-80 BENCHMARK RESULT: FAIL\n"
+                         "Keep the disk and photograph this screen.\n"
+                         "Diagnostic report: ");
+        (void)write_text(console_output, report_path);
+        (void)write_text(console_output, "\n");
+    }
+    return RETURN_ERROR;
 }
