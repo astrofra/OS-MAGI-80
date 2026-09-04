@@ -7,6 +7,8 @@ TARGET_CC := $(MAGI80_TOOLCHAIN_PREFIX)/bin/m68k-amigaos-gcc
 TARGET_SIZE := $(MAGI80_TOOLCHAIN_PREFIX)/bin/m68k-amigaos-size
 TARGET_NM := $(MAGI80_TOOLCHAIN_PREFIX)/bin/m68k-amigaos-nm
 TARGET_OBJDUMP := $(MAGI80_TOOLCHAIN_PREFIX)/bin/m68k-amigaos-objdump
+TARGET_AS := $(MAGI80_TOOLCHAIN_PREFIX)/bin/m68k-amigaos-as
+TARGET_OBJCOPY := $(MAGI80_TOOLCHAIN_PREFIX)/bin/m68k-amigaos-objcopy
 TARGET_RUNTIME := -mcrt=nix20
 HOST_CC ?= cc
 
@@ -29,6 +31,30 @@ C2P_REFERENCE_LAYOUTS_SOURCE := src/graphics/c2p_reference_layouts.c
 C2P_REFERENCE_SOURCES := $(C2P_REFERENCE_SOURCE) $(C2P_REFERENCE_LAYOUTS_SOURCE)
 C2P_REFERENCE_HEADER := src/graphics/c2p_reference.h
 HOST_BUILD_DIR := build/host
+MUSASHI_DEP_DIR := build/deps/musashi
+MUSASHI_READY := $(MUSASHI_DEP_DIR)/.magi80-source-revision
+MIGA68K_TEST_BUILD_DIR := $(HOST_BUILD_DIR)/miga68k-test
+MIGA68K_TEST_GENERATED_DIR := $(MIGA68K_TEST_BUILD_DIR)/generated
+MIGA68K_TEST_GENERATED_STAMP := \
+	$(MIGA68K_TEST_GENERATED_DIR)/.generated
+MIGA68K_TEST_PROGRAM := $(MIGA68K_TEST_BUILD_DIR)/miga68k-test
+MIGA68K_TEST_REPORT := $(REPORT_DIR)/miga68k-test-host.txt
+MIGA68K_TEST_EXPECTED := tests/execute/miga68k-test.expected
+MIGA68K_TEST_RUNNER_SOURCE := tools/miga68k-test/runner.c
+MIGA68K_TEST_MEMORY_SOURCE := tools/miga68k-test/memory.c
+MIGA68K_TEST_MEMORY_HEADER := tools/miga68k-test/memory.h
+MIGA68K_TEST_CONFIG := tools/miga68k-test/miga80_musashi_config.h
+MIGA68K_TEST_FIXTURE_SOURCE := tests/execute/mul_add.s
+MIGA68K_TEST_FIXTURE_OBJECT := $(MIGA68K_TEST_BUILD_DIR)/mul_add.o
+MIGA68K_TEST_FIXTURE_BINARY := $(MIGA68K_TEST_BUILD_DIR)/mul_add.bin
+MUSASHI_GENERATOR := $(MIGA68K_TEST_BUILD_DIR)/m68kmake
+MIGA68K_TEST_OBJECTS := \
+	$(MIGA68K_TEST_BUILD_DIR)/runner.o \
+	$(MIGA68K_TEST_BUILD_DIR)/memory.o \
+	$(MIGA68K_TEST_BUILD_DIR)/m68kcpu.o \
+	$(MIGA68K_TEST_BUILD_DIR)/m68kdasm.o \
+	$(MIGA68K_TEST_BUILD_DIR)/m68kops.o \
+	$(MIGA68K_TEST_BUILD_DIR)/softfloat.o
 C2P_HOST_BUILD_DIR := $(HOST_BUILD_DIR)/c2p-reference
 C2P_HOST_TEST_SOURCE := tests/host/c2p-reference/main.c
 C2P_HOST_TEST_PROGRAM := $(C2P_HOST_BUILD_DIR)/test
@@ -144,12 +170,21 @@ HOST_CFLAGS := \
 	-Werror \
 	-pedantic
 
+MUSASHI_CONFIG_DEFINE := \
+	-DMUSASHI_CNF=\"miga80_musashi_config.h\"
+MUSASHI_CPPFLAGS := \
+	-Itools/miga68k-test \
+	-I$(MUSASHI_DEP_DIR) \
+	-I$(MIGA68K_TEST_GENERATED_DIR)
+MUSASHI_CFLAGS := -std=c99 -O2 -w
+
 C2P_BENCHMARK_CFLAGS = $(filter-out -Os,$(TARGET_CFLAGS)) -O2
 
 .DELETE_ON_ERROR:
 
 .PHONY: all amiga stage inspect vamos-test fs-uae-smoke c2p-test \
 	c2p4-test graphics-reference-test aga-reference-test \
+	miga68k-test \
 	graphics-report-test chipram-report-test \
 	exclusive-graphics-report-test \
 	aga-screen aga-screen-inspect aga-screen-smoke c2p-benchmark \
@@ -194,6 +229,72 @@ run: stage
 
 fs-uae-smoke: stage
 	./scripts/test-fs-uae-runtime.sh
+
+miga68k-test: $(MIGA68K_TEST_PROGRAM) $(MIGA68K_TEST_FIXTURE_BINARY) \
+		$(MIGA68K_TEST_EXPECTED)
+	@mkdir -p $(REPORT_DIR)
+	$(MIGA68K_TEST_PROGRAM) $(MIGA68K_TEST_FIXTURE_BINARY) \
+		>$(MIGA68K_TEST_REPORT)
+	diff -u $(MIGA68K_TEST_EXPECTED) $(MIGA68K_TEST_REPORT)
+
+$(MUSASHI_READY): scripts/fetch-musashi.sh toolchain/versions.lock
+	./scripts/fetch-musashi.sh $(MUSASHI_DEP_DIR)
+
+$(MUSASHI_GENERATOR): $(MUSASHI_READY)
+	@mkdir -p $(MIGA68K_TEST_BUILD_DIR)
+	$(HOST_CC) $(MUSASHI_CFLAGS) $(MUSASHI_DEP_DIR)/m68kmake.c -o $@
+
+$(MIGA68K_TEST_GENERATED_STAMP): $(MUSASHI_GENERATOR) $(MUSASHI_READY)
+	@mkdir -p $(MIGA68K_TEST_GENERATED_DIR)
+	$(MUSASHI_GENERATOR) $(MIGA68K_TEST_GENERATED_DIR) \
+		$(MUSASHI_DEP_DIR)/m68k_in.c
+	@touch $@
+
+$(MIGA68K_TEST_BUILD_DIR)/runner.o: $(MIGA68K_TEST_RUNNER_SOURCE) \
+		$(MIGA68K_TEST_MEMORY_HEADER) $(MIGA68K_TEST_CONFIG) \
+		$(MUSASHI_READY)
+	@mkdir -p $(MIGA68K_TEST_BUILD_DIR)
+	$(HOST_CC) $(MUSASHI_CPPFLAGS) $(MUSASHI_CONFIG_DEFINE) \
+		$(HOST_CFLAGS) -c $(MIGA68K_TEST_RUNNER_SOURCE) -o $@
+
+$(MIGA68K_TEST_BUILD_DIR)/memory.o: $(MIGA68K_TEST_MEMORY_SOURCE) \
+		$(MIGA68K_TEST_MEMORY_HEADER) $(MIGA68K_TEST_CONFIG) \
+		$(MUSASHI_READY)
+	@mkdir -p $(MIGA68K_TEST_BUILD_DIR)
+	$(HOST_CC) $(MUSASHI_CPPFLAGS) $(MUSASHI_CONFIG_DEFINE) \
+		$(HOST_CFLAGS) -c $(MIGA68K_TEST_MEMORY_SOURCE) -o $@
+
+$(MIGA68K_TEST_BUILD_DIR)/m68kcpu.o: $(MUSASHI_READY) \
+		$(MIGA68K_TEST_GENERATED_STAMP) $(MIGA68K_TEST_CONFIG)
+	$(HOST_CC) $(MUSASHI_CPPFLAGS) $(MUSASHI_CONFIG_DEFINE) \
+		$(MUSASHI_CFLAGS) -c $(MUSASHI_DEP_DIR)/m68kcpu.c -o $@
+
+$(MIGA68K_TEST_BUILD_DIR)/m68kdasm.o: $(MUSASHI_READY) \
+		$(MIGA68K_TEST_CONFIG)
+	$(HOST_CC) $(MUSASHI_CPPFLAGS) $(MUSASHI_CONFIG_DEFINE) \
+		$(MUSASHI_CFLAGS) -c $(MUSASHI_DEP_DIR)/m68kdasm.c -o $@
+
+$(MIGA68K_TEST_BUILD_DIR)/m68kops.o: $(MUSASHI_READY) \
+		$(MIGA68K_TEST_GENERATED_STAMP) $(MIGA68K_TEST_CONFIG)
+	$(HOST_CC) $(MUSASHI_CPPFLAGS) $(MUSASHI_CONFIG_DEFINE) \
+		$(MUSASHI_CFLAGS) -c $(MIGA68K_TEST_GENERATED_DIR)/m68kops.c \
+		-o $@
+
+$(MIGA68K_TEST_BUILD_DIR)/softfloat.o: $(MUSASHI_READY) \
+		$(MIGA68K_TEST_CONFIG)
+	$(HOST_CC) $(MUSASHI_CPPFLAGS) $(MUSASHI_CONFIG_DEFINE) \
+		$(MUSASHI_CFLAGS) -c $(MUSASHI_DEP_DIR)/softfloat/softfloat.c \
+		-o $@
+
+$(MIGA68K_TEST_PROGRAM): $(MIGA68K_TEST_OBJECTS)
+	$(HOST_CC) $(MIGA68K_TEST_OBJECTS) -lm -o $@
+
+$(MIGA68K_TEST_FIXTURE_OBJECT): $(MIGA68K_TEST_FIXTURE_SOURCE)
+	@mkdir -p $(MIGA68K_TEST_BUILD_DIR)
+	$(TARGET_AS) -m68020 $< -o $@
+
+$(MIGA68K_TEST_FIXTURE_BINARY): $(MIGA68K_TEST_FIXTURE_OBJECT)
+	$(TARGET_OBJCOPY) -O binary -j .text $< $@
 
 c2p-test: $(C2P_HOST_TEST_PROGRAM)
 	@mkdir -p $(REPORT_DIR)
@@ -438,13 +539,15 @@ exclusive-graphics-test-adf-fs-uae: $(EXCLUSIVE_GRAPHICS_TEST_ADF) \
 runtime-compare:
 	./scripts/compare-c-runtimes.sh
 
-check: c2p-test c2p4-test graphics-reference-test aga-reference-test \
+check: miga68k-test c2p-test c2p4-test graphics-reference-test \
+	aga-reference-test \
 	graphics-report-test chipram-report-test exclusive-graphics-report-test \
 	chipram-benchmark exclusive-graphics-benchmark inspect vamos-test \
 	aga-screen-smoke
 
 clean:
-	rm -rf $(AMIGA_BUILD_DIR) $(HOST_BUILD_DIR) $(REPORT_DIR) \
+	rm -rf $(AMIGA_BUILD_DIR) $(HOST_BUILD_DIR) $(MUSASHI_DEP_DIR) \
+		$(REPORT_DIR) \
 		$(SMOKE_BUILD_DIR) $(BENCHMARK_BUILD_DIR) $(DISTRIBUTION_DIR) \
 		build/fs-uae-smoke build/fs-uae-physical-adf \
 		build/runtime-comparison

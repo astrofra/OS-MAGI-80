@@ -47,6 +47,11 @@ vasm=71539c0cee85d5c1a45a7adf63debc7b5dd59615
 vbcc=4e7294e09481cc2104857c608169dc6d7459b810
 vlink=ce46ccfda0e30eda5b12b9a5d0259d8eaefdefe9
 
+[host_compiler_validation]
+musashi_commit=313ebf1bd9f4d0d93341eb5ce21fd8a119e9dbdd
+musashi_archive_sha256=8bed9e28e7e5377256d41aff80a99c9e917a24e7392d9219e1c45c40ad4000e5
+musashi_cpu=68EC020
+
 [homebrew]
 autoconf=2.73
 automake=1.18.1_1
@@ -78,6 +83,11 @@ amitools=0.8.1
 machine68k=0.3.0
 
 [validation]
+miga68k_musashi_archive_checksum=pass
+miga68k_68ec020_mul_add_execution=pass
+miga68k_abi_and_stack_guards=pass
+miga68k_invalid_memory_detection=pass
+miga68k_instruction_limit=pass
 c99_compile=pass
 amiga_hunk_link=pass
 amigaos_dos_api_link=pass

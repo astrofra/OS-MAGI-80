@@ -16,6 +16,20 @@ Run only the portable three-layer graphics oracle natively with:
 gmake graphics-reference-test
 ```
 
+Build the pinned Musashi core and run the first host-side 68EC020 execution
+harness with:
+
+```sh
+gmake miga68k-test
+```
+
+The first invocation fetches the pinned Musashi source archive and verifies its
+SHA-256 checksum. The current Phase 0 harness executes a reviewed `mul_add`
+assembly fixture through GNU `as`/`objcopy`, checks its 32-bit result, stack
+balance, callee-saved registers, memory guards, and instruction limit, and
+retains a short disassembly trace on failure. It is the foundation for the Lua
+compiler path; no Lua frontend is implemented yet.
+
 Run the inverse dual-playfield decoder and compositor → C2P → decoder differential with:
 
 ```sh

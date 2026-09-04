@@ -1,0 +1,367 @@
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "m68k.h"
+#include "memory.h"
+
+#define ARRAY_COUNT(values) (sizeof(values) / sizeof((values)[0]))
+#define TRACE_CAPACITY 16U
+#define MAX_INSTRUCTIONS 64U
+#define MAX_FIXTURE_SIZE ((size_t)(MIGA68K_CODE_END - MIGA68K_CODE_START))
+#define STACK_POISON UINT8_C(0xa5)
+#define STACK_GUARD_SIZE 16U
+#define TEST_STACK_TOP (MIGA68K_STACK_END - STACK_GUARD_SIZE)
+#define RETURN_SENTINEL (MIGA68K_CODE_END - 2U)
+
+struct trace_buffer {
+    uint32_t pcs[TRACE_CAPACITY];
+    size_t count;
+    size_t next;
+};
+
+struct test_case {
+    const char *name;
+    uint32_t a;
+    uint32_t b;
+    uint32_t expected;
+};
+
+struct preserved_register {
+    m68k_register_t reg;
+    uint32_t value;
+};
+
+enum stop_reason {
+    STOP_RETURNED,
+    STOP_MEMORY_FAULT,
+    STOP_BAD_PC,
+    STOP_INSTRUCTION_LIMIT
+};
+
+/*
+ * Reviewed encoding of tests/execute/mul_add.s:
+ *
+ *   move.l d0,d2
+ *   add.l  d0,d0
+ *   add.l  d2,d0
+ *   add.l  d1,d0
+ *   rts
+ */
+static const uint8_t mul_add_code[] = {
+    0x24, 0x00, 0xd0, 0x80, 0xd0, 0x82, 0xd0, 0x81, 0x4e, 0x75
+};
+static uint8_t loaded_mul_add_code[MAX_FIXTURE_SIZE];
+static const uint8_t *active_mul_add_code = mul_add_code;
+static size_t active_mul_add_code_size = sizeof(mul_add_code);
+
+/* MOVE.L (A0),D0; RTS -- used to prove that unmapped reads are rejected. */
+static const uint8_t invalid_read_code[] = {0x20, 0x10, 0x4e, 0x75};
+
+/* BRA.S * -- used to prove that non-returning code is budget-stopped. */
+static const uint8_t infinite_loop_code[] = {0x60, 0xfe};
+
+static const struct preserved_register preserved_registers[] = {
+    {M68K_REG_D3, UINT32_C(0xd3d3d3d3)},
+    {M68K_REG_D4, UINT32_C(0xd4d4d4d4)},
+    {M68K_REG_D5, UINT32_C(0xd5d5d5d5)},
+    {M68K_REG_D6, UINT32_C(0xd6d6d6d6)},
+    {M68K_REG_D7, UINT32_C(0xd7d7d7d7)},
+    {M68K_REG_A2, UINT32_C(0xa2a2a2a2)},
+    {M68K_REG_A3, UINT32_C(0xa3a3a3a3)},
+    {M68K_REG_A4, UINT32_C(0xa4a4a4a4)},
+    {M68K_REG_A5, UINT32_C(0xa5a5a5a5)},
+    {M68K_REG_A6, UINT32_C(0xa6a6a6a6)}
+};
+
+static struct trace_buffer *active_trace;
+
+static void trace_add(struct trace_buffer *trace, uint32_t pc)
+{
+    trace->pcs[trace->next] = pc;
+    trace->next = (trace->next + 1U) % TRACE_CAPACITY;
+    if (trace->count < TRACE_CAPACITY) {
+        ++trace->count;
+    }
+}
+
+static void instruction_hook(unsigned int pc)
+{
+    if (active_trace != NULL) {
+        trace_add(active_trace, pc);
+    }
+    m68k_end_timeslice();
+}
+
+static void print_trace(const struct trace_buffer *trace)
+{
+    const size_t first =
+        (trace->next + TRACE_CAPACITY - trace->count) % TRACE_CAPACITY;
+    size_t index;
+
+    fprintf(stderr, "Last %lu instruction(s):\n",
+            (unsigned long)trace->count);
+    for (index = 0; index < trace->count; ++index) {
+        char instruction[128];
+        const uint32_t pc = trace->pcs[(first + index) % TRACE_CAPACITY];
+
+        (void)m68k_disassemble(instruction, pc, M68K_CPU_TYPE_68EC020);
+        fprintf(stderr, "  %06x  %s\n", (unsigned int)pc, instruction);
+    }
+}
+
+static void print_registers(void)
+{
+    unsigned int index;
+
+    for (index = 0; index < 8U; ++index) {
+        fprintf(stderr, "D%u=%08x%c", index,
+                m68k_get_reg(NULL, (m68k_register_t)(M68K_REG_D0 + index)),
+                index == 7U ? '\n' : ' ');
+    }
+    for (index = 0; index < 8U; ++index) {
+        fprintf(stderr, "A%u=%08x%c", index,
+                m68k_get_reg(NULL, (m68k_register_t)(M68K_REG_A0 + index)),
+                index == 7U ? '\n' : ' ');
+    }
+    fprintf(stderr, "PC=%08x SR=%04x\n",
+            m68k_get_reg(NULL, M68K_REG_PC),
+            m68k_get_reg(NULL, M68K_REG_SR));
+}
+
+static int preserved_registers_are_valid(void)
+{
+    size_t index;
+
+    for (index = 0; index < ARRAY_COUNT(preserved_registers); ++index) {
+        if (m68k_get_reg(NULL, preserved_registers[index].reg) !=
+            preserved_registers[index].value) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int load_mul_add_fixture(const char *path)
+{
+    FILE *fixture = fopen(path, "rb");
+    size_t size;
+    int extra_byte;
+
+    if (fixture == NULL) {
+        fprintf(stderr, "Unable to open 68k fixture: %s\n", path);
+        return 0;
+    }
+    size = fread(loaded_mul_add_code, 1U, sizeof(loaded_mul_add_code), fixture);
+    extra_byte = fgetc(fixture);
+    if (ferror(fixture) || size == 0U || extra_byte != EOF) {
+        fprintf(stderr, "Invalid or oversized 68k fixture: %s\n", path);
+        (void)fclose(fixture);
+        return 0;
+    }
+    if (fclose(fixture) != 0) {
+        fprintf(stderr, "Unable to close 68k fixture: %s\n", path);
+        return 0;
+    }
+
+    active_mul_add_code = loaded_mul_add_code;
+    active_mul_add_code_size = size;
+    return 1;
+}
+
+static int prepare_program(const char *name, const uint8_t *code,
+                           size_t code_size, uint32_t d0, uint32_t d1)
+{
+    size_t index;
+
+    miga68k_memory_reset(STACK_POISON);
+    if (!miga68k_memory_load_code(MIGA68K_CODE_START, code, code_size) ||
+        !miga68k_memory_host_write_u32(MIGA68K_VECTOR_START,
+                                      TEST_STACK_TOP - 4U) ||
+        !miga68k_memory_host_write_u32(MIGA68K_VECTOR_START + 4U,
+                                      MIGA68K_CODE_START) ||
+        !miga68k_memory_host_write_u32(TEST_STACK_TOP - 4U,
+                                      RETURN_SENTINEL)) {
+        fprintf(stderr, "TEST: %s\nUnable to initialize virtual memory.\n",
+                name);
+        return 0;
+    }
+
+    m68k_set_cpu_type(M68K_CPU_TYPE_68EC020);
+    m68k_pulse_reset();
+    (void)m68k_execute(1);
+    m68k_set_reg(M68K_REG_D0, d0);
+    m68k_set_reg(M68K_REG_D1, d1);
+    for (index = 0; index < ARRAY_COUNT(preserved_registers); ++index) {
+        m68k_set_reg(preserved_registers[index].reg,
+                     preserved_registers[index].value);
+    }
+    return 1;
+}
+
+static enum stop_reason execute_program(struct trace_buffer *trace,
+                                        unsigned int *instruction_count)
+{
+    active_trace = trace;
+    *instruction_count = 0;
+    while (*instruction_count < MAX_INSTRUCTIONS) {
+        const uint32_t pc = m68k_get_reg(NULL, M68K_REG_PC);
+
+        if (pc == RETURN_SENTINEL) {
+            return STOP_RETURNED;
+        }
+        if (!miga68k_memory_is_executable(pc)) {
+            return STOP_BAD_PC;
+        }
+
+        (void)m68k_execute(1000000);
+        ++*instruction_count;
+        if (miga68k_memory_has_fault()) {
+            return STOP_MEMORY_FAULT;
+        }
+    }
+    return STOP_INSTRUCTION_LIMIT;
+}
+
+static int run_case(const struct test_case *test)
+{
+    struct trace_buffer trace;
+    unsigned int instruction_count;
+    enum stop_reason stop;
+    int passed = 1;
+    const char *failure = NULL;
+
+    (void)memset(&trace, 0, sizeof(trace));
+    if (!prepare_program(test->name, active_mul_add_code,
+                         active_mul_add_code_size, test->a, test->b)) {
+        active_trace = NULL;
+        return 0;
+    }
+
+    stop = execute_program(&trace, &instruction_count);
+    if (stop == STOP_INSTRUCTION_LIMIT) {
+        failure = "instruction limit reached";
+    } else if (stop == STOP_BAD_PC) {
+        failure = "execution left the code segment";
+    } else if (stop == STOP_MEMORY_FAULT) {
+        failure = miga68k_memory_fault();
+    } else if (failure == NULL &&
+               m68k_get_reg(NULL, M68K_REG_D0) != test->expected) {
+        failure = "unexpected return value";
+    } else if (failure == NULL &&
+               m68k_get_reg(NULL, M68K_REG_A7) != TEST_STACK_TOP) {
+        failure = "unbalanced stack";
+    } else if (failure == NULL && !preserved_registers_are_valid()) {
+        failure = "callee-saved register was modified";
+    } else if (failure == NULL &&
+               (!miga68k_memory_range_is(MIGA68K_STACK_START,
+                                         STACK_GUARD_SIZE, STACK_POISON) ||
+                !miga68k_memory_range_is(TEST_STACK_TOP, STACK_GUARD_SIZE,
+                                         STACK_POISON))) {
+        failure = "stack guard was modified";
+    }
+
+    if (failure != NULL) {
+        fprintf(stderr,
+                "TEST: %s\nRESULT: %s; expected D0=%08x, got %08x\n"
+                "INSTRUCTIONS: %u\n",
+                test->name, failure, (unsigned int)test->expected,
+                m68k_get_reg(NULL, M68K_REG_D0), instruction_count);
+        print_registers();
+        print_trace(&trace);
+        passed = 0;
+    }
+    active_trace = NULL;
+    return passed;
+}
+
+static int run_memory_guard_test(void)
+{
+    struct trace_buffer trace;
+    unsigned int instruction_count;
+    enum stop_reason stop;
+
+    (void)memset(&trace, 0, sizeof(trace));
+    if (!prepare_program("guard/invalid_read", invalid_read_code,
+                         sizeof(invalid_read_code), 0U, 0U)) {
+        return 0;
+    }
+    m68k_set_reg(M68K_REG_A0, MIGA68K_STACK_END);
+    stop = execute_program(&trace, &instruction_count);
+    active_trace = NULL;
+    if (stop == STOP_MEMORY_FAULT && miga68k_memory_has_fault()) {
+        return 1;
+    }
+
+    fprintf(stderr,
+            "TEST: guard/invalid_read\nRESULT: unmapped read was not rejected\n"
+            "INSTRUCTIONS: %u\n",
+            instruction_count);
+    print_registers();
+    print_trace(&trace);
+    return 0;
+}
+
+static int run_instruction_limit_test(void)
+{
+    struct trace_buffer trace;
+    unsigned int instruction_count;
+    enum stop_reason stop;
+
+    (void)memset(&trace, 0, sizeof(trace));
+    if (!prepare_program("guard/instruction_limit", infinite_loop_code,
+                         sizeof(infinite_loop_code), 0U, 0U)) {
+        return 0;
+    }
+    stop = execute_program(&trace, &instruction_count);
+    active_trace = NULL;
+    if (stop == STOP_INSTRUCTION_LIMIT &&
+        instruction_count == MAX_INSTRUCTIONS) {
+        return 1;
+    }
+
+    fprintf(stderr,
+            "TEST: guard/instruction_limit\n"
+            "RESULT: non-returning code escaped its budget\n"
+            "INSTRUCTIONS: %u\n",
+            instruction_count);
+    print_registers();
+    print_trace(&trace);
+    return 0;
+}
+
+int main(int argc, char **argv)
+{
+    static const struct test_case cases[] = {
+        {"zero", 0U, 0U, 0U},
+        {"positive", 7U, 5U, 26U},
+        {"negative_a", UINT32_C(0xfffffffc), 1U, UINT32_C(0xfffffff5)},
+        {"negative_b", 3U, UINT32_C(0xfffffff9), 2U},
+        {"wrap_u32", UINT32_C(0x7fffffff), 4U, UINT32_C(0x80000001)}
+    };
+    size_t index;
+
+    if (argc > 2) {
+        fprintf(stderr, "Usage: %s [mul_add.bin]\n", argv[0]);
+        return 2;
+    }
+    if (argc == 2 && !load_mul_add_fixture(argv[1])) {
+        return 2;
+    }
+
+    m68k_init();
+    m68k_set_instr_hook_callback(instruction_hook);
+    for (index = 0; index < ARRAY_COUNT(cases); ++index) {
+        if (!run_case(&cases[index])) {
+            return 1;
+        }
+    }
+    if (!run_memory_guard_test() || !run_instruction_limit_test()) {
+        return 1;
+    }
+
+    printf("PASS  miga68k-test Musashi 68EC020 mul_add (%lu cases; "
+           "2 guard cases)\n",
+           (unsigned long)ARRAY_COUNT(cases));
+    return 0;
+}

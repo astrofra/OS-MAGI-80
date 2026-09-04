@@ -2,7 +2,8 @@
 
 ## Fast compiler development without launching UAE
 
-**Status:** proposed development architecture  
+**Status:** Phase 0 Musashi runner foundation implemented; compiler connection pending
+
 **Primary target:** stock Amiga 1200, 68EC020 at approximately 14 MHz  
 **Host platforms:** macOS, Linux, and Windows  
 **Scope:** local testing of the MAGI-80 Lua compiler and its generated 68020 code
@@ -543,6 +544,12 @@ Third-party CPU sources can be included as a pinned Git submodule, a package fet
 
 ### Phase 0 — prove the runner
 
+**Implemented:** the pinned Musashi revision selects 68EC020 mode, uses a
+bounds-checked big-endian 24-bit memory map, executes the reviewed `mul_add`
+source after GNU `as`/`objcopy` conversion to a flat image, stops at a return
+sentinel, limits instructions, verifies ABI/stack guards, and retains a
+circular disassembly trace for failures. Run it with `gmake miga68k-test`.
+
 - integrate Musashi with a flat byte-array memory model;
 - configure the 68EC020 CPU type;
 - load a hand-written function;
@@ -655,4 +662,3 @@ The result is a conventional compiler-development experience on a modern machine
 - [vasm — portable and retargetable assembler](https://sun.hasenbraten.de/vasm/)
 - [GNU Binutils](https://sourceware.org/binutils/)
 - [Homebrew `m68k-elf-binutils`](https://formulae.brew.sh/formula/m68k-elf-binutils)
-
