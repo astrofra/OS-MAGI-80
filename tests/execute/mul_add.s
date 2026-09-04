@@ -1,4 +1,4 @@
-/* Provisional MAGI-80 scalar ABI: a=D0, b=D1, result=D0, D2 caller-saved. */
+/* MIGA Lua native ABI 0.1: a=D0, b=D1, result=D0, D2 caller-saved. */
 
         .text
         .globl  mul_add

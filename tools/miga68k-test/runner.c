@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "compiler/abi/abi.h"
 #include "m68k.h"
 #include "memory.h"
 
@@ -16,6 +17,7 @@
 #define STACK_GUARD_SIZE 16U
 #define TEST_STACK_TOP (MIGA68K_STACK_END - STACK_GUARD_SIZE)
 #define RETURN_SENTINEL (MIGA68K_CODE_END - 2U)
+#define TEST_RUNTIME_CONTEXT MIGA68K_DATA_START
 
 struct trace_buffer {
     uint32_t pcs[TRACE_CAPACITY];
@@ -29,11 +31,6 @@ struct test_case {
     uint32_t b;
     uint32_t c;
     uint32_t expected;
-};
-
-struct preserved_register {
-    m68k_register_t reg;
-    uint32_t value;
 };
 
 enum stop_reason {
@@ -65,20 +62,33 @@ static const uint8_t invalid_read_code[] = {0x20, 0x10, 0x4e, 0x75};
 /* BRA.S * -- used to prove that non-returning code is budget-stopped. */
 static const uint8_t infinite_loop_code[] = {0x60, 0xfe};
 
-static const struct preserved_register preserved_registers[] = {
-    {M68K_REG_D3, UINT32_C(0xd3d3d3d3)},
-    {M68K_REG_D4, UINT32_C(0xd4d4d4d4)},
-    {M68K_REG_D5, UINT32_C(0xd5d5d5d5)},
-    {M68K_REG_D6, UINT32_C(0xd6d6d6d6)},
-    {M68K_REG_D7, UINT32_C(0xd7d7d7d7)},
-    {M68K_REG_A2, UINT32_C(0xa2a2a2a2)},
-    {M68K_REG_A3, UINT32_C(0xa3a3a3a3)},
-    {M68K_REG_A4, UINT32_C(0xa4a4a4a4)},
-    {M68K_REG_A5, UINT32_C(0xa5a5a5a5)},
-    {M68K_REG_A6, UINT32_C(0xa6a6a6a6)}
-};
+/* MOVEQ #0,D3; RTS -- proves that ABI 0.1 saved-register damage is caught. */
+static const uint8_t saved_register_clobber_code[] = {0x76, 0x00, 0x4e, 0x75};
 
 static struct trace_buffer *active_trace;
+
+static m68k_register_t musashi_register(enum miga80_abi_register reg)
+{
+    if (reg <= MIGA80_ABI_D7) {
+        return (m68k_register_t)(M68K_REG_D0 + reg);
+    }
+    return (m68k_register_t)(M68K_REG_A0 + (reg - MIGA80_ABI_A0));
+}
+
+static uint32_t preserved_register_value(enum miga80_abi_register reg)
+{
+    unsigned int byte;
+
+    if (reg == MIGA80_ABI_RUNTIME_CONTEXT_REGISTER) {
+        return TEST_RUNTIME_CONTEXT;
+    }
+    if (reg <= MIGA80_ABI_D7) {
+        byte = 0xd0U + (unsigned int)reg;
+    } else {
+        byte = 0xa0U + (unsigned int)(reg - MIGA80_ABI_A0);
+    }
+    return (uint32_t)byte * UINT32_C(0x01010101);
+}
 
 static void trace_add(struct trace_buffer *trace, uint32_t pc)
 {
@@ -135,11 +145,13 @@ static void print_registers(void)
 
 static int preserved_registers_are_valid(void)
 {
-    size_t index;
+    enum miga80_abi_register reg;
 
-    for (index = 0; index < ARRAY_COUNT(preserved_registers); ++index) {
-        if (m68k_get_reg(NULL, preserved_registers[index].reg) !=
-            preserved_registers[index].value) {
+    for (reg = MIGA80_ABI_D0; reg < MIGA80_ABI_REGISTER_COUNT;
+         reg = (enum miga80_abi_register)(reg + 1)) {
+        if (miga80_abi_register_is_callee_saved(reg) &&
+            m68k_get_reg(NULL, musashi_register(reg)) !=
+                preserved_register_value(reg)) {
             return 0;
         }
     }
@@ -194,10 +206,11 @@ static int prepare_program(const char *name, const uint8_t *code,
                            size_t code_size, uint32_t d0, uint32_t d1,
                            uint32_t d2)
 {
-    size_t index;
+    enum miga80_abi_register reg;
 
     miga68k_memory_reset(STACK_POISON);
-    if (!miga68k_memory_load_code(MIGA68K_CODE_START, code, code_size) ||
+    if ((TEST_STACK_TOP - 4U) % MIGA80_ABI_STACK_ALIGNMENT != 0U ||
+        !miga68k_memory_load_code(MIGA68K_CODE_START, code, code_size) ||
         !miga68k_memory_host_write_u32(MIGA68K_VECTOR_START,
                                       TEST_STACK_TOP - 4U) ||
         !miga68k_memory_host_write_u32(MIGA68K_VECTOR_START + 4U,
@@ -215,9 +228,12 @@ static int prepare_program(const char *name, const uint8_t *code,
     m68k_set_reg(M68K_REG_D0, d0);
     m68k_set_reg(M68K_REG_D1, d1);
     m68k_set_reg(M68K_REG_D2, d2);
-    for (index = 0; index < ARRAY_COUNT(preserved_registers); ++index) {
-        m68k_set_reg(preserved_registers[index].reg,
-                     preserved_registers[index].value);
+    for (reg = MIGA80_ABI_D0; reg < MIGA80_ABI_REGISTER_COUNT;
+         reg = (enum miga80_abi_register)(reg + 1)) {
+        if (miga80_abi_register_is_callee_saved(reg)) {
+            m68k_set_reg(musashi_register(reg),
+                         preserved_register_value(reg));
+        }
     }
     return 1;
 }
@@ -354,6 +370,33 @@ static int run_instruction_limit_test(void)
     return 0;
 }
 
+static int run_saved_register_guard_test(void)
+{
+    struct trace_buffer trace;
+    unsigned int instruction_count;
+    enum stop_reason stop;
+
+    (void)memset(&trace, 0, sizeof(trace));
+    if (!prepare_program("guard/saved_register", saved_register_clobber_code,
+                         sizeof(saved_register_clobber_code), 0U, 0U, 0U)) {
+        return 0;
+    }
+    stop = execute_program(&trace, &instruction_count);
+    active_trace = NULL;
+    if (stop == STOP_RETURNED && !preserved_registers_are_valid()) {
+        return 1;
+    }
+
+    fprintf(stderr,
+            "TEST: guard/saved_register\n"
+            "RESULT: ABI 0.1 saved-register damage was not detected\n"
+            "INSTRUCTIONS: %u\n",
+            instruction_count);
+    print_registers();
+    print_trace(&trace);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     static const struct test_case cases[] = {
@@ -406,12 +449,14 @@ int main(int argc, char **argv)
             return 1;
         }
     }
-    if (!run_memory_guard_test() || !run_instruction_limit_test()) {
+    if (!run_memory_guard_test() || !run_instruction_limit_test() ||
+        !run_saved_register_guard_test()) {
         return 1;
     }
 
     printf("PASS  miga68k-test Musashi 68EC020 mul_add (%lu cases; "
-           "2 guard cases)\n",
-           (unsigned long)ARRAY_COUNT(cases));
+           "3 guard cases; ABI %u.%u)\n",
+           (unsigned long)ARRAY_COUNT(cases), MIGA80_ABI_VERSION_MAJOR,
+           MIGA80_ABI_VERSION_MINOR);
     return 0;
 }

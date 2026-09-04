@@ -35,17 +35,28 @@ balance, callee-saved registers, memory guards, and instruction limit, and
 retains a short disassembly trace on failure. It is the foundation for the Lua
 compiler path exercised below.
 
-Build the initial typed MIGA Lua expression compiler and validate generated
-68020 code against its typed-IR oracle with:
+Build the initial typed MIGA Lua expression compiler, verify native ABI 0.1,
+and validate generated 68020 code against its typed-IR oracle with:
 
 ```sh
-gmake compiler-test compiler-execute-test
+gmake compiler-abi-test compiler-test compiler-execute-test
+```
+
+Cross-build the same portable C99 compiler bootstrap for 68020/libnix and run
+its typed-IR evaluator under `vamos` with:
+
+```sh
+gmake compiler-amiga-test
 ```
 
 The implemented subset accepts one annotated `i32` function with up to three
 parameters, `return`, decimal literals, parentheses, unary `-`, `+`, `-`, and
 `*`. See the [compiler bootstrap](documentation/MIGA-Lua-compiler-bootstrap.md)
-for its exact grammar and current exclusions.
+for its exact grammar, the [native ABI
+0.1](documentation/MIGA-Lua-native-ABI-v0.md) for the frozen register/stack
+core, and the [optimization
+strategy](documentation/MIGA-Lua-optimization-strategy.md) for the bounded
+on-Amiga compiler plan.
 
 Run the inverse dual-playfield decoder and compositor → C2P → decoder differential with:
 

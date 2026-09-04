@@ -2,7 +2,7 @@
 
 ## Fast compiler development without launching UAE
 
-**Status:** Phase 0 runner and initial typed-expression compiler connection implemented
+**Status:** Phase 0 runner, typed-expression compiler connection, and ABI 0.1 register/stack core implemented
 
 **Primary target:** stock Amiga 1200, 68EC020 at approximately 14 MHz  
 **Host platforms:** macOS, Linux, and Windows  
@@ -145,7 +145,10 @@ Even if generated code is never supposed to perform an unaligned access, detecti
 
 ## 5. Freeze a small compiler ABI early
 
-The local runner becomes much simpler once the compiler has a stable calling convention. A possible initial convention is shown below; the exact choices should be benchmarked and then documented.
+The local runner becomes much simpler once the compiler has a stable calling
+convention. The frozen bootstrap convention is shown below. It is versioned in
+[MIGA Lua Native ABI 0.1](./MIGA-Lua-native-ABI-v0.md); extensions still need
+measurement and an explicit compatible revision or version bump.
 
 | Resource | Proposed use |
 |---|---|
@@ -153,21 +156,20 @@ The local runner becomes much simpler once the compiler has a stable calling con
 | `D0-D2` | Integer or fixed-point arguments and caller-saved temporaries |
 | `A0-A1` | Pointer arguments and caller-saved temporaries |
 | `D3-D7` | Callee-saved values |
-| `A2-A5` | Callee-saved values or runtime state |
+| `A2-A4` | Callee-saved address values |
+| `A5` | Callee-saved immutable runtime-context pointer |
 | `A6` | Optional frame pointer; omit in leaf functions when possible |
 | `A7` | Stack pointer |
 
-Useful early decisions include:
+ABI 0.1 fixes 32-bit wrapping integers, canonical `bool` values, four-byte
+stack alignment, register-only bootstrap arguments, and frames of at most
+32,768 bytes. The following extensions remain later decisions:
 
-- scalar width: probably signed 32-bit integers;
 - fixed-point representation and rounding rules;
-- Boolean representation;
 - array/string descriptor layout;
-- stack alignment;
-- caller-saved and callee-saved registers;
 - multiple return values, if supported;
 - error and trap convention;
-- access to the MAGI-80 runtime context.
+- runtime-context layout and jump table.
 
 The runner should treat ABI preservation as testable behaviour. It can initialize every callee-saved register with a recognizable pattern before invoking generated code and verify the pattern after return.
 
@@ -580,11 +582,19 @@ and broader language semantics remain pending. See
 
 ### Phase 2 — freeze the ABI
 
-- define register roles;
+**Tranche 1 implemented:** ABI 0.1 freezes scalar register arguments and return,
+caller/callee-saved sets, `A5` context ownership, `A6` frames, Boolean values,
+and four-byte stack alignment. The backend consumes the machine-readable
+contract and the Musashi runner derives its saved-register checks from it,
+including a deliberate clobber negative control. See
+[MIGA Lua Native ABI 0.1](./MIGA-Lua-native-ABI-v0.md).
+
+- define register roles; **implemented for ABI 0.1**
 - add calls, locals and stack frames;
-- implement saved-register and stack guard checks;
+- implement saved-register and stack guard checks; **implemented for the current
+  entry path; nested calls remain pending**
 - define runtime traps;
-- publish the ABI as a versioned document.
+- publish the ABI as a versioned document; **implemented for ABI 0.1**
 
 **Exit condition:** separately compiled generated functions and runtime stubs can call one another reliably.
 

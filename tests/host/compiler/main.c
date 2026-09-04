@@ -43,6 +43,8 @@ static int test_valid_function(void)
     struct miga80_diagnostic diagnostic;
     size_t index;
     FILE *assembly;
+    char assembly_prefix[256];
+    size_t assembly_prefix_size;
     int emitted;
     int closed;
 
@@ -65,6 +67,15 @@ static int test_valid_function(void)
         return 0;
     }
     emitted = miga80_emit_gnu_m68k(assembly, &ir, &diagnostic);
+    rewind(assembly);
+    assembly_prefix_size =
+        fread(assembly_prefix, 1U, sizeof(assembly_prefix) - 1U, assembly);
+    assembly_prefix[assembly_prefix_size] = '\0';
+    if (ferror(assembly) ||
+        strstr(assembly_prefix, "native ABI 0.1") == NULL ||
+        strstr(assembly_prefix, "move.l  %d0,-4(%a6)") == NULL) {
+        emitted = 0;
+    }
     closed = fclose(assembly);
     if (!emitted || closed != 0) {
         return 0;

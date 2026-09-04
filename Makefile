@@ -33,6 +33,8 @@ C2P_REFERENCE_HEADER := src/graphics/c2p_reference.h
 HOST_BUILD_DIR := build/host
 MUSASHI_DEP_DIR := build/deps/musashi
 MUSASHI_READY := $(MUSASHI_DEP_DIR)/.magi80-source-revision
+COMPILER_ABI_SOURCE := compiler/abi/abi.c
+COMPILER_ABI_HEADER := compiler/abi/abi.h
 MIGA68K_TEST_BUILD_DIR := $(HOST_BUILD_DIR)/miga68k-test
 MIGA68K_TEST_GENERATED_DIR := $(MIGA68K_TEST_BUILD_DIR)/generated
 MIGA68K_TEST_GENERATED_STAMP := \
@@ -51,6 +53,7 @@ MUSASHI_GENERATOR := $(MIGA68K_TEST_BUILD_DIR)/m68kmake
 MIGA68K_TEST_OBJECTS := \
 	$(MIGA68K_TEST_BUILD_DIR)/runner.o \
 	$(MIGA68K_TEST_BUILD_DIR)/memory.o \
+	$(MIGA68K_TEST_BUILD_DIR)/abi.o \
 	$(MIGA68K_TEST_BUILD_DIR)/m68kcpu.o \
 	$(MIGA68K_TEST_BUILD_DIR)/m68kdasm.o \
 	$(MIGA68K_TEST_BUILD_DIR)/m68kops.o \
@@ -62,18 +65,30 @@ COMPILER_IR_SOURCE := compiler/ir/ir.c
 COMPILER_IR_HEADER := compiler/ir/ir.h
 COMPILER_BACKEND_SOURCE := compiler/backend_m68k/backend.c
 COMPILER_BACKEND_HEADER := compiler/backend_m68k/backend.h
-COMPILER_SOURCES := $(COMPILER_FRONTEND_SOURCE) $(COMPILER_IR_SOURCE) \
+COMPILER_SOURCES := $(COMPILER_ABI_SOURCE) $(COMPILER_FRONTEND_SOURCE) \
+	$(COMPILER_IR_SOURCE) \
 	$(COMPILER_BACKEND_SOURCE)
-COMPILER_HEADERS := $(COMPILER_FRONTEND_HEADER) $(COMPILER_IR_HEADER) \
-	$(COMPILER_BACKEND_HEADER)
+COMPILER_HEADERS := $(COMPILER_ABI_HEADER) $(COMPILER_FRONTEND_HEADER) \
+	$(COMPILER_IR_HEADER) $(COMPILER_BACKEND_HEADER)
 MIGA80C_SOURCE := tools/miga80c/main.c
 MIGA80C_BUILD_DIR := $(HOST_BUILD_DIR)/miga80c
 MIGA80C_PROGRAM := $(MIGA80C_BUILD_DIR)/miga80c
+MIGA80C_AMIGA_BUILD_DIR := $(AMIGA_BUILD_DIR)/compiler-bootstrap
+MIGA80C_AMIGA_PROGRAM := $(MIGA80C_AMIGA_BUILD_DIR)/miga80c
+MIGA80C_AMIGA_MAP := $(MIGA80C_AMIGA_BUILD_DIR)/miga80c.map
+MIGA80C_AMIGA_EXPECTED := tests/smoke/compiler-bootstrap/expected.txt
+MIGA80C_AMIGA_REPORT := $(REPORT_DIR)/compiler-amiga-vamos.txt
+MIGA80C_AMIGA_SIZE_REPORT := $(REPORT_DIR)/compiler-amiga-size.txt
 COMPILER_TEST_SOURCE := tests/host/compiler/main.c
 COMPILER_TEST_EXPECTED := tests/host/compiler/expected.txt
 COMPILER_TEST_BUILD_DIR := $(HOST_BUILD_DIR)/compiler
 COMPILER_TEST_PROGRAM := $(COMPILER_TEST_BUILD_DIR)/test
 COMPILER_TEST_REPORT := $(REPORT_DIR)/compiler-host.txt
+COMPILER_ABI_TEST_SOURCE := tests/host/compiler-abi/main.c
+COMPILER_ABI_TEST_EXPECTED := tests/host/compiler-abi/expected.txt
+COMPILER_ABI_TEST_BUILD_DIR := $(HOST_BUILD_DIR)/compiler-abi
+COMPILER_ABI_TEST_PROGRAM := $(COMPILER_ABI_TEST_BUILD_DIR)/test
+COMPILER_ABI_TEST_REPORT := $(REPORT_DIR)/compiler-abi-host.txt
 COMPILER_PIPELINE_SOURCE := tests/compile/arithmetic.lua
 COMPILER_PIPELINE_EXPECTED := tests/compile/pipeline.expected
 COMPILER_PIPELINE_SCRIPT := scripts/test-compiler-pipeline.sh
@@ -197,6 +212,7 @@ HOST_CFLAGS := \
 MUSASHI_CONFIG_DEFINE := \
 	-DMUSASHI_CNF=\"miga80_musashi_config.h\"
 MUSASHI_CPPFLAGS := \
+	-I. \
 	-Itools/miga68k-test \
 	-I$(MUSASHI_DEP_DIR) \
 	-I$(MIGA68K_TEST_GENERATED_DIR)
@@ -208,7 +224,8 @@ C2P_BENCHMARK_CFLAGS = $(filter-out -Os,$(TARGET_CFLAGS)) -O2
 
 .PHONY: all amiga stage inspect vamos-test fs-uae-smoke c2p-test \
 	c2p4-test graphics-reference-test aga-reference-test \
-	miga68k-test miga80c compiler-test compiler-execute-test \
+	miga68k-test miga80c compiler-abi-test compiler-test \
+	compiler-execute-test compiler-amiga-test \
 	graphics-report-test chipram-report-test \
 	exclusive-graphics-report-test \
 	aga-screen aga-screen-inspect aga-screen-smoke c2p-benchmark \
@@ -276,6 +293,7 @@ $(MIGA68K_TEST_GENERATED_STAMP): $(MUSASHI_GENERATOR) $(MUSASHI_READY)
 
 $(MIGA68K_TEST_BUILD_DIR)/runner.o: $(MIGA68K_TEST_RUNNER_SOURCE) \
 		$(MIGA68K_TEST_MEMORY_HEADER) $(MIGA68K_TEST_CONFIG) \
+		$(COMPILER_ABI_HEADER) \
 		$(MUSASHI_READY)
 	@mkdir -p $(MIGA68K_TEST_BUILD_DIR)
 	$(HOST_CC) $(MUSASHI_CPPFLAGS) $(MUSASHI_CONFIG_DEFINE) \
@@ -287,6 +305,12 @@ $(MIGA68K_TEST_BUILD_DIR)/memory.o: $(MIGA68K_TEST_MEMORY_SOURCE) \
 	@mkdir -p $(MIGA68K_TEST_BUILD_DIR)
 	$(HOST_CC) $(MUSASHI_CPPFLAGS) $(MUSASHI_CONFIG_DEFINE) \
 		$(HOST_CFLAGS) -c $(MIGA68K_TEST_MEMORY_SOURCE) -o $@
+
+$(MIGA68K_TEST_BUILD_DIR)/abi.o: $(COMPILER_ABI_SOURCE) \
+		$(COMPILER_ABI_HEADER) Makefile
+	@mkdir -p $(MIGA68K_TEST_BUILD_DIR)
+	$(HOST_CC) $(COMPILER_CPPFLAGS) $(HOST_CFLAGS) \
+		-c $(COMPILER_ABI_SOURCE) -o $@
 
 $(MIGA68K_TEST_BUILD_DIR)/m68kcpu.o: $(MUSASHI_READY) \
 		$(MIGA68K_TEST_GENERATED_STAMP) $(MIGA68K_TEST_CONFIG)
@@ -327,6 +351,34 @@ $(MIGA80C_PROGRAM): $(MIGA80C_SOURCE) $(COMPILER_SOURCES) \
 	@mkdir -p $(MIGA80C_BUILD_DIR)
 	$(HOST_CC) $(COMPILER_CPPFLAGS) $(HOST_CFLAGS) $(COMPILER_SOURCES) \
 		$(MIGA80C_SOURCE) -o $@
+
+compiler-amiga-test: $(MIGA80C_AMIGA_PROGRAM) $(COMPILER_PIPELINE_SOURCE) \
+		$(MIGA80C_AMIGA_EXPECTED)
+	@mkdir -p $(REPORT_DIR)
+	$(TARGET_SIZE) $(MIGA80C_AMIGA_PROGRAM) | \
+		tee $(MIGA80C_AMIGA_SIZE_REPORT)
+	PATH="$(MAGI80_PIPX_BIN):$$PATH" vamos -C 20 -- \
+		$(MIGA80C_AMIGA_PROGRAM) $(COMPILER_PIPELINE_SOURCE) \
+		--eval 7 5 2 >$(MIGA80C_AMIGA_REPORT)
+	diff -u $(MIGA80C_AMIGA_EXPECTED) $(MIGA80C_AMIGA_REPORT)
+
+$(MIGA80C_AMIGA_PROGRAM): $(MIGA80C_SOURCE) $(COMPILER_SOURCES) \
+		$(COMPILER_HEADERS) Makefile
+	@mkdir -p $(MIGA80C_AMIGA_BUILD_DIR)
+	$(TARGET_CC) $(COMPILER_CPPFLAGS) $(TARGET_CFLAGS) $(COMPILER_SOURCES) \
+		$(MIGA80C_SOURCE) -Wl,-Map,$(MIGA80C_AMIGA_MAP) -o $@ \
+		$(TARGET_RUNTIME)
+
+compiler-abi-test: $(COMPILER_ABI_TEST_PROGRAM) $(COMPILER_ABI_TEST_EXPECTED)
+	@mkdir -p $(REPORT_DIR)
+	$(COMPILER_ABI_TEST_PROGRAM) >$(COMPILER_ABI_TEST_REPORT)
+	diff -u $(COMPILER_ABI_TEST_EXPECTED) $(COMPILER_ABI_TEST_REPORT)
+
+$(COMPILER_ABI_TEST_PROGRAM): $(COMPILER_ABI_TEST_SOURCE) \
+		$(COMPILER_ABI_SOURCE) $(COMPILER_ABI_HEADER) Makefile
+	@mkdir -p $(COMPILER_ABI_TEST_BUILD_DIR)
+	$(HOST_CC) $(COMPILER_CPPFLAGS) $(HOST_CFLAGS) \
+		$(COMPILER_ABI_SOURCE) $(COMPILER_ABI_TEST_SOURCE) -o $@
 
 compiler-test: $(COMPILER_TEST_PROGRAM) $(COMPILER_TEST_EXPECTED)
 	@mkdir -p $(REPORT_DIR)
@@ -590,7 +642,8 @@ exclusive-graphics-test-adf-fs-uae: $(EXCLUSIVE_GRAPHICS_TEST_ADF) \
 runtime-compare:
 	./scripts/compare-c-runtimes.sh
 
-check: miga68k-test compiler-test compiler-execute-test c2p-test \
+check: miga68k-test compiler-abi-test compiler-test compiler-execute-test \
+	compiler-amiga-test c2p-test \
 	c2p4-test graphics-reference-test aga-reference-test \
 	graphics-report-test chipram-report-test exclusive-graphics-report-test \
 	chipram-benchmark exclusive-graphics-benchmark inspect vamos-test \

@@ -21,7 +21,8 @@ unary      = "-", unary | integer | parameter-name | "(", expression, ")" ;
 Whitespace and Lua line comments beginning with `--` are accepted. Decimal
 literals are limited to `0` through `2147483647`. The initial ABI supports at
 most three parameters in `D0` through `D2`, with the `i32` result in `D0`.
-Arithmetic has defined two's-complement wrapping semantics.
+Arithmetic has defined two's-complement wrapping semantics. Register and frame
+placement follows [MIGA Lua Native ABI 0.1](./MIGA-Lua-native-ABI-v0.md).
 
 Everything else—including locals, assignments, calls, control flow, other
 types, multiple functions, hexadecimal source literals, and the minimum `i32`
@@ -42,7 +43,10 @@ The implementation has three bounded, host-buildable layers:
 For the current local toolchain, GNU `m68k-amigaos-as` retains a relocatable
 Amiga object and `m68k-amigaos-objcopy` extracts the flat image consumed by
 Musashi. ELF linking, symbol-manifest loading, the shared low-level instruction
-model, and the shipping direct encoder remain later steps.
+model, and the shipping direct encoder remain later steps. The current
+stack-heavy renderer is a correctness oracle rather than the shipping
+allocation strategy; see the [MIGA Lua Optimization
+Strategy](./MIGA-Lua-optimization-strategy.md).
 
 ## Commands
 
@@ -62,8 +66,19 @@ build/host/miga80c/miga80c tests/compile/arithmetic.lua --eval 7 5 2
 Run native frontend/IR tests and the complete differential path:
 
 ```sh
-gmake compiler-test compiler-execute-test
+gmake compiler-abi-test compiler-test compiler-execute-test
 ```
+
+Cross-build this same C99 compiler bootstrap for 68020/libnix and execute its
+typed-IR evaluator under `vamos`:
+
+```sh
+gmake compiler-amiga-test
+```
+
+This proves that the bounded frontend and IR core already run as an Amiga
+program. It does not yet prove on-Amiga direct machine-code emission; the
+shipping encoder and instruction-cache synchronization remain later work.
 
 The differential test preserves generated assembly, relocatable object, and
 flat binary under `build/host/compiler-pipeline/`. Six edge cases must produce

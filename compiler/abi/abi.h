@@ -1,0 +1,50 @@
+#ifndef MIGA80_COMPILER_ABI_H
+#define MIGA80_COMPILER_ABI_H
+
+#define MIGA80_ABI_VERSION_MAJOR 0U
+#define MIGA80_ABI_VERSION_MINOR 1U
+
+#define MIGA80_ABI_STACK_ALIGNMENT 4U
+#define MIGA80_ABI_MAX_FRAME_SIZE 32768U
+#define MIGA80_ABI_MAX_SCALAR_ARGUMENTS 3U
+#define MIGA80_ABI_MAX_ADDRESS_ARGUMENTS 2U
+
+#define MIGA80_ABI_BOOL_FALSE 0U
+#define MIGA80_ABI_BOOL_TRUE 1U
+
+enum miga80_abi_register {
+    MIGA80_ABI_D0 = 0,
+    MIGA80_ABI_D1,
+    MIGA80_ABI_D2,
+    MIGA80_ABI_D3,
+    MIGA80_ABI_D4,
+    MIGA80_ABI_D5,
+    MIGA80_ABI_D6,
+    MIGA80_ABI_D7,
+    MIGA80_ABI_A0,
+    MIGA80_ABI_A1,
+    MIGA80_ABI_A2,
+    MIGA80_ABI_A3,
+    MIGA80_ABI_A4,
+    MIGA80_ABI_A5,
+    MIGA80_ABI_A6,
+    MIGA80_ABI_A7,
+    MIGA80_ABI_REGISTER_COUNT
+};
+
+#define MIGA80_ABI_SCALAR_RETURN_REGISTER MIGA80_ABI_D0
+#define MIGA80_ABI_ADDRESS_RETURN_REGISTER MIGA80_ABI_A0
+#define MIGA80_ABI_RUNTIME_CONTEXT_REGISTER MIGA80_ABI_A5
+#define MIGA80_ABI_FRAME_POINTER_REGISTER MIGA80_ABI_A6
+#define MIGA80_ABI_STACK_POINTER_REGISTER MIGA80_ABI_A7
+
+int miga80_abi_scalar_argument_register(
+    unsigned int index, enum miga80_abi_register *result);
+int miga80_abi_address_argument_register(
+    unsigned int index, enum miga80_abi_register *result);
+int miga80_abi_register_is_caller_saved(enum miga80_abi_register reg);
+int miga80_abi_register_is_callee_saved(enum miga80_abi_register reg);
+int miga80_abi_frame_size_is_valid(unsigned int size);
+const char *miga80_abi_gnu_register_name(enum miga80_abi_register reg);
+
+#endif

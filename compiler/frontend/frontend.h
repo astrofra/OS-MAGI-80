@@ -4,8 +4,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "compiler/abi/abi.h"
+
 #define MIGA80_MAX_NAME 31U
-#define MIGA80_MAX_PARAMETERS 3U
+#define MIGA80_MAX_PARAMETERS MIGA80_ABI_MAX_SCALAR_ARGUMENTS
 #define MIGA80_MAX_AST_NODES 128U
 #define MIGA80_INVALID_NODE (-1)
 

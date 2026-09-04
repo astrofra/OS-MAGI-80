@@ -1,0 +1,1 @@
+PASS  MIGA Lua native ABI 0.1 register and stack contract
