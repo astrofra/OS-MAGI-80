@@ -46,9 +46,21 @@
 #define BENCH_DISPLAY_ID (PAL_MONITOR_ID | LORESDPF_KEY)
 
 #define BENCH_RAW_BUFFER_BYTES 8192U
+#define BENCH_RAW_GUARD_BYTES 16U
+#define BENCH_RAW_MAX_OFFSET 3U
+#define BENCH_RAW_STORAGE_BYTES \
+    (BENCH_RAW_BUFFER_BYTES + (2U * BENCH_RAW_GUARD_BYTES) + \
+     BENCH_RAW_MAX_OFFSET)
+#define BENCH_RAW_GUARD_VALUE 0x6dU
 #define BENCH_RAW_ITERATIONS 4U
 #define BENCH_RAW_SAMPLES 7U
-#define BENCH_RAW_KERNEL_COUNT 6U
+#define BENCH_RAW_CORE_KERNEL_COUNT 6U
+#define BENCH_RAW_KERNEL_COUNT 32U
+#define BENCH_RAW_EXTENDED_KERNEL_COUNT \
+    (BENCH_RAW_KERNEL_COUNT - BENCH_RAW_CORE_KERNEL_COUNT)
+#define BENCH_RAW_EXTENDED_DMA_PROFILE_COUNT 3U
+#define BENCH_FAST_DMA_PROFILE_COUNT 2U
+#define BENCH_FAST_SOURCE_RAW_KERNEL_COUNT 16U
 
 #define BENCH_C2P_ITERATIONS 1U
 #define BENCH_C2P_SAMPLES 3U
@@ -57,13 +69,29 @@
 #define BENCH_C2P_BACKEND_COUNT 2U
 
 #define BENCH_DMA_PROFILE_COUNT 7U
-#define BENCH_RAW_RESULT_COUNT \
-    (BENCH_DMA_PROFILE_COUNT * BENCH_RAW_KERNEL_COUNT)
-#define BENCH_C2P_RESULT_COUNT \
+#define BENCH_BASE_RAW_RESULT_COUNT \
+    ((BENCH_DMA_PROFILE_COUNT * BENCH_RAW_CORE_KERNEL_COUNT) + \
+     (BENCH_RAW_EXTENDED_DMA_PROFILE_COUNT * \
+      BENCH_RAW_EXTENDED_KERNEL_COUNT))
+#define BENCH_FAST_RAW_RESULT_COUNT \
+    (BENCH_FAST_DMA_PROFILE_COUNT * \
+     BENCH_FAST_SOURCE_RAW_KERNEL_COUNT)
+#define BENCH_MAX_RAW_RESULT_COUNT \
+    (BENCH_BASE_RAW_RESULT_COUNT + BENCH_FAST_RAW_RESULT_COUNT)
+#define BENCH_BASE_C2P_RESULT_COUNT \
     (BENCH_DMA_PROFILE_COUNT * BENCH_C2P_PROFILE_COUNT * \
      BENCH_C2P_LAYOUT_COUNT * BENCH_C2P_BACKEND_COUNT)
-#define BENCH_CASE_COUNT \
-    (BENCH_RAW_RESULT_COUNT + BENCH_C2P_RESULT_COUNT)
+#define BENCH_FAST_C2P_RESULT_COUNT \
+    (BENCH_FAST_DMA_PROFILE_COUNT * BENCH_C2P_PROFILE_COUNT * \
+     BENCH_C2P_LAYOUT_COUNT * BENCH_C2P_BACKEND_COUNT)
+#define BENCH_MAX_C2P_RESULT_COUNT \
+    (BENCH_BASE_C2P_RESULT_COUNT + BENCH_FAST_C2P_RESULT_COUNT)
+#define BENCH_BASE_CASE_COUNT \
+    (BENCH_BASE_RAW_RESULT_COUNT + BENCH_BASE_C2P_RESULT_COUNT)
+#define BENCH_FAST_CASE_COUNT \
+    (BENCH_FAST_RAW_RESULT_COUNT + BENCH_FAST_C2P_RESULT_COUNT)
+#define BENCH_MAX_CASE_COUNT \
+    (BENCH_BASE_CASE_COUNT + BENCH_FAST_CASE_COUNT)
 
 #define BENCH_STACK_BYTES 16384U
 #define BENCH_STACK_BOUNDARY_RESERVE_BYTES 256U
@@ -126,7 +154,14 @@ enum RawOperation {
     RAW_WRITE_LONG,
     RAW_WRITE_LONG4,
     RAW_COPY_LONG4,
-    RAW_READ_LONG4
+    RAW_READ_LONG4,
+    RAW_READ_BYTE,
+    RAW_READ_WORD,
+    RAW_READ_LONG,
+    RAW_RMW_ADD_BYTE,
+    RAW_RMW_ADD_WORD,
+    RAW_RMW_ADD_LONG,
+    RAW_RMW_ADD_LONG4
 };
 
 enum C2PLayout {
@@ -167,6 +202,9 @@ struct RawKernel {
     Magi80ChipRamKernel kernel;
     ULONG seed;
     ULONG traffic_multiplier;
+    UBYTE source_traffic_multiplier;
+    UBYTE source_offset;
+    UBYTE destination_offset;
 };
 
 struct C2PProfile {
@@ -189,6 +227,9 @@ struct RawResult {
     ULONG blitter_busy_at_kernel_start_samples;
     ULONG blitter_busy_at_kernel_end_samples;
     ULONG blitter_copy_bytes;
+    ULONG minimum_chip_traffic_bytes;
+    ULONG minimum_total_memory_traffic_bytes;
+    UBYTE fast_source;
 };
 
 struct C2PResult {
@@ -210,6 +251,8 @@ struct C2PResult {
     ULONG blitter_busy_at_kernel_start_samples;
     ULONG blitter_busy_at_kernel_end_samples;
     ULONG blitter_copy_bytes;
+    ULONG minimum_total_memory_traffic_bytes;
+    UBYTE fast_assisted;
 };
 
 struct BatchState {
@@ -231,19 +274,89 @@ static const struct DmaProfile dma_profiles[BENCH_DMA_PROFILE_COUNT] = {
      DMAF_RASTER | DMAF_COPPER | DMAF_SPRITE, 1U, 1U, 1U}
 };
 
+static const UBYTE
+    raw_extended_dma_profile_indices[BENCH_RAW_EXTENDED_DMA_PROFILE_COUNT] = {
+        0U, 4U, 5U
+    };
+
+static const UBYTE
+    fast_dma_profile_indices[BENCH_FAST_DMA_PROFILE_COUNT] = {
+        0U, 5U
+    };
+
 static const struct RawKernel raw_kernels[BENCH_RAW_KERNEL_COUNT] = {
     {"write_byte", "write", "byte", RAW_WRITE_BYTE,
-     magi80_chipram_write_byte, 0x00000012U, 1U},
+     magi80_chipram_write_byte, 0x00000012U, 1U, 0U, 0U, 0U},
     {"write_word", "write", "word", RAW_WRITE_WORD,
-     magi80_chipram_write_word, 0x00003456U, 1U},
+     magi80_chipram_write_word, 0x00003456U, 1U, 0U, 0U, 0U},
     {"write_long", "write", "long", RAW_WRITE_LONG,
-     magi80_chipram_write_long, 0x89abcdefU, 1U},
+     magi80_chipram_write_long, 0x89abcdefU, 1U, 0U, 0U, 0U},
     {"write_long4", "write", "long_unrolled4", RAW_WRITE_LONG4,
-     magi80_chipram_write_long4, 0x13579bdfU, 1U},
+     magi80_chipram_write_long4, 0x13579bdfU, 1U, 0U, 0U, 0U},
     {"copy_long4", "copy", "long_unrolled4", RAW_COPY_LONG4,
-     magi80_chipram_copy_long4, 0U, 2U},
+     magi80_chipram_copy_long4, 0U, 2U, 1U, 0U, 0U},
     {"read_long4", "read", "long_unrolled4", RAW_READ_LONG4,
-     magi80_chipram_read_long4, 0U, 1U}
+     magi80_chipram_read_long4, 0U, 1U, 1U, 0U, 0U},
+    {"read_byte", "read", "byte", RAW_READ_BYTE,
+     magi80_chipram_read_byte, 0U, 1U, 1U, 0U, 0U},
+    {"read_word", "read", "word", RAW_READ_WORD,
+     magi80_chipram_read_word, 0U, 1U, 1U, 0U, 0U},
+    {"read_long", "read", "long", RAW_READ_LONG,
+     magi80_chipram_read_long, 0U, 1U, 1U, 0U, 0U},
+    {"rmw_add_byte", "read_modify_write", "byte", RAW_RMW_ADD_BYTE,
+     magi80_chipram_rmw_add_byte, 0x00000003U, 2U, 0U, 0U, 0U},
+    {"rmw_add_word", "read_modify_write", "word", RAW_RMW_ADD_WORD,
+     magi80_chipram_rmw_add_word, 0x00000103U, 2U, 0U, 0U, 0U},
+    {"rmw_add_long", "read_modify_write", "long", RAW_RMW_ADD_LONG,
+     magi80_chipram_rmw_add_long, 0x01020305U, 2U, 0U, 0U, 0U},
+    {"rmw_add_long4", "read_modify_write", "long_unrolled4",
+     RAW_RMW_ADD_LONG4, magi80_chipram_rmw_add_long4, 0x01020305U,
+     2U, 0U, 0U, 0U},
+    {"write_word_dst_plus1", "write", "word", RAW_WRITE_WORD,
+     magi80_chipram_write_word, 0x00003456U, 1U, 0U, 0U, 1U},
+    {"write_long4_dst_plus1", "write", "long_unrolled4",
+     RAW_WRITE_LONG4, magi80_chipram_write_long4, 0x13579bdfU,
+     1U, 0U, 0U, 1U},
+    {"write_long4_dst_plus2", "write", "long_unrolled4",
+     RAW_WRITE_LONG4, magi80_chipram_write_long4, 0x13579bdfU,
+     1U, 0U, 0U, 2U},
+    {"write_long4_dst_plus3", "write", "long_unrolled4",
+     RAW_WRITE_LONG4, magi80_chipram_write_long4, 0x13579bdfU,
+     1U, 0U, 0U, 3U},
+    {"read_word_src_plus1", "read", "word", RAW_READ_WORD,
+     magi80_chipram_read_word, 0U, 1U, 1U, 1U, 0U},
+    {"read_long4_src_plus1", "read", "long_unrolled4",
+     RAW_READ_LONG4, magi80_chipram_read_long4, 0U, 1U, 1U, 1U, 0U},
+    {"read_long4_src_plus2", "read", "long_unrolled4",
+     RAW_READ_LONG4, magi80_chipram_read_long4, 0U, 1U, 1U, 2U, 0U},
+    {"read_long4_src_plus3", "read", "long_unrolled4",
+     RAW_READ_LONG4, magi80_chipram_read_long4, 0U, 1U, 1U, 3U, 0U},
+    {"copy_long4_src_plus1", "copy", "long_unrolled4",
+     RAW_COPY_LONG4, magi80_chipram_copy_long4, 0U, 2U, 1U, 1U, 0U},
+    {"copy_long4_src_plus2", "copy", "long_unrolled4",
+     RAW_COPY_LONG4, magi80_chipram_copy_long4, 0U, 2U, 1U, 2U, 0U},
+    {"copy_long4_src_plus3", "copy", "long_unrolled4",
+     RAW_COPY_LONG4, magi80_chipram_copy_long4, 0U, 2U, 1U, 3U, 0U},
+    {"copy_long4_dst_plus1", "copy", "long_unrolled4",
+     RAW_COPY_LONG4, magi80_chipram_copy_long4, 0U, 2U, 1U, 0U, 1U},
+    {"copy_long4_dst_plus2", "copy", "long_unrolled4",
+     RAW_COPY_LONG4, magi80_chipram_copy_long4, 0U, 2U, 1U, 0U, 2U},
+    {"copy_long4_dst_plus3", "copy", "long_unrolled4",
+     RAW_COPY_LONG4, magi80_chipram_copy_long4, 0U, 2U, 1U, 0U, 3U},
+    {"copy_long4_src_plus1_dst_plus3", "copy", "long_unrolled4",
+     RAW_COPY_LONG4, magi80_chipram_copy_long4, 0U, 2U, 1U, 1U, 3U},
+    {"rmw_add_word_dst_plus1", "read_modify_write", "word",
+     RAW_RMW_ADD_WORD, magi80_chipram_rmw_add_word, 0x00000103U,
+     2U, 0U, 0U, 1U},
+    {"rmw_add_long4_dst_plus1", "read_modify_write", "long_unrolled4",
+     RAW_RMW_ADD_LONG4, magi80_chipram_rmw_add_long4, 0x01020305U,
+     2U, 0U, 0U, 1U},
+    {"rmw_add_long4_dst_plus2", "read_modify_write", "long_unrolled4",
+     RAW_RMW_ADD_LONG4, magi80_chipram_rmw_add_long4, 0x01020305U,
+     2U, 0U, 0U, 2U},
+    {"rmw_add_long4_dst_plus3", "read_modify_write", "long_unrolled4",
+     RAW_RMW_ADD_LONG4, magi80_chipram_rmw_add_long4, 0x01020305U,
+     2U, 0U, 0U, 3U}
 };
 
 static const struct C2PProfile c2p_profiles[BENCH_C2P_PROFILE_COUNT] = {
@@ -254,8 +367,8 @@ static const struct C2PProfile c2p_profiles[BENCH_C2P_PROFILE_COUNT] = {
 
 static struct timerequest timer_request;
 static struct StackSwapStruct stack_swap;
-static struct RawResult raw_results[BENCH_RAW_RESULT_COUNT];
-static struct C2PResult c2p_results[BENCH_C2P_RESULT_COUNT];
+static struct RawResult raw_results[BENCH_MAX_RAW_RESULT_COUNT];
+static struct C2PResult c2p_results[BENCH_MAX_C2P_RESULT_COUNT];
 static ULONG c2p_expected_checksum[BENCH_C2P_PROFILE_COUNT]
                                    [BENCH_C2P_LAYOUT_COUNT];
 static struct IOAudio *audio_control;
@@ -266,11 +379,15 @@ static UBYTE audio_play_started[BENCH_AUDIO_CHANNELS];
 static struct SimpleSprite benchmark_sprites[BENCH_SPRITE_COUNT];
 static UBYTE benchmark_sprite_acquired[BENCH_SPRITE_COUNT];
 
-static UBYTE *raw_source;
-static UBYTE *raw_destination;
+static UBYTE *raw_source_storage;
+static UBYTE *raw_destination_storage;
+static UBYTE *fast_raw_source_storage;
 static UBYTE *packed_source;
 static UBYTE *byte_source;
 static uint32_t *pair_lut;
+static UBYTE *fast_packed_source;
+static UBYTE *fast_byte_source;
+static uint32_t *fast_pair_lut;
 static UBYTE *oracle_planes_allocation;
 static UBYTE *audio_sample;
 static UWORD *sprite_data_allocation;
@@ -310,6 +427,13 @@ static ULONG raster_timeout_count;
 static ULONG exclusive_failure_detail;
 static ULONG exclusive_failure_observed;
 static ULONG exclusive_failure_expected;
+static ULONG raw_result_count;
+static ULONG c2p_result_count;
+static ULONG fast_case_count;
+static UBYTE fast_matrix_active;
+static const char *fast_matrix_state = "not_present";
+static const char *stack_memory = "other";
+static const char *code_memory = "other";
 static int suite_status;
 static struct Library *exclusive_cia_resource;
 static volatile struct CIA *exclusive_cia;
@@ -793,20 +917,56 @@ static int end_batch(const struct DmaProfile *profile,
     return success;
 }
 
-static void fill_raw_source(void)
+static UBYTE *raw_active_region(UBYTE *storage, UBYTE offset)
 {
+    return storage + BENCH_RAW_GUARD_BYTES + offset;
+}
+
+static const UBYTE *raw_const_active_region(const UBYTE *storage,
+                                            UBYTE offset)
+{
+    return storage + BENCH_RAW_GUARD_BYTES + offset;
+}
+
+static void prepare_raw_source(UBYTE *storage, UBYTE offset)
+{
+    UBYTE *active = raw_active_region(storage, offset);
     size_t index;
 
+    memset(storage, BENCH_RAW_GUARD_VALUE, BENCH_RAW_STORAGE_BYTES);
     for (index = 0U; index < BENCH_RAW_BUFFER_BYTES; ++index) {
-        raw_source[index] = (UBYTE)((index * 37U + 11U) & 0xffU);
+        active[index] = (UBYTE)((index * 37U + 11U) & 0xffU);
     }
 }
 
-static void prepare_raw_destination(enum RawOperation operation)
+static void prepare_raw_destination(UBYTE offset,
+                                    enum RawOperation operation)
 {
-    memset(raw_destination,
-           operation == RAW_COPY_LONG4 ? 0U : (UBYTE)0x96U,
+    UBYTE *active = raw_active_region(raw_destination_storage, offset);
+
+    memset(raw_destination_storage, BENCH_RAW_GUARD_VALUE,
+           BENCH_RAW_STORAGE_BYTES);
+    memset(active, operation == RAW_COPY_LONG4 ? 0U : (UBYTE)0x96U,
            BENCH_RAW_BUFFER_BYTES);
+}
+
+static int raw_storage_guards_intact(const UBYTE *storage, UBYTE offset)
+{
+    size_t prefix = BENCH_RAW_GUARD_BYTES + offset;
+    size_t suffix_start = prefix + BENCH_RAW_BUFFER_BYTES;
+    size_t index;
+
+    for (index = 0U; index < prefix; ++index) {
+        if (storage[index] != BENCH_RAW_GUARD_VALUE) {
+            return 0;
+        }
+    }
+    for (index = suffix_start; index < BENCH_RAW_STORAGE_BYTES; ++index) {
+        if (storage[index] != BENCH_RAW_GUARD_VALUE) {
+            return 0;
+        }
+    }
+    return 1;
 }
 
 static ULONG expected_raw_write_checksum(enum RawOperation operation,
@@ -832,18 +992,82 @@ static ULONG expected_raw_write_checksum(enum RawOperation operation,
     return hash;
 }
 
-static ULONG expected_raw_read_checksum(void)
+static ULONG expected_raw_rmw_checksum(enum RawOperation operation,
+                                       ULONG seed)
+{
+    ULONG hash = 2166136261UL;
+    ULONG operand_bytes;
+    ULONG initial;
+    ULONG mask;
+    ULONG value;
+    size_t offset;
+    ULONG byte_index;
+
+    if (operation == RAW_RMW_ADD_BYTE) {
+        operand_bytes = 1U;
+        initial = 0x96U;
+        mask = 0xffU;
+    } else if (operation == RAW_RMW_ADD_WORD) {
+        operand_bytes = 2U;
+        initial = 0x9696U;
+        mask = 0xffffU;
+    } else {
+        operand_bytes = 4U;
+        initial = 0x96969696UL;
+        mask = 0xffffffffUL;
+    }
+    value = (initial + (seed * BENCH_RAW_ITERATIONS)) & mask;
+    for (offset = 0U; offset < BENCH_RAW_BUFFER_BYTES;
+         offset += operand_bytes) {
+        for (byte_index = 0U; byte_index < operand_bytes; ++byte_index) {
+            ULONG shift = (operand_bytes - byte_index - 1U) * 8U;
+
+            hash ^= (value >> shift) & 0xffU;
+            hash *= 16777619UL;
+        }
+    }
+    return hash;
+}
+
+static ULONG expected_raw_read_checksum(const UBYTE *source,
+                                        enum RawOperation operation)
 {
     ULONG checksum = 0U;
+    ULONG operand_bytes;
     size_t offset;
 
-    for (offset = 0U; offset < BENCH_RAW_BUFFER_BYTES; offset += 4U) {
-        checksum += ((ULONG)raw_source[offset] << 24) |
-                    ((ULONG)raw_source[offset + 1U] << 16) |
-                    ((ULONG)raw_source[offset + 2U] << 8) |
-                    (ULONG)raw_source[offset + 3U];
+    if (operation == RAW_READ_BYTE) {
+        operand_bytes = 1U;
+    } else if (operation == RAW_READ_WORD) {
+        operand_bytes = 2U;
+    } else {
+        operand_bytes = 4U;
+    }
+    for (offset = 0U; offset < BENCH_RAW_BUFFER_BYTES;
+         offset += operand_bytes) {
+        ULONG value = 0U;
+        ULONG byte_index;
+
+        for (byte_index = 0U; byte_index < operand_bytes; ++byte_index) {
+            value = (value << 8) | (ULONG)source[offset + byte_index];
+        }
+        checksum += value;
     }
     return checksum * BENCH_RAW_ITERATIONS;
+}
+
+static int raw_operation_is_read(enum RawOperation operation)
+{
+    return operation == RAW_READ_BYTE || operation == RAW_READ_WORD ||
+           operation == RAW_READ_LONG || operation == RAW_READ_LONG4;
+}
+
+static int raw_operation_is_rmw(enum RawOperation operation)
+{
+    return operation == RAW_RMW_ADD_BYTE ||
+           operation == RAW_RMW_ADD_WORD ||
+           operation == RAW_RMW_ADD_LONG ||
+           operation == RAW_RMW_ADD_LONG4;
 }
 
 static int start_sprite_load(struct Screen *screen)
@@ -906,15 +1130,34 @@ static void stop_sprite_load(void)
 
 static int run_raw_case(const struct DmaProfile *dma,
                         const struct RawKernel *kernel,
+                        int fast_source,
                         struct RawResult *result)
 {
+    UBYTE *source_storage =
+        fast_source != 0 ? fast_raw_source_storage : raw_source_storage;
+    const UBYTE *source;
+    UBYTE *destination;
+    ULONG batch_bytes = BENCH_RAW_BUFFER_BYTES * BENCH_RAW_ITERATIONS;
+    ULONG source_chip_multiplier =
+        fast_source != 0 ? 0U : kernel->source_traffic_multiplier;
     ULONG ticks[BENCH_RAW_SAMPLES];
     ULONG attempt;
     ULONG sample = 0U;
 
-    prepare_raw_destination(kernel->operation);
+    prepare_raw_source(source_storage, kernel->source_offset);
+    source = raw_const_active_region(source_storage,
+                                     kernel->source_offset);
+    destination = raw_active_region(raw_destination_storage,
+                                    kernel->destination_offset);
     result->dma = dma;
     result->kernel = kernel;
+    result->fast_source = (UBYTE)(fast_source != 0 ? 1U : 0U);
+    result->minimum_total_memory_traffic_bytes =
+        batch_bytes * kernel->traffic_multiplier;
+    result->minimum_chip_traffic_bytes =
+        batch_bytes *
+        (kernel->traffic_multiplier - kernel->source_traffic_multiplier +
+         source_chip_multiplier);
     result->blitter_copy_bytes =
         dma->use_blitter != 0U
             ? BENCH_BLITTER_ROW_BYTES * BENCH_BLITTER_BASE_ROWS
@@ -930,6 +1173,8 @@ static int run_raw_case(const struct DmaProfile *dma,
         int blitter_busy_at_kernel_start;
         int blitter_busy_at_kernel_end;
 
+        prepare_raw_destination(kernel->destination_offset,
+                                kernel->operation);
         if (attempt >= BENCH_RAW_SAMPLES + 1U +
                            BENCH_TIMER_RETRY_LIMIT) {
             exclusive_failure_detail = 101U;
@@ -946,12 +1191,19 @@ static int run_raw_case(const struct DmaProfile *dma,
         for (iteration = 0U; iteration < BENCH_RAW_ITERATIONS;
              ++iteration) {
             batch_return += kernel->kernel(
-                raw_destination, raw_source, BENCH_RAW_BUFFER_BYTES,
+                destination, source, BENCH_RAW_BUFFER_BYTES,
                 kernel->seed);
         }
         end = read_exclusive_timer();
         if (!end_batch(dma, &state, &blitter_busy_at_kernel_end)) {
             exclusive_failure_detail = 103U;
+            return 0;
+        }
+        if (!raw_storage_guards_intact(source_storage,
+                                       kernel->source_offset) ||
+            !raw_storage_guards_intact(raw_destination_storage,
+                                       kernel->destination_offset)) {
+            exclusive_failure_detail = 109U;
             return 0;
         }
 
@@ -987,19 +1239,24 @@ static int run_raw_case(const struct DmaProfile *dma,
     }
 
     if (kernel->operation == RAW_COPY_LONG4 ||
-        kernel->operation == RAW_READ_LONG4) {
+        raw_operation_is_read(kernel->operation)) {
         result->expected_checksum =
-            fnv1a32(raw_source, BENCH_RAW_BUFFER_BYTES);
+            fnv1a32(source, BENCH_RAW_BUFFER_BYTES);
         result->actual_checksum =
             fnv1a32(kernel->operation == RAW_COPY_LONG4
-                        ? raw_destination
-                        : raw_source,
+                        ? destination
+                        : source,
                     BENCH_RAW_BUFFER_BYTES);
+    } else if (raw_operation_is_rmw(kernel->operation)) {
+        result->expected_checksum =
+            expected_raw_rmw_checksum(kernel->operation, kernel->seed);
+        result->actual_checksum =
+            fnv1a32(destination, BENCH_RAW_BUFFER_BYTES);
     } else {
         result->expected_checksum =
             expected_raw_write_checksum(kernel->operation, kernel->seed);
         result->actual_checksum =
-            fnv1a32(raw_destination, BENCH_RAW_BUFFER_BYTES);
+            fnv1a32(destination, BENCH_RAW_BUFFER_BYTES);
     }
     if (result->expected_checksum != result->actual_checksum) {
         exclusive_failure_detail = 104U;
@@ -1030,11 +1287,22 @@ static int run_raw_case(const struct DmaProfile *dma,
         exclusive_failure_expected = BENCH_RAW_SAMPLES;
         return 0;
     }
-    if (kernel->operation == RAW_READ_LONG4 &&
-        result->kernel_return_checksum != expected_raw_read_checksum()) {
+    if (raw_operation_is_read(kernel->operation) &&
+        result->kernel_return_checksum !=
+            expected_raw_read_checksum(source, kernel->operation)) {
         exclusive_failure_detail = 106U;
         exclusive_failure_observed = result->kernel_return_checksum;
-        exclusive_failure_expected = expected_raw_read_checksum();
+        exclusive_failure_expected =
+            expected_raw_read_checksum(source, kernel->operation);
+        return 0;
+    }
+    if (!raw_operation_is_read(kernel->operation) &&
+        result->kernel_return_checksum !=
+            kernel->seed * BENCH_RAW_ITERATIONS) {
+        exclusive_failure_detail = 110U;
+        exclusive_failure_observed = result->kernel_return_checksum;
+        exclusive_failure_expected =
+            kernel->seed * BENCH_RAW_ITERATIONS;
         return 0;
     }
     return 1;
@@ -1069,6 +1337,12 @@ static void build_c2p_sources(void)
                 (UBYTE)(0xa0U | right);
         }
     }
+    if (fast_matrix_active != 0U) {
+        memcpy(fast_packed_source, packed_source,
+               (BENCH_SCREEN_WIDTH * BENCH_SCREEN_HEIGHT) >> 1);
+        memcpy(fast_byte_source, byte_source,
+               BENCH_SCREEN_WIDTH * BENCH_SCREEN_HEIGHT);
+    }
 }
 
 static void clear_front_planes(void)
@@ -1085,16 +1359,29 @@ static void clear_front_planes(void)
 static enum Magi80C2P4Status convert_c2p(
     const struct C2PProfile *profile,
     enum C2PLayout layout,
-    enum C2PBackend backend)
+    enum C2PBackend backend,
+    int fast_assisted)
 {
-    const UBYTE *source =
-        layout == C2P_LAYOUT_PACKED4 ? packed_source : byte_source;
+    const UBYTE *source;
+    const uint32_t *lookup;
     size_t source_stride =
         layout == C2P_LAYOUT_PACKED4
             ? (size_t)(BENCH_SCREEN_WIDTH >> 1)
             : (size_t)BENCH_SCREEN_WIDTH;
     UBYTE *planes[MAGI80_C2P4_PLANE_COUNT];
     size_t logical_plane;
+
+    if (fast_assisted != 0) {
+        source = layout == C2P_LAYOUT_PACKED4
+                     ? fast_packed_source
+                     : fast_byte_source;
+        lookup = fast_pair_lut;
+    } else {
+        source = layout == C2P_LAYOUT_PACKED4
+                     ? packed_source
+                     : byte_source;
+        lookup = pair_lut;
+    }
 
     for (logical_plane = 0U; logical_plane < MAGI80_C2P4_PLANE_COUNT;
          ++logical_plane) {
@@ -1113,11 +1400,11 @@ static enum Magi80C2P4Status convert_c2p(
     if (layout == C2P_LAYOUT_PACKED4) {
         return magi80_c2p4_pair_lut_m68k_packed4(
             source, profile->width, profile->height, source_stride,
-            planes, BENCH_SCREEN_WIDTH >> 3, pair_lut);
+            planes, BENCH_SCREEN_WIDTH >> 3, lookup);
     }
     return magi80_c2p4_pair_lut_m68k_byte4(
         source, profile->width, profile->height, source_stride, planes,
-        BENCH_SCREEN_WIDTH >> 3, pair_lut);
+        BENCH_SCREEN_WIDTH >> 3, lookup);
 }
 
 static UWORD c2p_blitter_rows(size_t profile_index)
@@ -1178,6 +1465,7 @@ static int run_c2p_case(const struct DmaProfile *dma,
                         size_t profile_index,
                         enum C2PLayout layout,
                         enum C2PBackend backend,
+                        int fast_assisted,
                         struct C2PResult *result)
 {
     ULONG ticks[BENCH_C2P_SAMPLES];
@@ -1194,6 +1482,8 @@ static int run_c2p_case(const struct DmaProfile *dma,
     result->profile = profile;
     result->layout = layout;
     result->backend = backend;
+    result->fast_assisted =
+        (UBYTE)(fast_assisted != 0 ? 1U : 0U);
     result->blitter_copy_bytes =
         dma->use_blitter != 0U
             ? BENCH_BLITTER_ROW_BYTES * (ULONG)blitter_rows
@@ -1223,7 +1513,8 @@ static int run_c2p_case(const struct DmaProfile *dma,
         start = read_exclusive_timer();
         for (iteration = 0U; iteration < BENCH_C2P_ITERATIONS;
              ++iteration) {
-            if (convert_c2p(profile, layout, backend) !=
+            if (convert_c2p(profile, layout, backend,
+                            fast_assisted) !=
                 MAGI80_C2P4_OK) {
                 (void)end_batch(dma, &state,
                                 &blitter_busy_at_kernel_end);
@@ -1269,9 +1560,14 @@ static int run_c2p_case(const struct DmaProfile *dma,
     result->plane_write_bytes = pixels >> 1;
     result->lookup_traffic_bytes =
         backend == C2P_BACKEND_PAIR_LUT_M68K ? pixels * 2U : 0U;
-    result->minimum_chip_traffic_bytes =
+    result->minimum_total_memory_traffic_bytes =
         result->source_bytes + result->plane_write_bytes +
         result->lookup_traffic_bytes;
+    result->minimum_chip_traffic_bytes =
+        result->plane_write_bytes +
+        (fast_assisted != 0 ? 0U
+                            : result->source_bytes +
+                                  result->lookup_traffic_bytes);
     result->expected_checksum =
         c2p_expected_checksum[profile_index][layout];
     result->actual_checksum = hash_front_planes(physical_planes);
@@ -1314,8 +1610,10 @@ static int run_exclusive_suite(void)
     size_t c2p_profile_index;
     size_t layout_index;
     size_t backend_index;
+    size_t selected_index;
     size_t raw_result_index = 0U;
     size_t c2p_result_index = 0U;
+    size_t fast_case_start;
     int success = 1;
 
     dedicated_stack_pointer_offset =
@@ -1326,15 +1624,42 @@ static int run_exclusive_suite(void)
     Forbid();
     for (dma_index = 0U; dma_index < BENCH_DMA_PROFILE_COUNT;
          ++dma_index) {
-        for (raw_index = 0U; raw_index < BENCH_RAW_KERNEL_COUNT;
+        int run_extended = 0;
+
+        for (selected_index = 0U;
+             selected_index < BENCH_RAW_EXTENDED_DMA_PROFILE_COUNT;
+             ++selected_index) {
+            if (raw_extended_dma_profile_indices[selected_index] ==
+                dma_index) {
+                run_extended = 1;
+            }
+        }
+        for (raw_index = 0U;
+             raw_index < BENCH_RAW_CORE_KERNEL_COUNT;
              ++raw_index) {
             progress_phase = PHASE_EXCLUSIVE_CASE;
             progress_case = (ULONG)(raw_result_index + c2p_result_index);
             if (!run_raw_case(&dma_profiles[dma_index],
                               &raw_kernels[raw_index],
-                              &raw_results[raw_result_index++])) {
+                              0, &raw_results[raw_result_index])) {
                 success = 0;
                 goto leave;
+            }
+            ++raw_result_index;
+        }
+        if (run_extended) {
+            for (raw_index = BENCH_RAW_CORE_KERNEL_COUNT;
+                 raw_index < BENCH_RAW_KERNEL_COUNT; ++raw_index) {
+                progress_phase = PHASE_EXCLUSIVE_CASE;
+                progress_case =
+                    (ULONG)(raw_result_index + c2p_result_index);
+                if (!run_raw_case(&dma_profiles[dma_index],
+                                  &raw_kernels[raw_index], 0,
+                                  &raw_results[raw_result_index])) {
+                    success = 0;
+                    goto leave;
+                }
+                ++raw_result_index;
             }
         }
         for (c2p_profile_index = 0U;
@@ -1353,14 +1678,82 @@ static int run_exclusive_suite(void)
                             &c2p_profiles[c2p_profile_index],
                             c2p_profile_index, (enum C2PLayout)layout_index,
                             (enum C2PBackend)backend_index,
-                            &c2p_results[c2p_result_index++])) {
+                            0, &c2p_results[c2p_result_index])) {
                         success = 0;
                         goto leave;
                     }
+                    ++c2p_result_index;
                 }
             }
         }
     }
+    if (raw_result_index != BENCH_BASE_RAW_RESULT_COUNT ||
+        c2p_result_index != BENCH_BASE_C2P_RESULT_COUNT) {
+        exclusive_failure_detail = 301U;
+        success = 0;
+        goto leave;
+    }
+
+    fast_case_start = raw_result_index + c2p_result_index;
+    if (fast_matrix_active != 0U) {
+        for (selected_index = 0U;
+             selected_index < BENCH_FAST_DMA_PROFILE_COUNT;
+             ++selected_index) {
+            dma_index = fast_dma_profile_indices[selected_index];
+            for (raw_index = 0U; raw_index < BENCH_RAW_KERNEL_COUNT;
+                 ++raw_index) {
+                if (raw_kernels[raw_index].source_traffic_multiplier == 0U) {
+                    continue;
+                }
+                progress_phase = PHASE_EXCLUSIVE_CASE;
+                progress_case =
+                    (ULONG)(raw_result_index + c2p_result_index);
+                if (!run_raw_case(&dma_profiles[dma_index],
+                                  &raw_kernels[raw_index], 1,
+                                  &raw_results[raw_result_index])) {
+                    success = 0;
+                    goto leave;
+                }
+                ++raw_result_index;
+            }
+            for (c2p_profile_index = 0U;
+                 c2p_profile_index < BENCH_C2P_PROFILE_COUNT;
+                 ++c2p_profile_index) {
+                for (layout_index = 0U;
+                     layout_index < BENCH_C2P_LAYOUT_COUNT;
+                     ++layout_index) {
+                    for (backend_index = 0U;
+                         backend_index < BENCH_C2P_BACKEND_COUNT;
+                         ++backend_index) {
+                        progress_phase = PHASE_EXCLUSIVE_CASE;
+                        progress_case =
+                            (ULONG)(raw_result_index + c2p_result_index);
+                        if (!run_c2p_case(
+                                &dma_profiles[dma_index],
+                                &c2p_profiles[c2p_profile_index],
+                                c2p_profile_index,
+                                (enum C2PLayout)layout_index,
+                                (enum C2PBackend)backend_index, 1,
+                                &c2p_results[c2p_result_index])) {
+                            success = 0;
+                            goto leave;
+                        }
+                        ++c2p_result_index;
+                    }
+                }
+            }
+        }
+        if (raw_result_index != BENCH_MAX_RAW_RESULT_COUNT ||
+            c2p_result_index != BENCH_MAX_C2P_RESULT_COUNT) {
+            exclusive_failure_detail = 302U;
+            success = 0;
+            goto leave;
+        }
+    }
+    raw_result_count = (ULONG)raw_result_index;
+    c2p_result_count = (ULONG)c2p_result_index;
+    fast_case_count =
+        (ULONG)(raw_result_index + c2p_result_index - fast_case_start);
 
 leave:
     if (!stack_guards_intact()) {
@@ -1468,8 +1861,10 @@ static int write_dma_fields(BPTR output, const struct DmaProfile *profile)
 
 static int write_header(BPTR output)
 {
+    ULONG total_case_count = raw_result_count + c2p_result_count;
+
     return write_text(output,
-                      "exclusive_graphics_benchmark_format=2\n"
+                      "exclusive_graphics_benchmark_format=3\n"
                       "benchmark=chipram_c2p4\n"
                       "environment=" MAGI80_BENCHMARK_ENVIRONMENT "\n"
                       "timing_authority=" MAGI80_BENCHMARK_AUTHORITY "\n"
@@ -1549,7 +1944,7 @@ static int write_header(BPTR output)
                       "\ninterrupt_restore=pass\n"
                       "dma_restore=pass\n"
                       "checksum_algorithm=fnv1a32\n") &&
-           write_key_decimal(output, "case_count=", BENCH_CASE_COUNT) &&
+           write_key_decimal(output, "case_count=", total_case_count) &&
            write_text(output, "\n") &&
            write_key_decimal(output, "controlled_sprite_count=",
                              BENCH_SPRITE_COUNT) &&
@@ -1568,13 +1963,40 @@ static int write_header(BPTR output)
                              BENCH_BLITTER_MAX_ROWS) &&
            write_text(output, "\nexclusive_timer_resource=") &&
            write_text(output, exclusive_cia_name) &&
-           write_text(output, "\nexclusive_timer_counter_bits=32") &&
+           write_text(output, "\nexclusive_timer_counter_bits=32\n") &&
+           write_key_decimal(output, "raw_core_kernel_count=",
+                             BENCH_RAW_CORE_KERNEL_COUNT) &&
+           write_text(output, "\n") &&
+           write_key_decimal(output, "raw_extended_kernel_count=",
+                             BENCH_RAW_EXTENDED_KERNEL_COUNT) &&
+           write_text(output, "\n") &&
+           write_key_decimal(output, "raw_extended_dma_profile_count=",
+                             BENCH_RAW_EXTENDED_DMA_PROFILE_COUNT) &&
+           write_text(output, "\nfast_matrix=") &&
+           write_text(output, fast_matrix_state) &&
+           write_text(output, "\n") &&
+           write_key_decimal(output, "fast_matrix_dma_profile_count=",
+                             BENCH_FAST_DMA_PROFILE_COUNT) &&
+           write_text(output, "\n") &&
+           write_key_decimal(output, "fast_case_count=", fast_case_count) &&
+           write_text(output, "\nstack_memory=") &&
+           write_text(output, stack_memory) &&
+           write_text(output, "\ncode_memory=") &&
+           write_text(output, code_memory) &&
+           write_text(output, "\n") &&
+           write_key_decimal(output, "raw_result_count=", raw_result_count) &&
+           write_text(output, "\n") &&
+           write_key_decimal(output, "c2p_result_count=", c2p_result_count) &&
+           write_text(output, "\n") &&
+           write_key_decimal(output, "baseline_case_count=",
+                             BENCH_BASE_CASE_COUNT) &&
            write_text(output, "\n");
 }
 
 static int write_timing_fields(BPTR output, ULONG iterations,
                                ULONG samples, ULONG bytes_per_batch,
                                ULONG minimum_chip_traffic_bytes,
+                               ULONG minimum_total_memory_traffic_bytes,
                                ULONG minimum_ticks, ULONG median_ticks,
                                ULONG maximum_ticks, ULONG misses,
                                ULONG expected_checksum,
@@ -1586,6 +2008,9 @@ static int write_timing_fields(BPTR output, ULONG iterations,
                              bytes_per_batch) &&
            write_key_decimal(output, " minimum_chip_traffic_bytes=",
                              minimum_chip_traffic_bytes) &&
+           write_key_decimal(
+               output, " minimum_total_memory_traffic_bytes=",
+               minimum_total_memory_traffic_bytes) &&
            write_key_decimal(output, " frame_budget_ticks=",
                              frame_budget_ticks) &&
            write_key_decimal(output, " minimum_ticks=", minimum_ticks) &&
@@ -1600,17 +2025,37 @@ static int write_timing_fields(BPTR output, ULONG iterations,
 static int write_raw_result(BPTR output, const struct RawResult *result)
 {
     ULONG bytes = BENCH_RAW_BUFFER_BYTES * BENCH_RAW_ITERATIONS;
+    const char *source_memory =
+        result->kernel->source_traffic_multiplier == 0U
+            ? "none"
+            : (result->fast_source != 0U ? "fast" : "chip");
+    const char *destination_memory =
+        result->kernel->traffic_multiplier ==
+                result->kernel->source_traffic_multiplier
+            ? "none"
+            : "chip";
 
     return write_text(output, "case=") &&
            write_text(output, result->dma->name) &&
            write_text(output, "_raw_") &&
            write_text(output, result->kernel->name) &&
+           (result->fast_source == 0U ||
+            write_text(output, "_fast_source")) &&
            write_text(output, " kind=raw") &&
            write_dma_fields(output, result->dma) &&
            write_text(output, " operation=") &&
            write_text(output, result->kernel->operation_name) &&
            write_text(output, " access_width=") &&
            write_text(output, result->kernel->access_width) &&
+           write_text(output, " source_memory=") &&
+           write_text(output, source_memory) &&
+           write_text(output, " destination_memory=") &&
+           write_text(output, destination_memory) &&
+           write_text(output, " lookup_memory=none") &&
+           write_key_decimal(output, " source_offset=",
+                             result->kernel->source_offset) &&
+           write_key_decimal(output, " destination_offset=",
+                             result->kernel->destination_offset) &&
            write_key_decimal(
                output, " blitter_launch_samples=",
                result->blitter_launch_samples) &&
@@ -1624,7 +2069,8 @@ static int write_raw_result(BPTR output, const struct RawResult *result)
                              result->blitter_copy_bytes) &&
            write_timing_fields(
                output, BENCH_RAW_ITERATIONS, BENCH_RAW_SAMPLES, bytes,
-               bytes * result->kernel->traffic_multiplier,
+               result->minimum_chip_traffic_bytes,
+               result->minimum_total_memory_traffic_bytes,
                result->minimum_ticks, result->median_ticks,
                result->maximum_ticks, result->deadline_misses,
                result->expected_checksum, result->actual_checksum) &&
@@ -1647,6 +2093,13 @@ static const char *backend_name(enum C2PBackend backend)
 
 static int write_c2p_result(BPTR output, const struct C2PResult *result)
 {
+    const char *source_memory =
+        result->fast_assisted != 0U ? "fast" : "chip";
+    const char *lookup_memory =
+        result->backend == C2P_BACKEND_PAIR_LUT_M68K
+            ? source_memory
+            : "none";
+
     return write_text(output, "case=") &&
            write_text(output, result->dma->name) &&
            write_text(output, "_c2p4_") &&
@@ -1655,12 +2108,20 @@ static int write_c2p_result(BPTR output, const struct C2PResult *result)
            write_text(output, result->profile->name) &&
            write_text(output, "_") &&
            write_text(output, backend_name(result->backend)) &&
+           (result->fast_assisted == 0U ||
+            write_text(output, "_fast_assisted")) &&
            write_text(output, " kind=c2p4") &&
            write_dma_fields(output, result->dma) &&
            write_text(output, " source_layout=") &&
            write_text(output, layout_name(result->layout)) &&
            write_text(output, " backend=") &&
            write_text(output, backend_name(result->backend)) &&
+           write_text(output, " source_memory=") &&
+           write_text(output, source_memory) &&
+           write_text(output, " destination_memory=chip") &&
+           write_text(output, " lookup_memory=") &&
+           write_text(output, lookup_memory) &&
+           write_text(output, " source_offset=0 destination_offset=0") &&
            write_key_decimal(
                output, " blitter_launch_samples=",
                result->blitter_launch_samples) &&
@@ -1684,6 +2145,7 @@ static int write_c2p_result(BPTR output, const struct C2PResult *result)
                output, BENCH_C2P_ITERATIONS, BENCH_C2P_SAMPLES,
                result->plane_write_bytes,
                result->minimum_chip_traffic_bytes,
+               result->minimum_total_memory_traffic_bytes,
                result->minimum_ticks, result->median_ticks,
                result->maximum_ticks, result->deadline_misses,
                result->expected_checksum, result->actual_checksum) &&
@@ -1827,6 +2289,19 @@ static void stop_audio_load(void)
     }
 }
 
+static const char *memory_type_token(const void *address)
+{
+    ULONG type = TypeOfMem((APTR)address);
+
+    if ((type & MEMF_FAST) != 0U) {
+        return "fast";
+    }
+    if ((type & MEMF_CHIP) != 0U) {
+        return "chip";
+    }
+    return "other";
+}
+
 int main(int argc, char **argv)
 {
     static struct TagItem video_control[] = {
@@ -1876,7 +2351,7 @@ int main(int argc, char **argv)
         (void)write_text(
             console_output,
             "MAGI-80 exclusive graphics benchmark starting.\n"
-            "Screen changes and silence are expected. Please wait up to five minutes.\n");
+            "Screen changes and silence are expected. Please wait up to ten minutes.\n");
         report_file = Open(report_path, MODE_NEWFILE);
         if (report_file == (BPTR)0) {
             (void)write_text(console_output,
@@ -1998,10 +2473,12 @@ int main(int argc, char **argv)
                BENCH_SCREEN_PLANE_BYTES);
     }
 
-    raw_source =
-        (UBYTE *)AllocMem(BENCH_RAW_BUFFER_BYTES, MEMF_CHIP | MEMF_CLEAR);
-    raw_destination =
-        (UBYTE *)AllocMem(BENCH_RAW_BUFFER_BYTES, MEMF_CHIP | MEMF_CLEAR);
+    raw_source_storage =
+        (UBYTE *)AllocMem(BENCH_RAW_STORAGE_BYTES,
+                          MEMF_CHIP | MEMF_CLEAR);
+    raw_destination_storage =
+        (UBYTE *)AllocMem(BENCH_RAW_STORAGE_BYTES,
+                          MEMF_CHIP | MEMF_CLEAR);
     packed_source =
         (UBYTE *)AllocMem((BENCH_SCREEN_WIDTH * BENCH_SCREEN_HEIGHT) >> 1,
                           MEMF_CHIP | MEMF_CLEAR);
@@ -2025,19 +2502,16 @@ int main(int argc, char **argv)
     blitter_destination =
         (UBYTE *)AllocMem(BENCH_BLITTER_WORKING_BYTES,
                           MEMF_CHIP | MEMF_CLEAR);
-    stack_allocation =
-        (UBYTE *)AllocMem(BENCH_STACK_TOTAL_BYTES, MEMF_PUBLIC);
-    if (raw_source == NULL || raw_destination == NULL ||
+    if (raw_source_storage == NULL || raw_destination_storage == NULL ||
         packed_source == NULL || byte_source == NULL || pair_lut == NULL ||
         oracle_planes_allocation == NULL || audio_sample == NULL ||
         sprite_data_allocation == NULL ||
-        blitter_source == NULL || blitter_destination == NULL ||
-        stack_allocation == NULL) {
+        blitter_source == NULL || blitter_destination == NULL) {
         failure = "allocate_benchmark_memory";
         goto cleanup;
     }
-    if ((TypeOfMem(raw_source) & MEMF_CHIP) == 0U ||
-        (TypeOfMem(raw_destination) & MEMF_CHIP) == 0U ||
+    if ((TypeOfMem(raw_source_storage) & MEMF_CHIP) == 0U ||
+        (TypeOfMem(raw_destination_storage) & MEMF_CHIP) == 0U ||
         (TypeOfMem(packed_source) & MEMF_CHIP) == 0U ||
         (TypeOfMem(byte_source) & MEMF_CHIP) == 0U ||
         (TypeOfMem(pair_lut) & MEMF_CHIP) == 0U ||
@@ -2049,9 +2523,81 @@ int main(int argc, char **argv)
         goto cleanup;
     }
 
-    fill_raw_source();
+    if (available_fast_bytes_before_setup != 0U) {
+        fast_raw_source_storage =
+            (UBYTE *)AllocMem(BENCH_RAW_STORAGE_BYTES,
+                              MEMF_FAST | MEMF_CLEAR);
+        fast_packed_source = (UBYTE *)AllocMem(
+            (BENCH_SCREEN_WIDTH * BENCH_SCREEN_HEIGHT) >> 1,
+            MEMF_FAST | MEMF_CLEAR);
+        fast_byte_source = (UBYTE *)AllocMem(
+            BENCH_SCREEN_WIDTH * BENCH_SCREEN_HEIGHT,
+            MEMF_FAST | MEMF_CLEAR);
+        fast_pair_lut = (uint32_t *)AllocMem(
+            MAGI80_C2P4_PAIR_LUT_ENTRIES * sizeof(uint32_t),
+            MEMF_FAST | MEMF_CLEAR);
+        stack_allocation =
+            (UBYTE *)AllocMem(BENCH_STACK_TOTAL_BYTES, MEMF_FAST);
+        if (fast_raw_source_storage != NULL &&
+            fast_packed_source != NULL && fast_byte_source != NULL &&
+            fast_pair_lut != NULL && stack_allocation != NULL &&
+            (TypeOfMem(fast_raw_source_storage) & MEMF_FAST) != 0U &&
+            (TypeOfMem(fast_packed_source) & MEMF_FAST) != 0U &&
+            (TypeOfMem(fast_byte_source) & MEMF_FAST) != 0U &&
+            (TypeOfMem(fast_pair_lut) & MEMF_FAST) != 0U &&
+            (TypeOfMem(stack_allocation) & MEMF_FAST) != 0U) {
+            fast_matrix_active = 1U;
+            fast_matrix_state = "active";
+        } else {
+            if (stack_allocation != NULL) {
+                FreeMem(stack_allocation, BENCH_STACK_TOTAL_BYTES);
+                stack_allocation = NULL;
+            }
+            if (fast_pair_lut != NULL) {
+                FreeMem(fast_pair_lut,
+                        MAGI80_C2P4_PAIR_LUT_ENTRIES * sizeof(uint32_t));
+                fast_pair_lut = NULL;
+            }
+            if (fast_byte_source != NULL) {
+                FreeMem(fast_byte_source,
+                        BENCH_SCREEN_WIDTH * BENCH_SCREEN_HEIGHT);
+                fast_byte_source = NULL;
+            }
+            if (fast_packed_source != NULL) {
+                FreeMem(fast_packed_source,
+                        (BENCH_SCREEN_WIDTH * BENCH_SCREEN_HEIGHT) >> 1);
+                fast_packed_source = NULL;
+            }
+            if (fast_raw_source_storage != NULL) {
+                FreeMem(fast_raw_source_storage,
+                        BENCH_RAW_STORAGE_BYTES);
+                fast_raw_source_storage = NULL;
+            }
+            fast_matrix_state = "insufficient";
+        }
+    }
+    if (stack_allocation == NULL) {
+        stack_allocation =
+            (UBYTE *)AllocMem(BENCH_STACK_TOTAL_BYTES, MEMF_CHIP);
+    }
+    if (stack_allocation == NULL) {
+        failure = "allocate_benchmark_stack";
+        goto cleanup;
+    }
+    stack_memory = memory_type_token(stack_allocation);
+    code_memory = memory_type_token(
+        (const void *)(uintptr_t)magi80_chipram_write_long4);
+    if ((fast_matrix_active != 0U && strcmp(stack_memory, "fast") != 0) ||
+        (fast_matrix_active == 0U && strcmp(stack_memory, "chip") != 0)) {
+        failure = "verify_benchmark_stack_memory";
+        goto cleanup;
+    }
+
     build_c2p_sources();
     magi80_c2p4_build_pair_lut(pair_lut);
+    if (fast_matrix_active != 0U) {
+        magi80_c2p4_build_pair_lut(fast_pair_lut);
+    }
     if (!prepare_c2p_oracles()) {
         failure = "prepare_c2p_oracles";
         goto cleanup;
@@ -2121,6 +2667,21 @@ int main(int argc, char **argv)
         failure = "exclusive_suite";
         goto cleanup;
     }
+    if (raw_result_count !=
+            BENCH_BASE_RAW_RESULT_COUNT +
+                (fast_matrix_active != 0U
+                     ? BENCH_FAST_RAW_RESULT_COUNT
+                     : 0U) ||
+        c2p_result_count !=
+            BENCH_BASE_C2P_RESULT_COUNT +
+                (fast_matrix_active != 0U
+                     ? BENCH_FAST_C2P_RESULT_COUNT
+                     : 0U) ||
+        fast_case_count !=
+            (fast_matrix_active != 0U ? BENCH_FAST_CASE_COUNT : 0U)) {
+        failure = "result_matrix_count";
+        goto cleanup;
+    }
     if ((custom->intenar & BENCH_ALL_CUSTOM_INTERRUPTS) !=
         (suite_initial_intena & BENCH_ALL_CUSTOM_INTERRUPTS)) {
         failure = "interrupt_restore";
@@ -2144,6 +2705,21 @@ cleanup:
     release_exclusive_timer();
     if (stack_allocation != NULL) {
         FreeMem(stack_allocation, BENCH_STACK_TOTAL_BYTES);
+    }
+    if (fast_pair_lut != NULL) {
+        FreeMem(fast_pair_lut,
+                MAGI80_C2P4_PAIR_LUT_ENTRIES * sizeof(uint32_t));
+    }
+    if (fast_byte_source != NULL) {
+        FreeMem(fast_byte_source,
+                BENCH_SCREEN_WIDTH * BENCH_SCREEN_HEIGHT);
+    }
+    if (fast_packed_source != NULL) {
+        FreeMem(fast_packed_source,
+                (BENCH_SCREEN_WIDTH * BENCH_SCREEN_HEIGHT) >> 1);
+    }
+    if (fast_raw_source_storage != NULL) {
+        FreeMem(fast_raw_source_storage, BENCH_RAW_STORAGE_BYTES);
     }
     if (blitter_destination != NULL) {
         FreeMem(blitter_destination, BENCH_BLITTER_WORKING_BYTES);
@@ -2177,11 +2753,11 @@ cleanup:
         FreeMem(packed_source,
                 (BENCH_SCREEN_WIDTH * BENCH_SCREEN_HEIGHT) >> 1);
     }
-    if (raw_destination != NULL) {
-        FreeMem(raw_destination, BENCH_RAW_BUFFER_BYTES);
+    if (raw_destination_storage != NULL) {
+        FreeMem(raw_destination_storage, BENCH_RAW_STORAGE_BYTES);
     }
-    if (raw_source != NULL) {
-        FreeMem(raw_source, BENCH_RAW_BUFFER_BYTES);
+    if (raw_source_storage != NULL) {
+        FreeMem(raw_source_storage, BENCH_RAW_STORAGE_BYTES);
     }
     if (timer_open) {
         CloseDevice((struct IORequest *)&timer_request);
@@ -2226,13 +2802,13 @@ cleanup:
         failure = "write_report_header";
         goto emit_failure;
     }
-    for (index = 0U; index < BENCH_RAW_RESULT_COUNT; ++index) {
+    for (index = 0U; index < raw_result_count; ++index) {
         if (!write_raw_result(report_output, &raw_results[index])) {
             failure = "write_raw_result";
             goto emit_failure;
         }
     }
-    for (index = 0U; index < BENCH_C2P_RESULT_COUNT; ++index) {
+    for (index = 0U; index < c2p_result_count; ++index) {
         if (!write_c2p_result(report_output, &c2p_results[index])) {
             failure = "write_c2p_result";
             goto emit_failure;

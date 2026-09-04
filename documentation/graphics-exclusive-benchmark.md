@@ -1,6 +1,6 @@
 # MAGI-80 Exclusive Graphics Benchmark Plan
 
-**Status:** Version 2 of the blanked/active DMA matrix now includes explicit sprite fetch traffic, adaptive sustained fair-blitter contention, a hog-mode preemption burst, and autonomous 32-bit CIA timing; all 126 cases pass under FS-UAE; physical-hardware authority, transition stress, and runtime-frame timing remain pending
+**Status:** Report format 3 adds byte/word/long reads, read-modify-write loops, 68020 misalignment cases, and an optional Fast-assisted tier to the explicit DMA matrix; the 204-case stock and 260-case 2 MiB Fast configurations pass under FS-UAE; physical-hardware authority, transition stress, and runtime-frame timing remain pending
 
 **Decision authority:** Only distributions produced by this harness on a physical stock PAL A1200 may select a graphics backend or certify a frame budget
 
@@ -49,7 +49,13 @@ The seven profiles are additive so their deltas can be inspected:
 | `display_copper_sprite_audio_blitter_fair` | on | on | seven controlled sprites | four channels | adaptive 512 KiB, 2 MiB, or 4,194,176-byte fair A-to-D load |
 | `display_copper_sprite_audio_blitter_hog` | on | on | seven controlled sprites | four channels | 512 KiB hog-mode A-to-D preemption burst |
 
-Each profile runs the six raw kernels plus twelve C2P4 cases: Small, Medium, and Full viewports; packed4 and byte4 inputs; and the real pair-LUT and table-free mask32 68020 assembly cores. That produces 126 checked cases. C2P writes directly to the live PF1 planes and is compared with the hosted scalar oracle after the exclusive section. All measured CPU sources and lookup data are currently in Chip RAM, making this the stock-memory baseline.
+The stock matrix contains 204 checked cases. Its six core raw kernels run under all seven profiles. Twenty-six extended raw kernels run under three representative points: fully blanked, display/Copper/sprite/audio without blitter traffic, and the same active fixture with fair blitter overlap. This yields 120 raw cases while retaining the full seven-profile progression for the original core. Twelve C2P4 combinations still run under every profile: Small, Medium, and Full viewports; packed4 and byte4 inputs; and the real pair-LUT and table-free mask32 68020 assembly cores, for another 84 cases. C2P writes directly to the live PF1 planes and is compared with the hosted scalar oracle after the exclusive section.
+
+The extended raw set adds dependency-preserving byte, word, longword, and four-way-unrolled longword reads; byte, word, longword, and unrolled read-modify-write additions; word access at offset `+1`; and unrolled longword source and destination offsets `+1`, `+2`, and `+3`. Copy includes independent source offsets, destination offsets, and a combined `source +1 / destination +3` case. Guard regions before and after both 8 KiB active ranges detect overruns. Every timed retry reinitializes the destination, so read-modify-write samples remain equivalent.
+
+When a complete Fast allocation bundle is available, the same executable appends 56 cases rather than changing the stock baseline: the 16 source-reading raw kernels run with Fast sources under the blanked and fair-blitter profiles, and all twelve C2P4 combinations run with their chunky source and pair LUT in Fast under those same two profiles. Planar destinations and all other DMA-visible data remain in Chip RAM. The dedicated benchmark stack is also placed in Fast; `code_memory` records where AmigaDOS loaded the executable. Allocation is all-or-none and is reported as `active`, `not_present`, or `insufficient`. A Fast report therefore contains 152 raw plus 108 C2P results, or 260 total.
+
+Report format 3 records `source_memory`, `destination_memory`, `lookup_memory`, both byte offsets, and two traffic lower bounds per case. `minimum_total_memory_traffic_bytes` describes all explicit payload accesses; `minimum_chip_traffic_bytes` counts only the portion that contends for Chip RAM. These are accounting invariants, not measured bus transactions or throughput.
 
 The audio profile uses real four-channel DMA at period 124 with volume zero. Sprite channels 1 through 7 each display a 16-pixel-wide, 224-line `SimpleSprite`; their Chip-RAM streams account for a controlled minimum of 6,328 fetched bytes per video frame, in addition to the system pointer on channel 0. This is a deliberately heavy and repeatable fetch fixture, not yet the virtual-object scheduler or a multiplexing test.
 
@@ -57,13 +63,21 @@ The blitter source and destination are 128-byte Chip-RAM working sets. Negative 
 
 Version 2 also replaces `ReadEClock()` inside the long exclusive interval. The earlier implementation observed a lower-word wrap without the matching software-maintained upper-word advance after custom interrupts had remained masked for roughly 92 seconds. Before entering `Forbid()`, the harness now reserves Timer A and Timer B together from one CIA through `cia.resource`, disables their interrupt requests, runs Timer A from the E-clock and Timer B from Timer-A underflows, and reads the resulting descending 32-bit counter directly. It records the selected CIA and counter width, then stops and releases both timers during normal cleanup. Failure to reserve a complete pair is a controlled setup failure rather than an implicit timer conflict.
 
-Run and validate the complete matrix with:
+Run and validate the stock matrix with:
 
 ```sh
 gmake exclusive-graphics-benchmark-fs-uae
 ```
 
-The validated report is written to `build/reports/exclusive-graphics-fs-uae.txt`, with size, symbol, map, and disassembly artifacts beside the other benchmark reports. The validator checks the exact DMA profile mapping, sampling contracts, sprite and blitter workload invariants, traffic arithmetic, output hashes, timer plausibility, stack margin, state restoration, case count, and final footer. The passing version-2 FS-UAE run completed all 126 cases with 132 bytes of measured 16 KiB stack high water, a 24-tick timer-read overhead, and no discarded timer sample. Its `timing_authority=protocol_only` label is deliberate: the values prove execution and instrumentation, not A1200 performance.
+Run the optional 2 MiB Fast comparison with:
+
+```sh
+gmake exclusive-graphics-benchmark-fs-uae-fast
+```
+
+The validated reports are written to `build/reports/exclusive-graphics-fs-uae.txt` and `build/reports/exclusive-graphics-fast-fs-uae.txt`, with size, symbol, map, and disassembly artifacts beside them. The validator checks the exact DMA profile mapping, sampling contracts, memory placement, offsets, separate total/Chip traffic arithmetic, sprite and blitter workload invariants, output hashes, timer plausibility, stack margin, state restoration, case counts, and final footer. The passing format-3 FS-UAE runs completed all 204 stock and 260 Fast-equipped cases with 268 bytes of measured 16 KiB stack high water and no discarded timer sample. Timer-read overhead was 24 ticks in the stock run and 23 ticks in the Fast run. Their `timing_authority=protocol_only` label is deliberate: these values prove execution and instrumentation, not A1200 performance.
+
+The Fast report deliberately records `code_memory=fast`. Consequently its 204 baseline cases are not numerically interchangeable with the stock report: code and stack placement differ. The paired Chip-source and Fast-source cases inside that one run do share code/stack placement and are the cleaner source-placement comparison. Even those emulator deltas are diagnostic only until repeated on declared physical hardware.
 
 ### 1.3 Physical-test ADF
 
@@ -71,7 +85,7 @@ The validated report is written to `build/reports/exclusive-graphics-fs-uae.txt`
 
 The program first creates a closed `RESULT.TXT` containing `result=running`, before entering the exclusive section. On controlled completion it replaces that marker with either a full PASS report or failure diagnostics. An absent file therefore distinguishes startup or media-write trouble; a remaining `running` footer proves startup and writable media but classifies the run as incomplete. Raster waits and blitter waits are bounded so their controlled timeouts can unwind through the normal restoration path. The 68020 instruction cache is requested through `exec.library/CacheControl()` for a consistent benchmark state and its prior global state is restored during cleanup.
 
-The exact writable version-2 ADF completes under the stock PAL A1200 FS-UAE profile. Its fixed 240-second controller window extracted and validated all 126 cases, preserved both restoration checks, reported 132 bytes of stack high water and a 24-tick timer-read overhead, and left no raster timeout or discarded timer sample. The final report is approximately 105 KiB. The writer restores all owned resources first, returns to the text display, and feeds `FWrite()` through a 32 KiB `SetVBuf()` buffer so OFS receives only a few large flushes. This integration result remains non-authoritative for timing. The ADF is deliberately labelled `real_hardware_candidate`; only returned reports from declared physical machines can advance the real-hardware gate.
+The format-3 ADF uses the same auto-detection path: 204 cases on a stock machine, or 260 when its complete Fast bundle can be allocated. Its stock PAL FS-UAE integration run booted the exact writable image, restored the hosted display, wrote and re-extracted a 193,963-byte report, and passed the strict validator. The controller allows ten minutes and polls a copied image every five seconds, so it does not hold every successful run until the deadline. The writer restores all owned resources first, returns to the text display, and feeds `FWrite()` through a 32 KiB `SetVBuf()` buffer so OFS receives only a few large flushes. This integration result remains non-authoritative for timing. The ADF is deliberately labelled `real_hardware_candidate`; only returned reports from declared physical machines can advance the real-hardware gate.
 
 The exact handoff, safety limit, observations, result-state meanings, return form, and extraction commands are in [MAGI-80 Physical A1200 Graphics Test](./physical-a1200-graphics-test.md).
 
@@ -173,7 +187,7 @@ Minimum kernels:
 | Display state | blanked, eight-plane 256 × 256 active |
 | DMA state | display only; display + Copper/sprites; display + blitter; representative display + sprites + Paula |
 
-Every physical-hardware result reports bytes per iteration, iteration count, raw E-Clock ticks, bracket overhead, minimum/median/maximum, decimal MB/s, binary MiB/s, alignment, source/destination memory domains, generated disassembly, display state, enabled DMA, and interrupt mode. Reads whose values do not affect an observable checksum are invalid because an optimizer may remove them. The implemented successor now records blanked/active and additive DMA profiles, explicit sprite traffic, adaptive fair/hog blitter traffic, and observable checksums. Rate formatting, byte/word read variants, read/modify/write kernels, misalignment cases, Fast-RAM placements, and physical distributions remain open.
+Every physical-hardware result reports bytes per iteration, iteration count, raw CIA/E-Clock ticks, bracket overhead, minimum/median/maximum, alignment, source/destination/lookup memory domains, generated disassembly, display state, enabled DMA, and interrupt mode. Reads whose values do not affect an observable checksum are invalid because an optimizer may remove them. The implemented format-3 successor now records byte/word/long reads, read-modify-write loops, every relevant 68020 byte offset, optional Fast sources and LUTs, explicit sprite traffic, adaptive fair/hog blitter traffic, and observable checksums. Derived decimal MB/s and binary MiB/s formatting plus repeated physical distributions remain open.
 
 ## 7. Graphics Case Requirements
 
@@ -192,6 +206,12 @@ timing_scope=exclusive_kernel_batch|exclusive_runtime_frame
 interrupt_mode=custom_intena_masked|masked_polled|magi80_level3
 display_state=blanked|active
 minimum_chip_traffic_bytes=<unsigned-decimal>
+minimum_total_memory_traffic_bytes=<positive-decimal>
+source_memory=none|chip|fast
+destination_memory=none|chip
+lookup_memory=none|chip|fast
+source_offset=0|1|2|3
+destination_offset=0|1|2|3
 display_plane_fetch_bytes_per_video_frame=<unsigned-decimal>
 video_hz=50
 batch_iterations=<positive-decimal>
@@ -219,9 +239,10 @@ The immediate implementation sequence is:
 
 1. **Completed:** wrap the raw and C2P4 assembly kernels in blanked/active screen fixtures and the seven-profile DMA matrix, with guarded-stack, checksum, state-restoration, and report validation under FS-UAE;
 2. **Completed under FS-UAE:** add seven explicit sprite payloads, adaptive sustained fair-blitter load, a separately identified hog-mode preemption burst, report-format-2 workload counters, and an exclusive 32-bit CIA timer that does not depend on system interrupt service;
-3. distribute the refreshed candidate ADF using the physical-test handoff and collect repeated stock PAL A1200 reports; in parallel, complete missing raw read/mixed/alignment cases and optional Fast-source variants;
-4. implement genuine C2P4 CPU/blitter merge candidates, dirty/no-change cases, and safe publication, preserving the same oracle and DMA profiles;
-5. add the reviewed minimal Level-3 path for `exclusive_runtime_frame`, then stress at least 100 transitions and forced failures before the final physical selection run.
+3. **Completed under FS-UAE:** add the missing raw byte/word/long reads, read-modify-write loops, offset `+1`/`+2`/`+3` cases, guarded active ranges, separate total/Chip traffic accounting, and an all-or-none Fast-assisted source/LUT/stack tier in report format 3;
+4. distribute the refreshed candidate ADF using the physical-test handoff and collect repeated stock PAL A1200 reports, plus clearly separated optional Fast-equipped reports;
+5. implement genuine C2P4 CPU/blitter merge candidates, dirty/no-change cases, and safe publication, preserving the same oracle and DMA profiles;
+6. add the reviewed minimal Level-3 path for `exclusive_runtime_frame`, then stress at least 100 transitions and forced failures before the final physical selection run.
 
 ## 9. Primary References
 

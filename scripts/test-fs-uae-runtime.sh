@@ -14,6 +14,7 @@ MAGI80_STAGED_BACKUP="$MAGI80_BUILD_DIR/staged-program.backup"
 MAGI80_SOURCE_PROGRAM="${1:-}"
 MAGI80_EXPECTED="${2:-$MAGI80_PROJECT_ROOT/tests/smoke/hosted-bootstrap/expected.txt}"
 MAGI80_TIMEOUT_SECONDS="${MAGI80_FS_UAE_TIMEOUT_SECONDS:-30}"
+MAGI80_FAST_MEMORY_KIB="${MAGI80_FS_UAE_FAST_MEMORY_KIB:-0}"
 MAGI80_PIPX_BIN="${MAGI80_PIPX_BIN:-$HOME/.local/bin}"
 MAGI80_EMULATOR_PID=""
 MAGI80_RESTORE_STAGED_PROGRAM=0
@@ -90,6 +91,12 @@ if [ "$MAGI80_TIMEOUT_SECONDS" -eq 0 ]; then
   printf 'MAGI80_FS_UAE_TIMEOUT_SECONDS must be greater than zero.\n' >&2
   exit 1
 fi
+case "$MAGI80_FAST_MEMORY_KIB" in
+  ''|*[!0-9]*)
+    printf 'MAGI80_FS_UAE_FAST_MEMORY_KIB must be a non-negative integer.\n' >&2
+    exit 1
+    ;;
+esac
 
 /bin/mkdir -p "$MAGI80_BUILD_DIR" "$MAGI80_STAGING_DIR"
 
@@ -133,6 +140,7 @@ xdftool -f "$MAGI80_TEST_ADF" \
 xdfscan "$MAGI80_TEST_ADF" >/dev/null
 
 /bin/cp "$MAGI80_BASE_CONFIG" "$MAGI80_TEST_CONFIG"
+printf 'fast_memory = %s\n' "$MAGI80_FAST_MEMORY_KIB" >>"$MAGI80_TEST_CONFIG"
 printf 'floppy_drive_0 = %s\n' "$MAGI80_TEST_ADF" >>"$MAGI80_TEST_CONFIG"
 
 fs-uae "$MAGI80_TEST_CONFIG" >"$MAGI80_BUILD_DIR/fs-uae-output.txt" 2>&1 &

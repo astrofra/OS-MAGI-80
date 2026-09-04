@@ -1,6 +1,6 @@
 # MAGI-80 Physical A1200 Graphics Test
 
-**Status:** Report-format-2 physical-hardware candidate. The exact writable ADF boots under the stock PAL A1200 FS-UAE profile, completes all 126 cases, restores the hosted display, writes an approximately 105 KiB report through buffered AmigaDOS I/O, and passes the strict report validator within the controller's fixed 240-second window. A physical result remains required and is not a release certification by itself.
+**Status:** Report-format-3 physical-hardware candidate. The expanded harness passes 204 stock cases and 260 cases with 2 MiB Fast RAM under FS-UAE. The exact writable ADF also boots under the stock PAL profile, restores the hosted display, writes and re-extracts an approximately 190 KiB report through buffered AmigaDOS I/O, and passes the strict validator within the ten-minute controller window. A physical result remains required and is not a release certification by itself.
 
 ## 1. What to Send
 
@@ -42,6 +42,8 @@ The primary test configuration is:
 - a working internal drive, Gotek, or equivalent device that permits writes to the selected ADF.
 
 Disconnect optional accelerators and memory expansions when practical. If this is not practical, leave them installed and record them accurately; the report's `detected_stock_constraints` field will normally be `fail`, and the run must not be treated as a stock-machine result.
+
+An equipped machine is still useful as a secondary comparison. When enough Fast RAM is available, the same ADF automatically adds 56 Fast-assisted source/LUT cases and places the dedicated stack in Fast. Do not pool those 260-case reports with stock results, and do not substitute them for the three requested stock runs.
 
 The image must be writable. Preserve the master first because the benchmark writes `RESULT.TXT` into its own filesystem. When using a real floppy, write a fresh copy of the master ADF before each run and read the complete disk back to a new ADF afterward. When using a Gotek, make sure its firmware is configured to write changes back to the image rather than discard them.
 
@@ -119,7 +121,7 @@ Do not interpret a blank or flickering screen during the measured interval as a 
 | No `RESULT.TXT` | The program did not reach its writable-media preflight, or the medium did not retain writes. |
 | Last line `result=running` | The program started and the medium was writable, but the exclusive suite did not complete before reset or power-off. |
 | Last line `result=fail` | The program recovered through its controlled cleanup path and wrote diagnostics. |
-| Last line `result=pass` | All 126 cases, checksums, stack checks, and state-restoration checks completed. The report must still pass the host validator. |
+| Last line `result=pass` | All 204 stock cases, or 260 cases when the Fast tier is active, plus checksums, stack checks, and state-restoration checks completed. The report must still pass the host validator. |
 
 For `running`, FAIL, a Guru, or a corrupt display, return the image unchanged. Partial and failed images are valuable diagnostics; do not replace them with another run.
 
@@ -172,6 +174,8 @@ Before using its timings, also verify:
 - `detected_stock_constraints=pass`;
 - `power_supply_hz=50`;
 - `available_fast_bytes_before_setup=0`;
+- `fast_matrix=not_present`, `fast_case_count=0`, and `stack_memory=chip`;
+- `case_count=204`, `raw_result_count=120`, and `c2p_result_count=84`;
 - `benchmark_instruction_cache=active`;
 - `timing_source=cia_cascade_32` and `exclusive_timer_counter_bits=32`;
 - `raster_timeout_count=0`;
@@ -183,10 +187,14 @@ Before using its timings, also verify:
 
 ## 9. Scope and Limitations
 
-This ADF measures six raw Chip-RAM kernels and two real 68020 C2P4 kernels over three viewport sizes, two source layouts, and seven additive DMA profiles. It checks 126 cases against deterministic checksums. It uses a guarded dedicated stack, direct raster polling, real four-channel muted Paula DMA, seven controlled 16 × 224 sprites, adaptive repeated-row fair-blitter traffic, and a separate hog-mode preemption burst. A resource-reserved Timer-A/Timer-B CIA cascade supplies a direct 32-bit counter while custom interrupts are masked. It restores the caller's custom-chip and instruction-cache state and stops and releases the owned CIA timers before writing the final verdict.
+This ADF runs six core raw kernels over all seven additive DMA profiles, 26 extended raw kernels over three representative profiles, and two real 68020 C2P4 kernels over three viewport sizes and two source layouts under all seven profiles. The 120 raw plus 84 C2P cases form the 204-case stock baseline. The extended set covers byte/word/long reads, read-modify-write, and source/destination offsets `+1`, `+2`, and `+3`. Guarded active ranges catch overruns.
+
+On an equipped machine, 32 Fast-source raw cases and 24 Fast-source/LUT C2P cases are appended under the blanked and fair-blitter profiles. All DMA-visible data and planar destinations stay in Chip RAM, while the benchmark stack moves to Fast; the report records the observed code placement. Report format 3 separates total payload traffic from its Chip-RAM subset and identifies source, destination, lookup, and offsets for every case.
+
+The harness uses direct raster polling, real four-channel muted Paula DMA, seven controlled 16 × 224 sprites, adaptive repeated-row fair-blitter traffic, and a separate hog-mode preemption burst. A resource-reserved Timer-A/Timer-B CIA cascade supplies a direct 32-bit counter while custom interrupts are masked. It restores the caller's custom-chip and instruction-cache state and stops and releases the owned CIA timers before writing the final verdict.
 
 The sprite fixture is a deterministic heavy fetch load, not yet a direct/attached/multiplexed virtual-object workload. The blitter fixture measures contention but does not perform useful C2P work. The ADF also does not yet provide a genuine CPU/blitter C2P merge, safe frame publication, or the future MAGI-80 Level-3 runtime interrupt path. A PASS therefore validates this matrix and its restoration behavior; it does not alone select the final graphics architecture or prove the 25 Hz frame budget.
 
-The validator remains backward compatible with report format 1 so results from candidate ADFs distributed before this version can still be checked. Keep their results separate: format 1 used only the screen-managed sprite state, a single 32 KiB blit, and `ReadEClock()` timing, so its distributions are not comparable with format 2.
+The validator remains backward compatible with report formats 1 and 2 so results from candidate ADFs distributed before this version can still be checked. Keep every format separate: format 1 used only the screen-managed sprite state, a single 32 KiB blit, and `ReadEClock()` timing; format 2 added the explicit contention and CIA fixtures but did not contain the extended memory matrix.
 
 The complete physical-test contract and interpretation rules are maintained in [Exclusive Graphics Benchmark Plan](./graphics-exclusive-benchmark.md).

@@ -1,6 +1,6 @@
 # MAGI-80 Four-Plane C2P Reference and Benchmark
 
-**Status:** Reference, pair-LUT C99/68020, table-free mask32 C99/68020, staged blitter-publication control, and the 126-case exclusive display/DMA wrapper implemented; native and FS-UAE protocols pass
+**Status:** Reference, pair-LUT C99/68020, table-free mask32 C99/68020, staged blitter-publication control, and the report-format-3 exclusive display/DMA/memory wrapper implemented; native, 204-case stock FS-UAE, and 260-case Fast-assisted FS-UAE protocols pass
 
 **Decision authority:** Correctness is byte-exact on the host and under FS-UAE. Layout and performance decisions remain blocked on a physical stock PAL A1200.
 
@@ -155,14 +155,14 @@ For the Full profile, the current payload model produces these lower bounds at 2
 
 Independently, fetching all eight 256 × 256 display planes accounts for 65,536 payload bytes per 50 Hz video frame, or another 3.125 MiB/s. These rates cannot simply be compared with or added to the anecdotal write figure as if they shared one efficiency. They do show why eliminating LUT reads, scratch passes, and unchanged work is architectural rather than cosmetic.
 
-Phase 0 must reproduce a raw Chip-RAM calibration on a physical stock A1200. It must cover aligned `move.b`, `move.w`, `move.l`, reads, writes, and representative mixed loops with display blanked and active, then repeat with relevant Copper, sprite, blitter, and Paula DMA states. Results must report bytes, iterations, alignment, E-Clock/raster method, min/median/max, and generated disassembly.
+The report-format-3 harness now implements aligned byte/word/long reads and writes, unrolled longword paths, copy and read-modify-write loops, source and destination offsets `+1`, `+2`, and `+3`, and optional Fast-source variants. Its three extended-memory profiles cover fully blanked, active display/Copper/sprite/audio, and the same active state with fair blitter overlap; the six original core kernels still cover all seven additive DMA profiles. Exact source/destination guards, observable return checksums, separate total/Chip payload traffic, CIA timing, and generated disassembly are part of the protocol. Phase 0 still requires repeated distributions from a physical stock A1200 before any rate is authoritative.
 
 ## 7. Open Work Before a Decision
 
 This tranche does not yet select packed4, byte4, or any backend. The next C2P4 work is:
 
 1. run the implemented exclusive baseline on a physical stock machine before interpreting C2P rates; it already covers blanked/active display, seven additive DMA profiles, all three viewport sizes, both source layouts, and the real pair-LUT/mask32 assembly cores;
-2. replace the current screen-managed sprite enable with representative sprite data/fetches, add sustained blitter traffic, and complete the raw read/mixed/alignment cases plus optional Fast-source variants;
+2. collect separately labelled optional Fast-equipped runs for the implemented source/LUT/stack tier; never substitute them for stock certification;
 3. shorten or restructure the byte4 compaction core so its repeated instruction footprint can be compared with the current approximately 468-byte loop;
 4. implement a genuine CPU/blitter merge split such as a C2P4 adaptation of CPU3BLIT1, with explicit intermediate layout and direct-register ownership documented;
 5. add aligned dirty-rectangle and no-change workloads;
@@ -171,7 +171,7 @@ This tranche does not yet select packed4, byte4, or any backend. The next C2P4 w
 8. stress hosted-to-exclusive restoration and forced failures, then repeat with representative native-planar, sprite, blitter, and Paula traffic;
 9. run longer distributions on a stock 2 MiB PAL A1200 and freeze only the smallest profile/layout contract that meets headroom.
 
-The new target is built and exercised with `gmake exclusive-graphics-benchmark-fs-uae`. It runs 126 cases: seven DMA profiles multiplied by six raw kernels and twelve C2P4 combinations. Paula contributes four real muted DMA channels; the fair/hog blitter cases each overlap one direct-register 32 KiB A-to-D copy with the CPU kernel. The screen remains Intuition-managed, sprite DMA has no representative object payload yet, and direct PF1 writes are not safe publication. The report therefore remains `protocol_only` even though its output hashes, DMA/interrupt restoration, and guarded-stack invariants pass.
+The stock target is built and exercised with `gmake exclusive-graphics-benchmark-fs-uae`; the optional comparison uses `gmake exclusive-graphics-benchmark-fs-uae-fast`. The 204-case baseline comprises 120 raw-memory and 84 C2P4 cases. A complete Fast allocation adds 32 source-reading raw and 24 C2P4 cases under blanked and fair-blitter states, producing 260 total. Paula contributes four real muted DMA channels, seven controlled sprites supply a declared 6,328-byte minimum fetch per video frame, and the fair/hog blitter cases overlap adaptive direct-register loads with the CPU kernel. Direct PF1 writes are still not safe publication. Both reports therefore remain `protocol_only` even though their output hashes, placement/traffic metadata, DMA/interrupt restoration, and guarded-stack invariants pass.
 
 The hosted and exclusive harnesses have different jobs. Hosted cooperative runs remain the frequent correctness, API, allocation, and restoration regression. Fine performance runs use a bounded exclusive section after all files and allocations are prepared, with no DOS calls or general OS waits inside it. The two exclusive scopes and their takeover, interrupt, stack, crash, and Chip-RAM calibration contracts are defined in [Exclusive Graphics Benchmark Plan](./graphics-exclusive-benchmark.md). Takeover must use documented ownership and a small controlled interrupt path; it must not be implemented as an unbounded blind `Disable()` region.
 

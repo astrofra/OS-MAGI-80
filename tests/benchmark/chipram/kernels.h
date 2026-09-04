@@ -47,4 +47,46 @@ ULONG magi80_chipram_read_long4(
     ULONG bytes,
     ULONG seed);
 
+ULONG magi80_chipram_read_byte(
+    UBYTE *destination,
+    const UBYTE *source,
+    ULONG bytes,
+    ULONG seed);
+
+ULONG magi80_chipram_read_word(
+    UBYTE *destination,
+    const UBYTE *source,
+    ULONG bytes,
+    ULONG seed);
+
+ULONG magi80_chipram_read_long(
+    UBYTE *destination,
+    const UBYTE *source,
+    ULONG bytes,
+    ULONG seed);
+
+ULONG magi80_chipram_rmw_add_byte(
+    UBYTE *destination,
+    const UBYTE *source,
+    ULONG bytes,
+    ULONG seed);
+
+ULONG magi80_chipram_rmw_add_word(
+    UBYTE *destination,
+    const UBYTE *source,
+    ULONG bytes,
+    ULONG seed);
+
+ULONG magi80_chipram_rmw_add_long(
+    UBYTE *destination,
+    const UBYTE *source,
+    ULONG bytes,
+    ULONG seed);
+
+ULONG magi80_chipram_rmw_add_long4(
+    UBYTE *destination,
+    const UBYTE *source,
+    ULONG bytes,
+    ULONG seed);
+
 #endif

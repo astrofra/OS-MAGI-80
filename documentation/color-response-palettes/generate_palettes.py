@@ -4,6 +4,11 @@
 The transforms are compact, inspectable working approximations for design review.
 They deliberately model only a static color response; grain, halation, scanlines,
 chroma delay, noise, and other spatial or temporal effects are out of scope.
+
+This is a host-side fitting and reference tool and may use floating point. The Amiga
+must consume a quantized LUT through integer-only direct indexing; Phase 0 may either
+decode a packed canonical LUT or reconstruct it once from a byte-identical fixed-point
+descriptor. It must not execute these floating-point transforms.
 """
 
 from __future__ import annotations

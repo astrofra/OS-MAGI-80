@@ -116,6 +116,14 @@ The generator evaluates all 4,096 RGB12 inputs for each profile, validates 8-bit
 
 The present film transforms are reproducible visual baselines. A release-quality claim of physical fidelity requires digitized manufacturer spectral-sensitivity, characteristic, and dye-density curves where available, plus controlled color-target captures for stocks whose makers do not publish enough data. The target stock, processing chemistry, illuminant, print or scanner path, reference white, and fitting error must all be recorded. A static 4,096-entry palette LUT can reproduce color and tone mapping, but not grain, halation, local exposure effects, optical flare, chroma delay, scanlines, or noise.
 
+## Target storage and lookup
+
+The floating-point transforms in this generator are strictly host-side build operations. Embedding all eleven tables in the MAGI-80 executable would cost 132 KiB as packed RGB24 or 176 KiB as aligned 32-bit entries, which is too large relative to the binary and floppy budgets.
+
+Two alternatives must be benchmarked on the stock A1200. The first stores each canonical table as an independently compressed block in an external, versioned response pack. The second stores compact fixed-point descriptors—initially Q14 channels, signed Q13 matrices, and small integer curve tables—and reconstructs all 4,096 entries once when the profile is selected. The fixed-point path is accepted only if its table is byte-identical to the canonical output, has the same checksum, and is fast enough for an interactive profile change.
+
+Either route constructs one 16 KiB table of 4,096 aligned `0x00RRGGBB` values before runtime. A game-time mapping is then a single integer array lookup and the 31 active colors are cached separately. No matrix, gamma, interpolation, decompression, table generation, or floating-point work is permitted after exclusive takeover. The full comparison and hybrid fallback policy are specified in [section 11.4.2 of the main specification](../MAGI-80-specification-and-roadmap.md#1142-lut-storage-and-integer-only-runtime-contract).
+
 ## Sources
 
 - [ITU-R BT.470-6, *Conventional Television Systems*](https://www.itu.int/dms_pubrec/itu-r/rec/bt/r-rec-bt.470-6-199811-s!!pdf-e.pdf) — NTSC and 625-line PAL/SECAM primaries and reference whites.

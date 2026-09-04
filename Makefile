@@ -94,6 +94,8 @@ EXCLUSIVE_GRAPHICS_SOURCE := tests/benchmark/exclusive-graphics/main.c
 EXCLUSIVE_GRAPHICS_PROGRAM := $(EXCLUSIVE_GRAPHICS_BUILD_DIR)/program
 EXCLUSIVE_GRAPHICS_MAP := $(EXCLUSIVE_GRAPHICS_BUILD_DIR)/program.map
 EXCLUSIVE_GRAPHICS_REPORT := $(REPORT_DIR)/exclusive-graphics-fs-uae.txt
+EXCLUSIVE_GRAPHICS_FAST_REPORT := \
+	$(REPORT_DIR)/exclusive-graphics-fast-fs-uae.txt
 EXCLUSIVE_GRAPHICS_REPORT_VALIDATOR := \
 	scripts/validate-exclusive-graphics-benchmark-report.sh
 EXCLUSIVE_GRAPHICS_REPORT_TEST_SOURCE := \
@@ -155,7 +157,8 @@ C2P_BENCHMARK_CFLAGS = $(filter-out -Os,$(TARGET_CFLAGS)) -O2
 	c2p4-benchmark-inspect c2p4-benchmark-fs-uae chipram-benchmark \
 	chipram-benchmark-inspect chipram-benchmark-fs-uae \
 	exclusive-graphics-benchmark exclusive-graphics-benchmark-inspect \
-	exclusive-graphics-benchmark-fs-uae exclusive-graphics-test-adf \
+	exclusive-graphics-benchmark-fs-uae \
+	exclusive-graphics-benchmark-fs-uae-fast exclusive-graphics-test-adf \
 	exclusive-graphics-test-adf-inspect exclusive-graphics-test-adf-fs-uae \
 	runtime-compare \
 	check run clean
@@ -382,11 +385,20 @@ exclusive-graphics-benchmark-inspect: $(EXCLUSIVE_GRAPHICS_PROGRAM)
 
 exclusive-graphics-benchmark-fs-uae: stage \
 		exclusive-graphics-benchmark-inspect
-	MAGI80_FS_UAE_TIMEOUT_SECONDS=240 \
+	MAGI80_FS_UAE_TIMEOUT_SECONDS=600 \
 		./scripts/test-fs-uae-runtime.sh $(EXCLUSIVE_GRAPHICS_PROGRAM) -
 	@mkdir -p $(REPORT_DIR)
 	cp $(STAGING_DIR)/fs-uae-smoke.out $(EXCLUSIVE_GRAPHICS_REPORT)
 	$(EXCLUSIVE_GRAPHICS_REPORT_VALIDATOR) $(EXCLUSIVE_GRAPHICS_REPORT)
+
+exclusive-graphics-benchmark-fs-uae-fast: stage \
+		exclusive-graphics-benchmark-inspect
+	MAGI80_FS_UAE_TIMEOUT_SECONDS=600 \
+	MAGI80_FS_UAE_FAST_MEMORY_KIB=2048 \
+		./scripts/test-fs-uae-runtime.sh $(EXCLUSIVE_GRAPHICS_PROGRAM) -
+	@mkdir -p $(REPORT_DIR)
+	cp $(STAGING_DIR)/fs-uae-smoke.out $(EXCLUSIVE_GRAPHICS_FAST_REPORT)
+	$(EXCLUSIVE_GRAPHICS_REPORT_VALIDATOR) $(EXCLUSIVE_GRAPHICS_FAST_REPORT)
 
 $(EXCLUSIVE_GRAPHICS_PHYSICAL_PROGRAM): $(EXCLUSIVE_GRAPHICS_SOURCE) \
 		$(CHIPRAM_BENCHMARK_ASM_SOURCE) $(CHIPRAM_BENCHMARK_HEADER) \
@@ -420,7 +432,7 @@ exclusive-graphics-test-adf-inspect: $(EXCLUSIVE_GRAPHICS_TEST_ADF)
 exclusive-graphics-test-adf-fs-uae: $(EXCLUSIVE_GRAPHICS_TEST_ADF) \
 		$(EXCLUSIVE_GRAPHICS_ADF_TESTER) \
 		$(EXCLUSIVE_GRAPHICS_REPORT_VALIDATOR)
-	MAGI80_FS_UAE_TIMEOUT_SECONDS=240 \
+	MAGI80_FS_UAE_TIMEOUT_SECONDS=600 \
 		$(EXCLUSIVE_GRAPHICS_ADF_TESTER) $(EXCLUSIVE_GRAPHICS_TEST_ADF)
 
 runtime-compare:

@@ -102,6 +102,17 @@ BEGIN {
   header_name[47] = "blitter_rows"
   header_name[48] = "exclusive_timer_resource"
   header_name[49] = "exclusive_timer_counter_bits"
+  header_name[50] = "raw_core_kernel_count"
+  header_name[51] = "raw_extended_kernel_count"
+  header_name[52] = "raw_extended_dma_profile_count"
+  header_name[53] = "fast_matrix"
+  header_name[54] = "fast_matrix_dma_profile_count"
+  header_name[55] = "fast_case_count"
+  header_name[56] = "stack_memory"
+  header_name[57] = "code_memory"
+  header_name[58] = "raw_result_count"
+  header_name[59] = "c2p_result_count"
+  header_name[60] = "baseline_case_count"
 
   common[1] = "case"
   common[2] = "kind"
@@ -130,6 +141,12 @@ BEGIN {
   common[25] = "blitter_copy_bytes"
   common[26] = "blitter_busy_at_kernel_start_samples"
   common[27] = "blitter_launch_samples"
+  common[28] = "source_memory"
+  common[29] = "destination_memory"
+  common[30] = "lookup_memory"
+  common[31] = "source_offset"
+  common[32] = "destination_offset"
+  common[33] = "minimum_total_memory_traffic_bytes"
 
   numeric[1] = "batch_iterations"
   numeric[2] = "samples"
@@ -148,6 +165,9 @@ BEGIN {
   numeric[15] = "blitter_copy_bytes"
   numeric[16] = "blitter_busy_at_kernel_start_samples"
   numeric[17] = "blitter_launch_samples"
+  numeric[18] = "source_offset"
+  numeric[19] = "destination_offset"
+  numeric[20] = "minimum_total_memory_traffic_bytes"
 
   expect_dma("blanked", "inactive", "inactive", "inactive", "inactive", "inactive")
   expect_dma("display", "active", "inactive", "inactive", "inactive", "inactive")
@@ -162,7 +182,9 @@ NR == 1 {
   value = parse_header(header_name[NR])
   header_value[header_name[NR]] = value
   report_format = value + 0
-  if (value == "2") {
+  if (value == "3") {
+    header_count = 60
+  } else if (value == "2") {
     header_count = 49
   } else if (value != "1") {
     reject("unsupported benchmark format")
@@ -204,14 +226,14 @@ $0 == "result=pass" {
     if (key in field) reject("duplicate field " key " on line " NR)
     field[key] = value
   }
-  common_count = report_format == 2 ? 27 : 22
+  common_count = report_format == 3 ? 33 : (report_format == 2 ? 27 : 22)
   for (number = 1; number <= common_count; ++number) {
     require_field(common[number])
   }
   if (field["case"] in case_seen) reject("duplicate case " field["case"])
   case_seen[field["case"]] = 1
 
-  numeric_count = report_format == 2 ? 17 : 12
+  numeric_count = report_format == 3 ? 20 : (report_format == 2 ? 17 : 12)
   for (number = 1; number <= numeric_count; ++number) {
     key = numeric[number]
     if (!unsigned_decimal(field[key])) reject("bad decimal " key " on line " NR)
@@ -219,7 +241,10 @@ $0 == "result=pass" {
   if (!positive_decimal(field["batch_iterations"]) ||
       !positive_decimal(field["samples"]) ||
       !positive_decimal(field["bytes_per_batch"]) ||
-      !positive_decimal(field["minimum_chip_traffic_bytes"]) ||
+      (report_format < 3 &&
+       !positive_decimal(field["minimum_chip_traffic_bytes"])) ||
+      (report_format == 3 &&
+       !positive_decimal(field["minimum_total_memory_traffic_bytes"])) ||
       !positive_decimal(field["frame_budget_ticks"])) {
     reject("zero required magnitude on line " NR)
   }
@@ -227,7 +252,7 @@ $0 == "result=pass" {
       (field["median_ticks"] + 0) > (field["maximum_ticks"] + 0)) {
     reject("unordered timing values on line " NR)
   }
-  maximum_plausible_seconds = report_format == 2 ? 10 : 2
+  maximum_plausible_seconds = report_format >= 2 ? 10 : 2
   maximum_plausible_ticks = (header_value["eclock_hz"] + 0) * maximum_plausible_seconds
   if ((field["maximum_ticks"] + 0) > maximum_plausible_ticks) {
     reject("implausible timing sample on line " NR)
@@ -259,7 +284,7 @@ $0 == "result=pass" {
         field["blitter_dma"] != profile_blitter[profile]) {
       reject("DMA state does not match profile " profile " on line " NR)
     }
-    if (report_format == 2) {
+    if (report_format >= 2) {
       expected_sprite_fetch = profile_sprite[profile] == "active" ? 6328 : 0
       actual_sprite_fetch = field["minimum_controlled_sprite_fetch_bytes_per_video_frame"] + 0
       actual_start_busy_samples = field["blitter_busy_at_kernel_start_samples"] + 0
@@ -293,6 +318,28 @@ $0 == "result=pass" {
     }
   }
 
+  if (report_format == 3) {
+    if ((field["source_memory"] != "none" &&
+         field["source_memory"] != "chip" &&
+         field["source_memory"] != "fast") ||
+        (field["destination_memory"] != "none" &&
+         field["destination_memory"] != "chip") ||
+        (field["lookup_memory"] != "none" &&
+         field["lookup_memory"] != "chip" &&
+         field["lookup_memory"] != "fast") ||
+        (field["source_offset"] + 0) > 3 ||
+        (field["destination_offset"] + 0) > 3) {
+      reject("bad memory placement metadata on line " NR)
+    }
+    if (field["source_memory"] == "fast") {
+      ++fast_cases
+      if (profile != "blanked" &&
+          profile != "display_copper_sprite_audio_blitter_fair") {
+        reject("Fast-assisted case uses an unexpected DMA profile on line " NR)
+      }
+    }
+  }
+
   if (field["kind"] == "raw") {
     require_field("operation")
     require_field("access_width")
@@ -303,11 +350,62 @@ $0 == "result=pass" {
     if (field["batch_iterations"] != "4" || field["samples"] != "7") {
       reject("bad raw sampling contract on line " NR)
     }
-    minimum_traffic = field["minimum_chip_traffic_bytes"] + 0
     batch_bytes = field["bytes_per_batch"] + 0
-    if (minimum_traffic < batch_bytes) {
+    if (report_format == 3) {
+      raw_operation = field["operation"]
+      source_memory = field["source_memory"]
+      destination_memory = field["destination_memory"]
+      lookup_memory = field["lookup_memory"]
+      expected_total_traffic = 0
+      expected_chip_traffic = 0
+      if (raw_operation == "write") {
+        if (source_memory != "none" ||
+            destination_memory != "chip" ||
+            lookup_memory != "none" ||
+            field["source_offset"] != "0") {
+          reject("bad raw write placement on line " NR)
+        }
+        expected_total_traffic = batch_bytes
+        expected_chip_traffic = batch_bytes
+      } else if (raw_operation == "read") {
+        if ((source_memory != "chip" && source_memory != "fast") ||
+            destination_memory != "none" ||
+            lookup_memory != "none" ||
+            field["destination_offset"] != "0") {
+          reject("bad raw read placement on line " NR)
+        }
+        expected_total_traffic = batch_bytes
+        expected_chip_traffic = source_memory == "chip" ? batch_bytes : 0
+      } else if (raw_operation == "copy") {
+        if ((source_memory != "chip" && source_memory != "fast") ||
+            destination_memory != "chip" ||
+            lookup_memory != "none") {
+          reject("bad raw copy placement on line " NR)
+        }
+        expected_total_traffic = batch_bytes * 2
+        expected_chip_traffic = batch_bytes + (source_memory == "chip" ? batch_bytes : 0)
+      } else if (raw_operation == "read_modify_write") {
+        if (source_memory != "none" ||
+            destination_memory != "chip" ||
+            lookup_memory != "none" ||
+            field["source_offset"] != "0") {
+          reject("bad raw read-modify-write placement on line " NR)
+        }
+        expected_total_traffic = batch_bytes * 2
+        expected_chip_traffic = expected_total_traffic
+      } else {
+        reject("unknown raw operation on line " NR)
+      }
+      actual_total_traffic = field["minimum_total_memory_traffic_bytes"] + 0
+      actual_chip_traffic = field["minimum_chip_traffic_bytes"] + 0
+      if (actual_total_traffic != expected_total_traffic ||
+          actual_chip_traffic != expected_chip_traffic) {
+        reject("bad raw traffic accounting on line " NR)
+      }
+    } else if ((field["minimum_chip_traffic_bytes"] + 0) < batch_bytes) {
       reject("raw traffic smaller than payload on line " NR)
     }
+    ++raw_cases
   } else if (field["kind"] == "c2p4") {
     require_field("source_layout")
     require_field("backend")
@@ -335,6 +433,28 @@ $0 == "result=pass" {
     expected_source = field["source_layout"] == "packed4" ? pixels / 2 : pixels
     expected_lookup = field["backend"] == "pair_lut_m68k" ? pixels * 2 : 0
     expected_traffic = expected_source + (pixels / 2) + expected_lookup
+    if (report_format == 3) {
+      if ((field["source_memory"] != "chip" &&
+           field["source_memory"] != "fast") ||
+          field["destination_memory"] != "chip" ||
+          field["source_offset"] != "0" ||
+          field["destination_offset"] != "0" ||
+          (field["backend"] == "pair_lut_m68k" &&
+           field["lookup_memory"] != field["source_memory"]) ||
+          (field["backend"] == "mask32_m68k" &&
+           field["lookup_memory"] != "none")) {
+        reject("bad C2P memory placement on line " NR)
+      }
+      expected_chip_traffic = pixels / 2
+      if (field["source_memory"] == "chip") {
+        expected_chip_traffic += expected_source
+      }
+      if (field["lookup_memory"] == "chip") {
+        expected_chip_traffic += expected_lookup
+      }
+    } else {
+      expected_chip_traffic = expected_traffic
+    }
     if ((field["source_layout"] != "packed4" &&
          field["source_layout"] != "byte4") ||
         (field["backend"] != "pair_lut_m68k" &&
@@ -346,12 +466,15 @@ $0 == "result=pass" {
         (field["plane_write_bytes"] + 0) != pixels / 2 ||
         (field["lookup_traffic_bytes"] + 0) != expected_lookup ||
         (field["bytes_per_batch"] + 0) != pixels / 2 ||
-        (field["minimum_chip_traffic_bytes"] + 0) != expected_traffic) {
+        (field["minimum_chip_traffic_bytes"] + 0) != expected_chip_traffic ||
+        (report_format == 3 &&
+         (field["minimum_total_memory_traffic_bytes"] + 0) != expected_traffic)) {
       reject("bad C2P traffic accounting on line " NR)
     }
     if (field["batch_iterations"] != "1" || field["samples"] != "3") {
       reject("bad C2P sampling contract on line " NR)
     }
+    ++c2p_cases
   } else {
     reject("unknown case kind on line " NR)
   }
@@ -359,7 +482,7 @@ $0 == "result=pass" {
 }
 
 END {
-  if ((report_format != 1 && report_format != 2) ||
+  if ((report_format != 1 && report_format != 2 && report_format != 3) ||
       header_value["benchmark"] != "chipram_c2p4") {
     reject("unsupported benchmark format")
   }
@@ -390,14 +513,14 @@ END {
        header_value["blitter_load"] != "single_copy_a_to_d")) {
     reject("bad version 1 contention metadata")
   }
-  if (report_format == 2 &&
+  if (report_format >= 2 &&
       (header_value["timing_source"] != "cia_cascade_32" ||
        header_value["sprite_load"] != "seven_simple_16x224_plus_system_pointer" ||
        header_value["blitter_load"] != "adaptive_fair_overlap_and_hog_burst_a_to_d" ||
        (header_value["exclusive_timer_resource"] != "ciaa" &&
         header_value["exclusive_timer_resource"] != "ciab") ||
        header_value["exclusive_timer_counter_bits"] != "32")) {
-    reject("bad version 2 contention metadata")
+    reject("bad version 2+ contention metadata")
   }
   if (authority == "real_hardware_candidate" &&
       header_value["environment"] != "physical_a1200_pal_candidate") {
@@ -428,7 +551,7 @@ END {
     key = positive_header[number]
     if (!positive_decimal(header_value[key])) reject("bad header decimal " key)
   }
-  if (report_format == 2) {
+  if (report_format >= 2) {
     version2_positive[1] = "controlled_sprite_count"
     version2_positive[2] = "controlled_sprite_height"
     version2_positive[3] = "controlled_sprite_fetch_bytes_per_video_frame"
@@ -438,7 +561,7 @@ END {
     for (number = 1; number <= 6; ++number) {
       key = version2_positive[number]
       if (!positive_decimal(header_value[key])) {
-        reject("bad version 2 header decimal " key)
+        reject("bad version 2+ header decimal " key)
       }
     }
   }
@@ -450,20 +573,93 @@ END {
       !unsigned_decimal(header_value["available_fast_bytes_before_setup"])) {
     reject("bad timer metadata")
   }
-  expected_blitter_bytes = report_format == 2 ? 4194176 : 32768
+  expected_blitter_bytes = report_format >= 2 ? 4194176 : 32768
   if (header_value["raster_start_line"] != "32" ||
       header_value["dma_profile_count"] != "7" ||
       header_value["audio_channels"] != "4" ||
       (header_value["blitter_copy_bytes"] + 0) != expected_blitter_bytes) {
     reject("unexpected matrix contract")
   }
-  if (report_format == 2 &&
+  if (report_format >= 2 &&
       (header_value["controlled_sprite_count"] != "7" ||
        header_value["controlled_sprite_height"] != "224" ||
        header_value["controlled_sprite_fetch_bytes_per_video_frame"] != "6328" ||
        header_value["blitter_working_set_bytes"] != "128" ||
        header_value["blitter_rows"] != "32767")) {
-    reject("unexpected version 2 contention contract")
+    reject("unexpected version 2+ contention contract")
+  }
+  if (report_format == 3) {
+    version3_positive[1] = "raw_core_kernel_count"
+    version3_positive[2] = "raw_extended_kernel_count"
+    version3_positive[3] = "raw_extended_dma_profile_count"
+    version3_positive[4] = "fast_matrix_dma_profile_count"
+    version3_positive[5] = "raw_result_count"
+    version3_positive[6] = "c2p_result_count"
+    version3_positive[7] = "baseline_case_count"
+    for (number = 1; number <= 7; ++number) {
+      key = version3_positive[number]
+      if (!positive_decimal(header_value[key])) {
+        reject("bad version 3 header decimal " key)
+      }
+    }
+    if (!unsigned_decimal(header_value["fast_case_count"])) {
+      reject("bad version 3 header decimal fast_case_count")
+    }
+    fast_state = header_value["fast_matrix"]
+    if (header_value["raw_core_kernel_count"] != "6" ||
+        header_value["raw_extended_kernel_count"] != "26" ||
+        header_value["raw_extended_dma_profile_count"] != "3" ||
+        header_value["fast_matrix_dma_profile_count"] != "2" ||
+        header_value["baseline_case_count"] != "204") {
+      reject("unexpected version 3 matrix contract")
+    }
+    if ((header_value["stack_memory"] != "chip" &&
+         header_value["stack_memory"] != "fast") ||
+        (header_value["code_memory"] != "chip" &&
+         header_value["code_memory"] != "fast" &&
+         header_value["code_memory"] != "other")) {
+      reject("bad version 3 execution placement")
+    }
+    if (fast_state == "active") {
+      if ((header_value["available_fast_bytes_before_setup"] + 0) == 0 ||
+          header_value["detected_stock_constraints"] != "fail" ||
+          header_value["stack_memory"] != "fast" ||
+          header_value["fast_case_count"] != "56" ||
+          header_value["raw_result_count"] != "152" ||
+          header_value["c2p_result_count"] != "108" ||
+          header_value["case_count"] != "260") {
+        reject("inconsistent active Fast matrix metadata")
+      }
+    } else if (fast_state == "not_present") {
+      if ((header_value["available_fast_bytes_before_setup"] + 0) != 0 ||
+          header_value["detected_stock_constraints"] != "pass" ||
+          header_value["stack_memory"] != "chip" ||
+          header_value["fast_case_count"] != "0" ||
+          header_value["raw_result_count"] != "120" ||
+          header_value["c2p_result_count"] != "84" ||
+          header_value["case_count"] != "204") {
+        reject("inconsistent absent Fast matrix metadata")
+      }
+    } else if (fast_state == "insufficient") {
+      if ((header_value["available_fast_bytes_before_setup"] + 0) == 0 ||
+          header_value["detected_stock_constraints"] != "fail" ||
+          header_value["stack_memory"] != "chip" ||
+          header_value["fast_case_count"] != "0" ||
+          header_value["raw_result_count"] != "120" ||
+          header_value["c2p_result_count"] != "84" ||
+          header_value["case_count"] != "204") {
+        reject("inconsistent insufficient Fast matrix metadata")
+      }
+    } else {
+      reject("unknown Fast matrix state")
+    }
+    if ((header_value["fast_case_count"] + 0) != fast_cases ||
+        (header_value["raw_result_count"] + 0) != raw_cases ||
+        (header_value["c2p_result_count"] + 0) != c2p_cases ||
+        (header_value["baseline_case_count"] + 0) != cases - fast_cases ||
+        raw_cases + c2p_cases != cases) {
+      reject("version 3 case accounting mismatch")
+    }
   }
   high_water = header_value["stack_high_water_bytes"] + 0
   stack_size = header_value["dedicated_stack_bytes"] + 0
