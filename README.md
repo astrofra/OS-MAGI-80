@@ -43,7 +43,7 @@ gmake compiler-abi-test compiler-test compiler-execute-test
 ```
 
 Cross-build the same portable C99 compiler bootstrap for 68020/libnix and run
-its typed-IR evaluator under `vamos` with:
+its typed-IR evaluator plus `-O1` renderer under `vamos` with:
 
 ```sh
 gmake compiler-amiga-test
@@ -51,7 +51,9 @@ gmake compiler-amiga-test
 
 The implemented subset accepts one annotated `i32` function with up to three
 parameters, `return`, decimal literals, parentheses, unary `-`, `+`, `-`, and
-`*`. See the [compiler bootstrap](documentation/MIGA-Lua-compiler-bootstrap.md)
+`*`. Assembly generation defaults to the value-IR `-O1` backend; `-O0` keeps
+the stack baseline for comparison. See the [compiler
+bootstrap](documentation/MIGA-Lua-compiler-bootstrap.md)
 for its exact grammar, the [native ABI
 0.1](documentation/MIGA-Lua-native-ABI-v0.md) for the frozen register/stack
 core, and the [optimization

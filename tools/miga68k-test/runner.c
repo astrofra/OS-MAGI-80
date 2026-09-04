@@ -262,7 +262,8 @@ static enum stop_reason execute_program(struct trace_buffer *trace,
     return STOP_INSTRUCTION_LIMIT;
 }
 
-static int run_case(const struct test_case *test)
+static int run_case(const struct test_case *test,
+                    unsigned int *executed_instructions)
 {
     struct trace_buffer trace;
     unsigned int instruction_count;
@@ -279,6 +280,9 @@ static int run_case(const struct test_case *test)
     }
 
     stop = execute_program(&trace, &instruction_count);
+    if (executed_instructions != NULL) {
+        *executed_instructions = instruction_count;
+    }
     if (stop == STOP_INSTRUCTION_LIMIT) {
         failure = "instruction limit reached";
     } else if (stop == STOP_BAD_PC) {
@@ -412,6 +416,8 @@ int main(int argc, char **argv)
     size_t index;
 
     if (argc == 8 && strcmp(argv[1], "--case") == 0) {
+        unsigned int instruction_count;
+
         command_line_case.name = argv[3];
         if (!load_program_image(argv[2]) ||
             !parse_u32(argv[4], &command_line_case.a) ||
@@ -423,11 +429,13 @@ int main(int argc, char **argv)
         }
         m68k_init();
         m68k_set_instr_hook_callback(instruction_hook);
-        if (!run_case(&command_line_case)) {
+        if (!run_case(&command_line_case, &instruction_count)) {
             return 1;
         }
-        printf("PASS  %s D0=%08x\n", command_line_case.name,
-               (unsigned int)command_line_case.expected);
+        printf("PASS  %s D0=%08x instructions=%u code_bytes=%lu\n",
+               command_line_case.name,
+               (unsigned int)command_line_case.expected, instruction_count,
+               (unsigned long)active_program_code_size);
         return 0;
     }
 
@@ -445,7 +453,7 @@ int main(int argc, char **argv)
     m68k_init();
     m68k_set_instr_hook_callback(instruction_hook);
     for (index = 0; index < ARRAY_COUNT(cases); ++index) {
-        if (!run_case(&cases[index])) {
+        if (!run_case(&cases[index], NULL)) {
             return 1;
         }
     }

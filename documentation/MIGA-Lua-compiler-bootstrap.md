@@ -1,6 +1,6 @@
 # MIGA Lua Compiler Bootstrap
 
-**Status:** initial typed-expression path implemented
+**Status:** initial typed-expression path and `-O1` value backend implemented
 
 ## Scope
 
@@ -30,22 +30,24 @@ literal spelling—is rejected rather than guessed.
 
 ## Pipeline
 
-The implementation has three bounded, host-buildable layers:
+The implementation has four bounded, host-buildable layers:
 
 1. The frontend produces an `i32` AST in a fixed 128-node arena and reports the
    first error with a one-based line and column.
 2. Lowering produces a typed stack IR. A host interpreter for this IR is the
    semantic oracle and uses unsigned C operations to specify 32-bit wrapping.
-3. The development backend renders GNU m68k assembly. Parameters are copied to
-   fixed `A6` frame slots, expression temporaries use the generated-code stack,
-   and the epilogue restores `A6` and `A7` before `RTS`.
+3. `-O1` lowers the stack IR into a value IR, folds and simplifies constants,
+   removes dead values, computes liveness, and linearly allocates `D0-D7`.
+4. The development backend renders GNU m68k assembly. `-O0` retains fixed `A6`
+   slots and expression-stack temporaries as a baseline. The default `-O1`
+   keeps current expression values in registers and preserves any allocated
+   `D3-D7` registers with `MOVEM`.
 
 For the current local toolchain, GNU `m68k-amigaos-as` retains a relocatable
 Amiga object and `m68k-amigaos-objcopy` extracts the flat image consumed by
 Musashi. ELF linking, symbol-manifest loading, the shared low-level instruction
-model, and the shipping direct encoder remain later steps. The current
-stack-heavy renderer is a correctness oracle rather than the shipping
-allocation strategy; see the [MIGA Lua Optimization
+model, and the shipping direct encoder remain later steps. The `-O0`
+stack-heavy renderer remains a correctness oracle; see the [MIGA Lua Optimization
 Strategy](./MIGA-Lua-optimization-strategy.md).
 
 ## Commands
@@ -55,6 +57,7 @@ Build the compiler and render assembly:
 ```sh
 gmake miga80c
 build/host/miga80c/miga80c tests/compile/arithmetic.lua -S -o /tmp/arithmetic.s
+build/host/miga80c/miga80c tests/compile/arithmetic.lua -O0 -S -o /tmp/arithmetic-o0.s
 ```
 
 Evaluate the same typed IR on the host:
@@ -76,12 +79,15 @@ typed-IR evaluator under `vamos`:
 gmake compiler-amiga-test
 ```
 
-This proves that the bounded frontend and IR core already run as an Amiga
-program. It does not yet prove on-Amiga direct machine-code emission; the
-shipping encoder and instruction-cache synchronization remain later work.
+This proves that the bounded frontend, value optimizer, and assembly renderer
+already run as an Amiga program: the target and host builds must render
+byte-identical `-O1` assembly. It does not yet prove on-Amiga direct
+machine-code emission; the shipping encoder and instruction-cache
+synchronization remain later work.
 
-The differential test preserves generated assembly, relocatable object, and
-flat binary under `build/host/compiler-pipeline/`. Six edge cases must produce
-the same `D0` value in the typed-IR interpreter and Musashi, while the runner
-also verifies return, stack, callee-saved registers, memory guards, and the
-instruction budget.
+The differential tests preserve `-O0`/`-O1` assembly, relocatable objects, and
+flat binaries under the compiler pipeline build directories. Three expression
+corpora use six edge inputs each at both levels. All 36 executions must produce
+the same `D0` value as the typed-IR interpreter. The reports also retain image
+size and executed instruction count, while the runner verifies return, stack,
+callee-saved registers, memory guards, and the instruction budget.

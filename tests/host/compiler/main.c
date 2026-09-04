@@ -5,6 +5,7 @@
 #include "compiler/backend_m68k/backend.h"
 #include "compiler/frontend/frontend.h"
 #include "compiler/ir/ir.h"
+#include "compiler/value_ir/value_ir.h"
 
 #define ARRAY_COUNT(values) (sizeof(values) / sizeof((values)[0]))
 
@@ -40,10 +41,11 @@ static int test_valid_function(void)
          UINT32_C(0xfffffffe)}
     };
     struct miga80_ir_function ir;
+    struct miga80_value_function value_ir;
     struct miga80_diagnostic diagnostic;
     size_t index;
     FILE *assembly;
-    char assembly_prefix[256];
+    char assembly_prefix[2048];
     size_t assembly_prefix_size;
     int emitted;
     int closed;
@@ -80,6 +82,29 @@ static int test_valid_function(void)
     if (!emitted || closed != 0) {
         return 0;
     }
+
+    if (!miga80_build_value_ir(&ir, &value_ir, &diagnostic)) {
+        return 0;
+    }
+    assembly = tmpfile();
+    if (assembly == NULL) {
+        return 0;
+    }
+    emitted = miga80_emit_gnu_m68k_o1(assembly, &value_ir, &diagnostic);
+    rewind(assembly);
+    assembly_prefix_size =
+        fread(assembly_prefix, 1U, sizeof(assembly_prefix) - 1U, assembly);
+    assembly_prefix[assembly_prefix_size] = '\0';
+    if (ferror(assembly) || strstr(assembly_prefix, "miga80c -O1") == NULL ||
+        strstr(assembly_prefix, "link.w") != NULL ||
+        strstr(assembly_prefix, "move.l  (%a7)+,%d") != NULL ||
+        strstr(assembly_prefix, "muls.l") != NULL) {
+        emitted = 0;
+    }
+    closed = fclose(assembly);
+    if (!emitted || closed != 0) {
+        return 0;
+    }
     return 1;
 }
 
@@ -96,9 +121,58 @@ static int expect_error(const char *source, unsigned int line,
            strstr(diagnostic.message, message) != NULL;
 }
 
+static int test_constant_folding(void)
+{
+    static const char source[] =
+        "function folded(): i32 return -(2 + 3) * 4 + 0 end";
+    struct miga80_ir_function ir;
+    struct miga80_value_function value_ir;
+    struct miga80_diagnostic diagnostic;
+    char assembly_text[512];
+    size_t assembly_size;
+    unsigned int live_count = 0U;
+    unsigned int index;
+    FILE *assembly;
+    int emitted;
+    int closed;
+
+    if (!compile_source(source, &ir, &diagnostic) ||
+        !miga80_build_value_ir(&ir, &value_ir, &diagnostic) ||
+        value_ir.result >= value_ir.value_count ||
+        value_ir.values[value_ir.result].opcode != MIGA80_VALUE_CONSTANT ||
+        value_ir.values[value_ir.result].immediate != UINT32_C(0xffffffec)) {
+        return 0;
+    }
+    for (index = 0U; index < value_ir.value_count; ++index) {
+        if (value_ir.values[index].live) {
+            ++live_count;
+        }
+    }
+    if (live_count != 1U) {
+        return 0;
+    }
+
+    assembly = tmpfile();
+    if (assembly == NULL) {
+        return 0;
+    }
+    emitted = miga80_emit_gnu_m68k_o1(assembly, &value_ir, &diagnostic);
+    rewind(assembly);
+    assembly_size =
+        fread(assembly_text, 1U, sizeof(assembly_text) - 1U, assembly);
+    assembly_text[assembly_size] = '\0';
+    if (ferror(assembly) ||
+        strstr(assembly_text, "moveq   #-20,%d0") == NULL ||
+        strstr(assembly_text, "movem.l") != NULL) {
+        emitted = 0;
+    }
+    closed = fclose(assembly);
+    return emitted && closed == 0;
+}
+
 int main(void)
 {
-    if (!test_valid_function() ||
+    if (!test_valid_function() || !test_constant_folding() ||
         !expect_error("function f(a): i32 return a end", 1U, 13U,
                       "expected ':'") ||
         !expect_error("function f(a: i32): i32 return missing end", 1U, 32U,
@@ -116,6 +190,6 @@ int main(void)
         return 1;
     }
 
-    printf("PASS  compiler frontend, typed i32 IR, and GNU m68k renderer\n");
+    printf("PASS  compiler frontend, typed and value IR, O0/O1 GNU m68k renderers\n");
     return 0;
 }

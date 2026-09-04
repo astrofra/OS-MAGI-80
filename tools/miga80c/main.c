@@ -8,13 +8,14 @@
 #include "compiler/backend_m68k/backend.h"
 #include "compiler/frontend/frontend.h"
 #include "compiler/ir/ir.h"
+#include "compiler/value_ir/value_ir.h"
 
 #define MIGA80_MAX_SOURCE_SIZE (64U * 1024U)
 
 static void usage(const char *program)
 {
     fprintf(stderr,
-            "Usage: %s source.lua -S -o output.s\n"
+            "Usage: %s source.lua [-O0|-O1] -S -o output.s\n"
             "       %s source.lua --eval [i32-argument ...]\n",
             program, program);
 }
@@ -89,16 +90,41 @@ static void print_diagnostic(const char *path,
 
 static int write_assembly(const char *path,
                           const struct miga80_ir_function *function,
+                          unsigned int optimization_level,
                           struct miga80_diagnostic *diagnostic)
 {
-    FILE *output = fopen(path, "wb");
+    struct miga80_value_function *value_function = NULL;
+    FILE *output;
     int success;
 
+    if (optimization_level == 1U) {
+        value_function =
+            (struct miga80_value_function *)malloc(sizeof(*value_function));
+        if (value_function == NULL) {
+            (void)snprintf(diagnostic->message, sizeof(diagnostic->message),
+                           "unable to allocate O1 value IR");
+            diagnostic->line = 0U;
+            diagnostic->column = 0U;
+            return 0;
+        }
+        if (!miga80_build_value_ir(function, value_function, diagnostic)) {
+            free(value_function);
+            return 0;
+        }
+    }
+
+    output = fopen(path, "wb");
     if (output == NULL) {
         fprintf(stderr, "%s: unable to create assembly output\n", path);
+        free(value_function);
         return 0;
     }
-    success = miga80_emit_gnu_m68k(output, function, diagnostic);
+    if (optimization_level == 0U) {
+        success = miga80_emit_gnu_m68k(output, function, diagnostic);
+    } else {
+        success =
+            miga80_emit_gnu_m68k_o1(output, value_function, diagnostic);
+    }
     if (fclose(output) != 0) {
         success = 0;
         if (diagnostic->message[0] == '\0') {
@@ -107,6 +133,7 @@ static int write_assembly(const char *path,
                            "unable to close assembly output");
         }
     }
+    free(value_function);
     return success;
 }
 
@@ -117,6 +144,8 @@ int main(int argc, char **argv)
     struct miga80_ast_function ast;
     struct miga80_ir_function ir;
     struct miga80_diagnostic diagnostic;
+    unsigned int optimization_level = 1U;
+    int option_index = 2;
     int exit_code = 1;
 
     if (argc < 3) {
@@ -133,14 +162,23 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    if (argc == 5 && strcmp(argv[2], "-S") == 0 &&
-        strcmp(argv[3], "-o") == 0) {
-        if (!write_assembly(argv[4], &ir, &diagnostic)) {
-            print_diagnostic(argv[4], &diagnostic);
+    if (strcmp(argv[option_index], "-O0") == 0 ||
+        strcmp(argv[option_index], "-O1") == 0) {
+        optimization_level = argv[option_index][2] == '0' ? 0U : 1U;
+        ++option_index;
+    }
+
+    if (argc == option_index + 3 && strcmp(argv[option_index], "-S") == 0 &&
+        strcmp(argv[option_index + 1], "-o") == 0) {
+        const char *output_path = argv[option_index + 2];
+
+        if (!write_assembly(output_path, &ir, optimization_level,
+                            &diagnostic)) {
+            print_diagnostic(output_path, &diagnostic);
         } else {
             exit_code = 0;
         }
-    } else if (strcmp(argv[2], "--eval") == 0) {
+    } else if (option_index == 2 && strcmp(argv[2], "--eval") == 0) {
         uint32_t arguments[MIGA80_MAX_PARAMETERS] = {0U, 0U, 0U};
         uint32_t result;
         unsigned int index;

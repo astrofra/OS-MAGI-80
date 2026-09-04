@@ -1,7 +1,14 @@
-PASS  generated/zero D0=00000005
-PASS  generated/positive D0=0000001c
-PASS  generated/negative_a D0=00000004
-PASS  generated/negative_b D0=00000000
-PASS  generated/wrap_u32 D0=00000011
-PASS  generated/min_i32 D0=fffffffe
-PASS  compiler typed-IR oracle matches Musashi (6 cases)
+PASS  generated-o0/zero D0=00000005 instructions=41 code_bytes=116
+PASS  generated-o0/positive D0=0000001c instructions=41 code_bytes=116
+PASS  generated-o0/negative_a D0=00000004 instructions=41 code_bytes=116
+PASS  generated-o0/negative_b D0=00000000 instructions=41 code_bytes=116
+PASS  generated-o0/wrap_u32 D0=00000011 instructions=41 code_bytes=116
+PASS  generated-o0/min_i32 D0=fffffffe instructions=41 code_bytes=116
+PASS  generated-o1/zero D0=00000005 instructions=12 code_bytes=28
+PASS  generated-o1/positive D0=0000001c instructions=12 code_bytes=28
+PASS  generated-o1/negative_a D0=00000004 instructions=12 code_bytes=28
+PASS  generated-o1/negative_b D0=00000000 instructions=12 code_bytes=28
+PASS  generated-o1/wrap_u32 D0=00000011 instructions=12 code_bytes=28
+PASS  generated-o1/min_i32 D0=fffffffe instructions=12 code_bytes=28
+PASS  compiler O0/O1 match typed-IR oracle (12 cases)
+PASS  compiler O1 code size reduced from 116 to 28 bytes

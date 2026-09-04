@@ -2,7 +2,7 @@
 
 ## Fast compiler development without launching UAE
 
-**Status:** Phase 0 runner, typed-expression compiler connection, and ABI 0.1 register/stack core implemented
+**Status:** runner, typed-expression compiler, ABI 0.1, and initial value-IR `-O1` implemented
 
 **Primary target:** stock Amiga 1200, 68EC020 at approximately 14 MHz  
 **Host platforms:** macOS, Linux, and Windows  
@@ -565,11 +565,12 @@ circular disassembly trace for failures. Run it with `gmake miga68k-test`.
 ### Phase 1 — connect the compiler
 
 **Initial connection implemented:** `miga80c` parses one annotated `i32`
-function, lowers its expression to typed stack IR, renders GNU m68k assembly,
-and provides a host IR evaluator. The ordinary test path assembles the result,
-extracts a flat image, and checks six inputs against Musashi. The current GNU
-toolchain retains an Amiga relocatable object; ELF linking, symbol manifests,
-and broader language semantics remain pending. See
+function, lowers its expression to typed stack IR and value IR, renders GNU
+m68k assembly at `-O0` or `-O1`, and provides a host IR evaluator. The ordinary
+test path assembles both levels for three corpora and checks six inputs per
+corpus against Musashi. The current GNU toolchain retains an Amiga relocatable
+object; ELF linking, symbol manifests, and broader language semantics remain
+pending. See
 [MIGA Lua Compiler Bootstrap](./MIGA-Lua-compiler-bootstrap.md).
 
 - emit assembly for integer constants, arithmetic and return;
@@ -609,7 +610,13 @@ including a deliberate clobber negative control. See
 
 ### Phase 4 — performance tracking
 
-- record code size, instruction counts and core-cycle estimates;
+**Initial signals implemented:** the generic runner reports image bytes and
+executed instructions. The differential suite locks reviewed `-O0`/`-O1`
+figures for three straight-line corpora. These are optimizer regressions only,
+not cycle or wall-time claims.
+
+- record code size and instruction counts; **implemented for the bootstrap**
+- add core-cycle estimates;
 - build a benchmark corpus from representative cartridges;
 - add selected regression thresholds;
 - compare the same kernels on UAE and a real A1200.
