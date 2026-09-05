@@ -94,7 +94,9 @@ normalized shape from adding a redundant branch per iteration. A genuine
 two-value exchange on the latch proves that the backend preserves one old
 value in a four-byte temporary before rewriting the cyclic destinations; the
 optimized case uses a 20-byte `A6` frame and reaches 28 bytes of callee stack
-including saved registers and the linked frame.
+including saved registers and the linked frame. The separate loop-control
+corpus verifies binary `break`/`continue` funnels and reaches 32 bytes at both
+optimization levels.
 
 Run the host contract and generated-code checks with:
 

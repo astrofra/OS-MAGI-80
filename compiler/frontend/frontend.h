@@ -61,6 +61,8 @@ enum miga80_ast_statement_kind {
     MIGA80_AST_LOCAL_ASSIGN,
     MIGA80_AST_IF,
     MIGA80_AST_WHILE,
+    MIGA80_AST_BREAK,
+    MIGA80_AST_CONTINUE,
     MIGA80_AST_RETURN
 };
 

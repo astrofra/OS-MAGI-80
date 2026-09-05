@@ -487,13 +487,19 @@ a Lua-compatibility matrix before implementing the production parser.
 
 Version 1.0 MUST support, where compatible with the static type model:
 
-- `function`, `local`, `if`/`then`/`elseif`/`else`/`end`, `while`, `repeat`/`until`, and numeric `for` syntax;
+- `function`, `local`, `if`/`then`/`elseif`/`else`/`end`, `while`,
+  `break`, the MIGA-specific `continue`, `repeat`/`until`, and numeric `for`
+  syntax;
 - generic `for` over compiler-known arrays and dictionaries;
 - Lua-style function calls, field access, indexing, table constructors, comments, and lexical conventions;
 - Lua operator spelling and precedence, with `!=` accepted as an exact alias
   of `~=`, and short-circuit `and`/`or` on `bool` values;
 - boolean conditions with no truthy coercion from integers or other values;
 - single-target assignment and exactly zero (`void`) or one return value;
+- statement-only update sugar `x++`, `x--`, `x += value`, `x -= value`,
+  `x *= value`, and `x /= value`; these forms MUST NOT produce a value or
+  appear inside any expression or condition, and `/=` waits for the signed
+  division and division-by-zero rules to be frozen;
 - the `:` method-call spelling when the receiver and target function resolve statically;
 - immutable string literals and compile-time concatenation;
 - source line and column mappings for every generated safe point and diagnostic;
@@ -1303,13 +1309,14 @@ folds and simplifies values, removes dead values and overwritten assignments,
 solves fixed-point per-block liveness with edge-specific `phi` uses, reuses
 locations across exclusive branches, coalesces compatible `phi` slots,
 resolves parallel edge copies including cycles, requires one canonical latch
-and exit per loop, preserves used saved registers,
+and exit per cyclic loop, folds multiple `continue`/`break` sites through
+binary control funnels, preserves used saved registers,
 and renders assembly byte-identically from host and 68020 compiler builds. When seven ordinary registers are insufficient in a
 spilling plan it uses `D7` as a saved scratch, reuses bounded spill slots, and
-emits an ABI `A6` frame. Six source corpora at `-O0`
-and `-O1` plus a forced spill fixture agree with their oracles across 78 Musashi
+emits an ABI `A6` frame. Seven source corpora at `-O0`
+and `-O1` plus a forced spill fixture agree with their oracles across 90 Musashi
 executions while recording image size, instruction count, and maximum callee
-stack use. `break`, `continue`, calls, `void` code generation,
+stack use. Calls, `void` code generation,
 ELF/symbol-manifest loading, the shipping direct encoder, and UAE/hardware
 performance validation remain pending.
 
@@ -1380,9 +1387,9 @@ This workstream follows [MIGA-80 Local 68020 Tooling](./MIGA-80-local-68020-tool
 1. **Runner foundation — Phase 0 (implemented):** embed Musashi, select 68EC020 mode, implement bounded big-endian memory, execute a reviewed `mul_add` function, stop through a return sentinel/trap, and report a short failure trace.
 2. **Compiler connection — Phase 0/early Phase 3 (initial subset implemented):** render integer arithmetic and return through textual assembly, assemble/link automatically, retain ELF symbols, load a flat image, and execute several inputs from the ordinary host test command. The bootstrap currently retains an Amiga relocatable object rather than ELF, so ELF/symbol-manifest loading remains part of this step.
 3. **ABI freeze — early Phase 3 (register/stack, source-local, loop-edge, and spill-frame tranches implemented):** ABI 0.1 now fixes register roles, opaque `A5` runtime-context ownership, one scalar return, Boolean representation, frame bounds, stack alignment, and executable saved-register checks. `-O0` assigns typed source locals to bounded `A6` slots; `-O1` renames locals through cyclic control flow and emits bounded `A6` spill/edge frames when needed while restoring `D3-D7/A6`. Calls, `void`, context layout, and error traps remain open extensions; multiple returns are excluded from version 1.
-4. **Semantic expansion — Phase 3 (`bool`, comparisons, `if`/`else`, and `while` implemented):** the typed IR now has bounded cyclic multi-block control flow, canonical single-latch/single-exit loops, loop-carried O1 value joins, fixed-point CFG liveness, `phi`-slot coalescing, parallel edge-copy resolution, and fall-through jump elision. Add fixed point, globals, arrays, records, dictionaries, strings/symbols, guards, `break`/`continue`, runtime mocks, negative tests, and deterministic randomized differential tests.
+4. **Semantic expansion — Phase 3 (`bool`, comparisons, `if`/`else`, `while`, `break`, and `continue` implemented):** the typed IR now has bounded cyclic multi-block control flow, canonical single-latch/single-exit loops, binary funnels for multiple loop-control sites, loop-carried O1 value joins, fixed-point CFG liveness, `phi`-slot coalescing, parallel edge-copy resolution, and fall-through jump elision. Add fixed point, globals, arrays, records, dictionaries, strings/symbols, guards, runtime mocks, negative tests, and deterministic randomized differential tests.
 5. **Direct-encoder convergence — Phase 3:** compare the shipping encoder with the assembly route and typed-IR oracle until encoding, relocation, source maps, and behavior agree; retain only selective normalized-disassembly goldens.
-6. **Performance regression — Phase 3 onward (cyclic CFG allocation signals implemented):** the `-O0`/`-O1` differential records code size, executed instructions, and maximum callee stack use for six reviewed corpora, including typed locals, a nested conditional CFG, and a normalized loop with a cyclic parallel copy, plus a forced spill fixture. The conditional case verifies CFG-aware register reuse and the coalescing of six live `phi` values into two stack slots; the loop case reduces 308/313/48 code-bytes/instructions/stack-bytes at O0 to 188/164/28 at O1. Approximate core cycles, calls, memory-operation counts, and representative cartridge kernels remain pending. Never translate emulator values into A1200 frame claims.
+6. **Performance regression — Phase 3 onward (cyclic CFG allocation signals implemented):** the `-O0`/`-O1` differential records code size, executed instructions, and maximum callee stack use for seven reviewed corpora, including typed locals, a nested conditional CFG, a normalized loop with a cyclic parallel copy, and multiple `break`/`continue` sites, plus a forced spill fixture. The conditional case verifies CFG-aware register reuse and the coalescing of six live `phi` values into two stack slots; the loop case reduces 308/313/48 code-bytes/instructions/stack-bytes at O0 to 188/164/28 at O1, while the loop-control image falls from 356 to 288 bytes. Approximate core cycles, calls, memory-operation counts, and representative cartridge kernels remain pending. Never translate emulator values into A1200 frame claims.
 7. **Independent CPU validation — late Phase 3 or hardening:** add Moira only when the edge-case corpus is large enough to justify the adapter; investigate every divergent final state and keep real hardware authoritative.
 
 The runner mocks graphics/audio/input calls only at the native ABI boundary. Copper lists, blits, sprite DMA, audio DMA, raster interrupts, Chip-RAM contention, C2P/display interaction, and 25/50 Hz deadlines remain exclusively in the UAE/real-hardware workstream.

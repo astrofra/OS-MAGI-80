@@ -16,6 +16,8 @@ enum token_kind {
     TOKEN_ELSE,
     TOKEN_WHILE,
     TOKEN_DO,
+    TOKEN_BREAK,
+    TOKEN_CONTINUE,
     TOKEN_RETURN,
     TOKEN_END,
     TOKEN_I32,
@@ -61,6 +63,7 @@ struct parser {
     struct token current;
     struct miga80_ast_function *function;
     struct miga80_diagnostic *diagnostic;
+    unsigned int loop_depth;
     int failed;
 };
 
@@ -177,6 +180,10 @@ static struct token next_token(struct lexer *lexer)
             token.kind = TOKEN_WHILE;
         } else if (token_is_word(&token, "do")) {
             token.kind = TOKEN_DO;
+        } else if (token_is_word(&token, "break")) {
+            token.kind = TOKEN_BREAK;
+        } else if (token_is_word(&token, "continue")) {
+            token.kind = TOKEN_CONTINUE;
         } else if (token_is_word(&token, "return")) {
             token.kind = TOKEN_RETURN;
         } else if (token_is_word(&token, "end")) {
@@ -317,6 +324,10 @@ static const char *token_name(enum token_kind kind)
         return "'while'";
     case TOKEN_DO:
         return "'do'";
+    case TOKEN_BREAK:
+        return "'break'";
+    case TOKEN_CONTINUE:
+        return "'continue'";
     case TOKEN_RETURN:
         return "'return'";
     case TOKEN_END:
@@ -879,25 +890,63 @@ static unsigned int parse_assignment(struct parser *parser)
 static unsigned int parse_if_statement(struct parser *parser);
 static unsigned int parse_while_statement(struct parser *parser);
 
+static unsigned int parse_loop_control_statement(struct parser *parser)
+{
+    const struct token control = parser->current;
+    const enum miga80_ast_statement_kind kind =
+        control.kind == TOKEN_BREAK ? MIGA80_AST_BREAK
+                                    : MIGA80_AST_CONTINUE;
+
+    parser_advance(parser);
+    if (parser->loop_depth == 0U) {
+        set_diagnostic(parser->diagnostic, control.line, control.column,
+                       "%.*s is only valid inside while",
+                       (int)control.length, control.start);
+        parser->failed = 1;
+        return MIGA80_INVALID_STATEMENT;
+    }
+    return allocate_statement(parser, kind, 0U, MIGA80_INVALID_NODE,
+                              control.line, control.column);
+}
+
+static int token_starts_control_statement(enum token_kind kind)
+{
+    return kind == TOKEN_IDENTIFIER || kind == TOKEN_IF ||
+           kind == TOKEN_WHILE || kind == TOKEN_BREAK ||
+           kind == TOKEN_CONTINUE;
+}
+
 static int parse_control_statement_list(struct parser *parser,
                                         struct statement_list *list,
                                         const char *owner)
 {
     initialize_statement_list(list);
     while (!parser->failed &&
-           (parser->current.kind == TOKEN_IDENTIFIER ||
-            parser->current.kind == TOKEN_IF ||
-            parser->current.kind == TOKEN_WHILE)) {
+           token_starts_control_statement(parser->current.kind)) {
         unsigned int statement;
+        enum miga80_ast_statement_kind statement_kind;
 
         if (parser->current.kind == TOKEN_IF) {
             statement = parse_if_statement(parser);
         } else if (parser->current.kind == TOKEN_WHILE) {
             statement = parse_while_statement(parser);
+        } else if (parser->current.kind == TOKEN_BREAK ||
+                   parser->current.kind == TOKEN_CONTINUE) {
+            statement = parse_loop_control_statement(parser);
         } else {
             statement = parse_assignment(parser);
         }
         if (!append_statement(parser, list, statement)) {
+            return 0;
+        }
+        statement_kind = parser->function->statements[statement].kind;
+        if ((statement_kind == MIGA80_AST_BREAK ||
+             statement_kind == MIGA80_AST_CONTINUE) &&
+            token_starts_control_statement(parser->current.kind)) {
+            set_diagnostic(parser->diagnostic, parser->current.line,
+                           parser->current.column,
+                           "statement follows loop control");
+            parser->failed = 1;
             return 0;
         }
     }
@@ -969,9 +1018,16 @@ static unsigned int parse_while_statement(struct parser *parser)
     statement_index =
         allocate_statement(parser, MIGA80_AST_WHILE, 0U, condition,
                            while_token.line, while_token.column);
-    if (statement_index == MIGA80_INVALID_STATEMENT ||
-        !parse_control_statement_list(parser, &body, "while") ||
-        !expect(parser, TOKEN_END)) {
+    if (statement_index == MIGA80_INVALID_STATEMENT) {
+        return MIGA80_INVALID_STATEMENT;
+    }
+    ++parser->loop_depth;
+    if (!parse_control_statement_list(parser, &body, "while")) {
+        --parser->loop_depth;
+        return MIGA80_INVALID_STATEMENT;
+    }
+    --parser->loop_depth;
+    if (!expect(parser, TOKEN_END)) {
         return MIGA80_INVALID_STATEMENT;
     }
     parser->function->statements[statement_index].then_statement =
@@ -1031,9 +1087,8 @@ int miga80_parse_function(const char *source, size_t source_size,
     }
 
     while (!parser.failed && (parser.current.kind == TOKEN_LOCAL ||
-                              parser.current.kind == TOKEN_IDENTIFIER ||
-                              parser.current.kind == TOKEN_IF ||
-                              parser.current.kind == TOKEN_WHILE)) {
+                              token_starts_control_statement(
+                                  parser.current.kind))) {
         unsigned int statement;
 
         if (parser.current.kind == TOKEN_LOCAL) {
@@ -1042,6 +1097,9 @@ int miga80_parse_function(const char *source, size_t source_size,
             statement = parse_if_statement(&parser);
         } else if (parser.current.kind == TOKEN_WHILE) {
             statement = parse_while_statement(&parser);
+        } else if (parser.current.kind == TOKEN_BREAK ||
+                   parser.current.kind == TOKEN_CONTINUE) {
+            statement = parse_loop_control_statement(&parser);
         } else {
             statement = parse_assignment(&parser);
         }

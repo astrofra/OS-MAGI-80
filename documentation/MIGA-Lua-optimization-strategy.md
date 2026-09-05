@@ -1,6 +1,6 @@
 # MIGA Lua Optimization Strategy
 
-**Status:** normalized loops, cyclic CFG liveness, branch/loop `phi`, parallel edge copies, `-O1`, spilling, and frame layout implemented
+**Status:** normalized `break`/`continue` loops, cyclic CFG liveness, branch/loop `phi`, parallel edge copies, `-O1`, spilling, and frame layout implemented
 
 MIGA Lua is a statically typed, ahead-of-time compiled dialect designed for
 native 68EC020/68020 code. Familiar Lua syntax is a usability goal. Dynamic Lua
@@ -33,10 +33,11 @@ it does not materialize a token list. The bootstrap AST and IR arenas instead
 favor explicit, easily checked C99 records while the semantics are still
 moving. With the current 32-bit enum/index ABI, an AST node occupies 32 bytes,
 a typed stack-IR instruction 16 bytes, a stack-IR block 20 bytes, a value-IR
-instruction 48 bytes, and a value-IR block 40 bytes. At all configured maxima,
-an `-O1` compilation with a 64 KiB source uses approximately 99 KiB for the
-source buffer, main arenas, CFG bitsets, and optimizer workspace, excluding
-libc buffers and the compiler's own stack.
+instruction 48 bytes, and a value-IR block 40 bytes. A separate 128-byte
+membership bitset table identifies structured loop regions without enlarging
+each block. At all configured maxima, an `-O1` compilation with a 64 KiB source
+uses approximately 100 KiB for the source buffer, main arenas, CFG bitsets, and
+optimizer workspace, excluding libc buffers and the compiler's own stack.
 
 This is a measured design budget, not the final representation. Once the
 remaining control-flow semantics are stable, the production layout SHOULD use
@@ -67,10 +68,13 @@ The typed stack IR now has up to 32 explicit basic blocks, bounded successor
 slots, typed local load/store operations, comparisons, branches, and backward
 edges. `if`/`else` and `while` CFGs rename each local to its current value and
 insert typed `phi` values at two-predecessor joins. Lowering normalizes every
-loop as `preheader -> header -> body -> dedicated latch -> header`, with the
-false header edge targeting one dedicated exit. A bounded dominator pass
-recognizes the natural loop and verifies that it has exactly that single
-preheader, latch, and exit. Loop-header `phi` values are deliberately created
+cyclic loop around one preheader, header, dedicated latch, and dedicated exit.
+Normal and `continue` edges enter a binary merge funnel ending at the latch;
+the false header edge and `break` edges enter another funnel ending at the
+exit. Funnel construction consumes at most two predecessors per block, so it
+does not require a large N-ary `phi` representation. A bounded dominator pass
+recognizes the natural loop and verifies its preheader, latch, declared
+structured region, and unique exit. Loop-header `phi` values are deliberately created
 before their backward operands exist, then completed after the latch is
 lowered; trivial self-joins are removed. The dead-value walk is a bounded
 worklist rather than a reverse linear scan, so cyclic dependencies and forward
@@ -108,15 +112,20 @@ the saved scratch register. The temporary is omitted when no edge needs it.
 The nested conditional corpus contains six live `phi` values but needs only two
 slots; the loop corpus additionally verifies a real exchange cycle.
 
-`break` and `continue` remain pending; their future lowering must funnel all
-loop-back control through the canonical latch and all exits through the
-canonical exit block rather than expose multiple backedges or exit targets to
-the optimizer. Declarations or returns inside control-flow bodies, copy
-propagation across joins, address-register allocation, and the shared
-low-level m68k model also remain pending. Global value numbering, expensive
+Nested `break` and `continue` now target the nearest loop. A loop whose body
+always transfers to `break` has no actual backedge and is emitted as an acyclic
+region rather than retaining an unreachable latch. Declarations or returns
+inside control-flow bodies, copy propagation across joins, address-register
+allocation, and the shared low-level m68k model also remain pending. Global
+value numbering, expensive
 interprocedural optimization, speculative dynamic typing, and exhaustive
 instruction scheduling remain excluded until measurements justify their
 compiler cost.
+
+Statement-only `++`, `--`, `+=`, `-=`, `*=`, and `/=` are recorded language
+work, not expressions; they will therefore never participate directly in CFG
+conditions. The first five can lower to ordinary typed assignments. `/=` also
+depends on the future signed-division and division-by-zero contract.
 
 The first 68020-specific choices include keeping scalars in data registers,
 keeping future addresses in address registers, folding constant displacements
@@ -152,7 +161,7 @@ memory-operation widths. Stable curated kernels may receive reviewed limits.
 FS-UAE remains an integration check, while timing decisions require repeated
 measurements on a stock physical A1200 under a declared DMA and memory profile.
 
-The first optimization milestone is met. Across six reviewed source corpora
+The first optimization milestone is met. Across seven reviewed source corpora
 and six edge inputs each, both optimization levels agree with the typed IR
 under Musashi. The current regression measurements are shown as code bytes /
 executed instructions / maximum callee stack bytes:
@@ -165,23 +174,28 @@ executed instructions / maximum callee stack bytes:
 | typed locals, reassignment, and dead store | 160 / 53 / 32 | 28 / 12 / 4 |
 | six comparisons and nested `if`/`else` | 548 / 120-122 / 32 | 356 / 60-62 / 24 |
 | `while`, loop-carried values, nested `if`, copy cycle | 308 / 313 / 48 | 188 / 164 / 28 |
+| multiple `break`/`continue` sites and binary funnels | 356 / 69-684 / 32 | 288 / 39-352 / 32 |
 
 The register-pressure corpus forces simultaneous `D3/D4` allocation and
 verifies their ABI preservation. A separate deliberately pressure-heavy value
 IR fixture forces three reusable spill slots; its 96-byte image executes 33
 instructions with 36 callee stack bytes and agrees with the source-level oracle
-for six edge inputs. This brings the current Musashi compiler total to 78
+for six edge inputs. This brings the current Musashi compiler total to 90
 executions.
 
-The `-Os` 68020/libnix compiler currently has a 47,272-byte linked
-text/data/BSS footprint (46,872 text, 280 data, 120 BSS). Its host and Amiga
+The `-Os` 68020/libnix compiler currently has a 49,416-byte linked
+text/data/BSS footprint (49,016 text, 280 data, 120 BSS). Its host and Amiga
 builds emit byte-identical ordinary, local-heavy, conditional, loop, and
-spilling `-O1` assembly. Unconditional jumps to the physically next block are
-elided at both optimization levels. This lets the dedicated latch normalize
-the IR without adding an extra runtime branch per iteration, and also removes
-other redundant fall-through jumps. The conditional corpus reduces code by
+loop-control `-O1` assembly, plus the synthetic spilling fixture. Unconditional
+jumps to the physically next block are elided at both optimization levels. This
+lets the dedicated latch normalize the IR without adding an extra runtime
+branch per iteration, and also removes other redundant fall-through jumps. The
+conditional corpus reduces code by
 35% and executed instructions by about 49-50% at O1. CFG-aware reuse and
 `phi` coloring reduce its maximum callee stack from the previous 44 bytes to 24
 bytes, below O0's 32 bytes. On the loop corpus, O1 reduces code by 38%, executed
 instructions by 48%, and maximum callee stack use from 48 to 28 bytes. These
-counts are regression signals, not A1200 cycle claims.
+counts are regression signals, not A1200 cycle claims. In the new loop-control
+corpus, O1 saves 19% of code and 44-49% of executed instructions; its 32-byte
+stack high-water currently matches O0 because the additional control joins
+need edge-transfer slots.

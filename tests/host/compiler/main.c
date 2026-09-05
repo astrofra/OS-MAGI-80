@@ -489,27 +489,27 @@ static int test_while_cfg_and_loop_phis(void)
         ir.blocks[0].successors[0] != 1U ||
         ir.blocks[1].successor_count != 2U ||
         ir.blocks[1].successors[0] != 2U ||
-        ir.blocks[1].successors[1] != 4U ||
-        ir.blocks[3].instruction_count != 1U ||
-        ir.instructions[ir.blocks[3].first_instruction].opcode !=
+        ir.blocks[1].successors[1] != 7U ||
+        ir.blocks[6].instruction_count != 1U ||
+        ir.instructions[ir.blocks[6].first_instruction].opcode !=
             MIGA80_IR_JUMP ||
-        ir.blocks[3].successor_count != 1U ||
-        ir.blocks[3].successors[0] != 1U ||
-        ir.blocks[7].successor_count != 1U ||
-        ir.blocks[7].successors[0] != 3U ||
+        ir.blocks[6].successor_count != 1U ||
+        ir.blocks[6].successors[0] != 1U ||
+        ir.blocks[5].successor_count != 1U ||
+        ir.blocks[5].successors[0] != 6U ||
         !miga80_evaluate_ir(&ir, arguments, ARRAY_COUNT(arguments), &result,
                             &diagnostic) ||
         result != 35U ||
         !miga80_build_value_ir(&ir, &value_ir, &diagnostic) ||
-        value_ir.blocks[3].predecessor_count != 1U ||
-        value_ir.blocks[3].predecessors[0] != 7U ||
-        value_ir.blocks[4].predecessor_count != 1U ||
-        value_ir.blocks[4].predecessors[0] != 1U ||
+        value_ir.blocks[6].predecessor_count != 1U ||
+        value_ir.blocks[6].predecessors[0] != 5U ||
+        value_ir.blocks[7].predecessor_count != 1U ||
+        value_ir.blocks[7].predecessors[0] != 1U ||
         value_ir.block_order_count != 8U ||
         value_ir.block_order[0] != 0U || value_ir.block_order[1] != 1U ||
-        value_ir.block_order[2] != 2U || value_ir.block_order[3] != 5U ||
-        value_ir.block_order[4] != 6U || value_ir.block_order[5] != 7U ||
-        value_ir.block_order[6] != 3U || value_ir.block_order[7] != 4U) {
+        value_ir.block_order[2] != 2U || value_ir.block_order[3] != 3U ||
+        value_ir.block_order[4] != 4U || value_ir.block_order[5] != 5U ||
+        value_ir.block_order[6] != 6U || value_ir.block_order[7] != 7U) {
         fprintf(stderr,
                 "while CFG mismatch: blocks=%u "
                 "order=%u,%u,%u,%u,%u,%u,%u,%u "
@@ -533,7 +533,7 @@ static int test_while_cfg_and_loop_phis(void)
     assembly_text[assembly_size] = '\0';
     if (ferror(assembly) ||
         strstr(assembly_text, "bra     .L_loops_b1") == NULL ||
-        strstr(assembly_text, "bra     .L_loops_b3") != NULL) {
+        strstr(assembly_text, "bra     .L_loops_b6") != NULL) {
         emitted = 0;
     }
     closed = fclose(assembly);
@@ -564,7 +564,7 @@ static int test_while_cfg_and_loop_phis(void)
         strstr(assembly_text, "link.w  %a6,#-20") == NULL ||
         strstr(assembly_text, "move.l  %d7,-20(%a6)") == NULL ||
         strstr(assembly_text, "bra     .L_loops_b1") == NULL ||
-        strstr(assembly_text, "bra     .L_loops_b3") != NULL) {
+        strstr(assembly_text, "bra     .L_loops_b6") != NULL) {
         emitted = 0;
     }
     closed = fclose(assembly);
@@ -593,10 +593,10 @@ static int test_nested_while_and_trivial_phi(void)
     int closed;
 
     if (!compile_source(source, &ir, &diagnostic) || ir.block_count != 9U ||
-        ir.blocks[3].instruction_count != 1U ||
-        ir.blocks[3].successors[0] != 1U ||
         ir.blocks[7].instruction_count != 1U ||
-        ir.blocks[7].successors[0] != 5U ||
+        ir.blocks[7].successors[0] != 1U ||
+        ir.blocks[5].instruction_count != 1U ||
+        ir.blocks[5].successors[0] != 3U ||
         !miga80_evaluate_ir(&ir, arguments, ARRAY_COUNT(arguments), &result,
                             &diagnostic) ||
         result != 54U ||
@@ -616,6 +616,102 @@ static int test_nested_while_and_trivial_phi(void)
     emitted = miga80_emit_gnu_m68k_o1(assembly, &value_ir, &diagnostic);
     closed = fclose(assembly);
     return emitted && closed == 0;
+}
+
+static int test_break_continue_funnels(void)
+{
+    static const char source[] =
+        "function loop_control(a: i32, b: i32, c: i32): i32 "
+        "local i: i32 = 0 local total: i32 = a while i < 8 do "
+        "i = i + 1 "
+        "if i == 2 then continue else total = total + i end "
+        "if i == b then break else total = total + c end "
+        "if i == 5 then continue else total = total + 1 end "
+        "if total > 100 then break else total = total end "
+        "end return total + i end";
+    static const char nested_source[] =
+        "function nested_control(a: i32, b: i32, c: i32): i32 "
+        "local outer: i32 = 0 local inner: i32 = 0 "
+        "local total: i32 = a while outer < 3 do "
+        "outer = outer + 1 inner = 0 while inner < 4 do "
+        "inner = inner + 1 "
+        "if inner == 2 then continue else total = total + 1 end "
+        "if outer == 2 then break else total = total + c end end "
+        "if outer == 3 then break else total = total + b end end "
+        "return total + outer * 10 + inner end";
+    static const char one_shot_source[] =
+        "function one_shot(a: i32, b: i32, c: i32): i32 "
+        "local total: i32 = a while true do total = total + b break end "
+        "return total + c end";
+    static const uint32_t arguments[] = {7U, 5U, 2U};
+    struct miga80_ir_function ir;
+    struct miga80_value_function value_ir;
+    struct miga80_diagnostic diagnostic;
+    char assembly_text[16384];
+    uint32_t result = 0U;
+    size_t assembly_size;
+    unsigned int block;
+    FILE *assembly;
+    int emitted;
+    int closed;
+
+    if (!compile_source(source, &ir, &diagnostic) || ir.block_count != 21U ||
+        ir.blocks[15].instruction_count != 1U ||
+        ir.blocks[15].successors[0] != 1U ||
+        ir.blocks[17].successors[0] != 18U ||
+        ir.blocks[18].successors[0] != 15U ||
+        ir.blocks[19].successors[0] != 20U ||
+        ir.blocks[20].successors[0] != 16U ||
+        (ir.block_loop_membership[16] & (UINT32_C(1) << 1U)) != 0U ||
+        !miga80_evaluate_ir(&ir, arguments, ARRAY_COUNT(arguments), &result,
+                            &diagnostic) ||
+        result != 34U ||
+        !miga80_build_value_ir(&ir, &value_ir, &diagnostic) ||
+        value_ir.blocks[15].predecessor_count != 1U ||
+        value_ir.blocks[15].predecessors[0] != 18U ||
+        value_ir.blocks[16].predecessor_count != 1U ||
+        value_ir.blocks[16].predecessors[0] != 20U) {
+        fprintf(stderr, "loop-control CFG mismatch: blocks=%u result=%08x "
+                        "diagnostic=%s\n",
+                ir.block_count, (unsigned int)result, diagnostic.message);
+        return 0;
+    }
+    for (block = 0U; block < value_ir.block_count; ++block) {
+        if (value_ir.blocks[block].predecessor_count > 2U) {
+            return 0;
+        }
+    }
+    assembly = tmpfile();
+    if (assembly == NULL) {
+        return 0;
+    }
+    emitted = miga80_emit_gnu_m68k_o1(assembly, &value_ir, &diagnostic);
+    rewind(assembly);
+    assembly_size =
+        fread(assembly_text, 1U, sizeof(assembly_text) - 1U, assembly);
+    assembly_text[assembly_size] = '\0';
+    if (ferror(assembly) ||
+        strstr(assembly_text, "bra     .L_loop_control_b1") == NULL ||
+        strstr(assembly_text, "bra     .L_loop_control_b15") != NULL) {
+        emitted = 0;
+    }
+    closed = fclose(assembly);
+    if (!emitted || closed != 0 ||
+        !compile_source(nested_source, &ir, &diagnostic) ||
+        !miga80_evaluate_ir(&ir, arguments, ARRAY_COUNT(arguments), &result,
+                            &diagnostic) ||
+        result != 70U ||
+        !miga80_build_value_ir(&ir, &value_ir, &diagnostic)) {
+        fprintf(stderr, "nested loop-control mismatch: result=%08x "
+                        "diagnostic=%s\n",
+                (unsigned int)result, diagnostic.message);
+        return 0;
+    }
+    return compile_source(one_shot_source, &ir, &diagnostic) &&
+           miga80_evaluate_ir(&ir, arguments, ARRAY_COUNT(arguments),
+                              &result, &diagnostic) &&
+           result == 14U &&
+           miga80_build_value_ir(&ir, &value_ir, &diagnostic);
 }
 
 static int test_while_evaluation_budget(void)
@@ -697,6 +793,7 @@ int main(int argc, char **argv)
         !test_bool_comparisons_and_cfg() ||
         !test_while_cfg_and_loop_phis() ||
         !test_nested_while_and_trivial_phi() ||
+        !test_break_continue_funnels() ||
         !test_while_evaluation_budget() ||
         !test_spill_frame() ||
         !expect_error("function f(a): i32 return a end", 1U, 13U,
@@ -731,6 +828,13 @@ int main(int argc, char **argv)
                       1U, 25U, "if condition requires bool") ||
         !expect_error("function f(): i32 while 1 do end return 0 end", 1U,
                       19U, "while condition requires bool") ||
+        !expect_error("function f(): i32 break return 0 end", 1U, 19U,
+                      "break is only valid inside while") ||
+        !expect_error("function f(): i32 continue return 0 end", 1U, 19U,
+                      "continue is only valid inside while") ||
+        !expect_error("function f(): i32 while true do break x = 1 end "
+                      "return 0 end",
+                      1U, 39U, "statement follows loop control") ||
         !expect_error("function f(): bool return true < false end", 1U, 32U,
                       "ordered comparison requires i32") ||
         !expect_error("function f(): bool return 1 == true end", 1U, 29U,
@@ -744,6 +848,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    printf("PASS  compiler CFG liveness, loop phis, O0/O1, and spill frames\n");
+    printf("PASS  compiler CFG liveness, loop control, phis, O0/O1, and "
+           "spill frames\n");
     return 0;
 }

@@ -467,6 +467,7 @@ static int analyze_loops(const struct miga80_ir_function *source,
             &result->blocks[block_index];
         const unsigned int latch = state->loop_latch[block_index];
         uint32_t loop_blocks;
+        uint32_t declared_loop_blocks = 0U;
         uint32_t pending;
         unsigned int predecessor_index;
         unsigned int local_mask = 0U;
@@ -539,6 +540,23 @@ static int analyze_loops(const struct miga80_ir_function *source,
                 }
             }
         }
+        for (predecessor_index = 0U;
+             predecessor_index < source->block_count;
+             ++predecessor_index) {
+            if ((source->block_loop_membership[predecessor_index] &
+                 block_bit(block_index)) != 0U) {
+                declared_loop_blocks |= block_bit(predecessor_index);
+            }
+        }
+        if ((declared_loop_blocks & block_bit(block_index)) == 0U ||
+            (declared_loop_blocks & block_bit(latch)) == 0U ||
+            (declared_loop_blocks &
+             block_bit(state->loop_preheader[block_index])) != 0U ||
+            (loop_blocks & ~declared_loop_blocks) != 0U) {
+            return fail(diagnostic, 0U, 0U,
+                        "loop membership is not normalized");
+        }
+        loop_blocks = declared_loop_blocks;
         for (predecessor_index = 0U;
              predecessor_index < source->block_count;
              ++predecessor_index) {

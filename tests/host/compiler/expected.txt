@@ -1,1 +1,1 @@
-PASS  compiler CFG liveness, loop phis, O0/O1, and spill frames
+PASS  compiler CFG liveness, loop control, phis, O0/O1, and spill frames

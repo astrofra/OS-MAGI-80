@@ -1,6 +1,6 @@
 # MIGA Lua Compiler Bootstrap
 
-**Status:** typed locals, `bool`, `if`/`else`, normalized `while`, loop `phi`, `-O1`, and spills implemented
+**Status:** typed locals, `bool`, `if`/`else`, normalized `while`, `break`/`continue`, loop `phi`, `-O1`, and spills implemented
 
 ## Scope
 
@@ -14,13 +14,15 @@ function   = "function", name, "(", [ parameters ], ")", ":", scalar-type,
 parameters = parameter, { ",", parameter } ;
 parameter  = name, ":", scalar-type ;
 scalar-type = "i32" | "bool" ;
-statement  = local-declaration | assignment | control-statement ;
-control-statement = assignment | if-statement | while-statement ;
+statement  = local-declaration | control-statement ;
+control-statement = assignment | if-statement | while-statement
+                    | loop-control-statement ;
 local-declaration = "local", name, ":", scalar-type, "=", expression ;
 assignment = local-name, "=", expression ;
 if-statement = "if", expression, "then", { control-statement },
                "else", { control-statement }, "end" ;
 while-statement = "while", expression, "do", { control-statement }, "end" ;
+loop-control-statement = "break" | "continue" ;
 return-statement = "return", expression ;
 expression = sum, { ( "==" | "~=" | "!=" | "<" | "<=" | ">" | ">=" ), sum } ;
 sum        = product, { ( "+" | "-" ), product } ;
@@ -42,7 +44,10 @@ including between constants. Arithmetic and ordered comparisons require `i32`;
 type; `if` and `while` conditions require `bool`. `if` currently requires an
 explicit `else`. Declarations and returns inside `if` branches or loop bodies
 remain rejected until lexical scopes and multiple exit blocks are specified.
-There is no `break` or `continue` yet. The initial ABI supports at most three
+`break` and `continue` are valid only within the nearest enclosing `while` and
+must terminate their immediate statement list; a following statement remains
+valid when it is reached through another branch of an enclosing `if`. The
+initial ABI supports at most three
 scalar parameters in `D0` through `D2`, with one scalar result in `D0`. Arithmetic has
 defined two's-complement wrapping semantics. Register and frame placement
 follows [MIGA Lua Native ABI 0.1](./MIGA-Lua-native-ABI-v0.md).
@@ -57,6 +62,11 @@ Arrays are not part of the bootstrap grammar yet. Their frozen version 1
 language contract is nevertheless zero-based: for `array<T, N>`, valid indices
 are exactly `0` through `N - 1`, and index `0` denotes the first element.
 
+Planned statement-only update sugar comprises `x++`, `x--`, `x += value`,
+`x -= value`, `x *= value`, and `x /= value`. These forms will never be
+expressions and therefore cannot appear in an `if` or `while` condition. `/=`
+also waits for the signed division and division-by-zero semantics to be frozen.
+
 ## Pipeline
 
 The implementation has four bounded, host-buildable layers:
@@ -66,15 +76,19 @@ The implementation has four bounded, host-buildable layers:
 2. Lowering produces a typed stack IR with explicit local loads/stores,
    comparisons, conditional/unconditional terminators, and up to 32 basic
    blocks with two successor slots each. A `while` has the canonical shape
-   `preheader -> header -> body -> latch -> header`, plus one dedicated exit
-   reached by the false header edge. The latch is a separate block containing
-   only its jump to the header. The host interpreter follows this CFG as the
+   `preheader -> header -> body -> latch -> header`, plus one dedicated exit.
+   Every normal/`continue` path is folded through a bounded binary funnel into
+   the single latch; the false condition and every `break` path use another
+   binary funnel into the single exit. Thus every block still has at most two
+   predecessors and binary `phi` values remain sufficient. A `while` whose
+   body has no syntactic path back to the header is represented as acyclic and
+   needs no unreachable latch. The host interpreter follows this CFG as the
    semantic oracle and uses unsigned C operations to specify 32-bit wrapping
    and implementation-independent signed comparisons.
 3. `-O1` renames locals to values throughout the CFG and creates typed `phi`
    values at two-predecessor joins and loop headers. It identifies natural
    loops with bounded dominator analysis, and validates their single
-   preheader, dedicated latch, and unique exit. It creates provisional loop
+   preheader, dedicated latch, declared loop region, and unique exit. It creates provisional loop
    `phi` operands before the latch has been lowered, then completes their backward
    inputs and removes trivial self-joins. Constant folding, simplification,
    dead-value removal, and `live-in`/`live-out` analysis all accept cyclic value
@@ -135,13 +149,13 @@ machine-code emission; the shipping encoder and instruction-cache
 synchronization remain later work.
 
 The differential tests preserve `-O0`/`-O1` assembly, relocatable objects, and
-flat binaries under the compiler pipeline build directories. Six source
+flat binaries under the compiler pipeline build directories. Seven source
 corpora—including typed locals, a nested 19-block comparison/branch fixture,
-and a `while` fixture with loop-carried values and a cyclic parallel copy—use
-six edge inputs each at both levels. Those 72 executions must
+the loop-carried cyclic-copy fixture, and a multi-site `break`/`continue`
+fixture—use six edge inputs each at both levels. Those 84 executions must
 produce the same `D0` value as the typed-IR interpreter. A synthetic value-IR
 schedule then forces three spills and adds six more oracle comparisons,
-bringing the total to 78. This is necessary because the current bounded source
+bringing the total to 90. This is necessary because the current bounded source
 subset cannot naturally exceed all eight data registers. The reports retain
 image size,
 executed instruction count, and maximum callee stack use, while the runner

@@ -53,9 +53,10 @@ The implemented subset accepts one explicitly annotated scalar function with
 up to three immutable `i32`/`bool` parameters and 16 explicitly typed locals,
 initialized declarations, reassignment, one final return, arithmetic, all six
 comparisons (`!=` aliases `~=`), nested `if`/`then`/`else`/`end`, and nested
-`while`/`do`/`end` loops with loop-carried values. The typed IR carries up to 32
-basic blocks. Each loop is lowered to a canonical preheader, header, body,
-single latch, and single exit. Assembly generation defaults to the value-IR `-O1` backend;
+`while`/`do`/`end` loops with loop-carried values, `break`, and `continue`. The
+typed IR carries up to 32 basic blocks. Multiple loop-control sites are folded
+through bounded binary funnels into a canonical latch and exit. Assembly
+generation defaults to the value-IR `-O1` backend;
 `-O0` keeps the stack baseline for comparison. `-O1` removes dead assignments,
 creates typed branch and loop join values, computes cyclic CFG-aware liveness,
 coalesces compatible `phi` slots, schedules parallel edge copies, and uses

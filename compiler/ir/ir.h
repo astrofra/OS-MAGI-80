@@ -63,6 +63,7 @@ struct miga80_ir_function {
     struct miga80_ir_instruction instructions[MIGA80_MAX_IR_INSTRUCTIONS];
     unsigned int instruction_count;
     struct miga80_ir_basic_block blocks[MIGA80_MAX_BASIC_BLOCKS];
+    uint32_t block_loop_membership[MIGA80_MAX_BASIC_BLOCKS];
     unsigned int block_count;
     unsigned int entry_block;
 };

@@ -126,10 +126,26 @@ static int lower_node(const struct miga80_ast_function *ast, int node_index,
                             diagnostic);
 }
 
+enum lower_loop_control_kind {
+    LOWER_LOOP_BREAK,
+    LOWER_LOOP_CONTINUE
+};
+
+struct lower_edge {
+    uint16_t block;
+    uint16_t instruction;
+    unsigned char successor_index;
+    unsigned char kind;
+};
+
 struct lower_context {
     const struct miga80_ast_function *ast;
     struct miga80_ir_function *ir;
     struct miga80_diagnostic *diagnostic;
+    struct lower_edge control_edges[MIGA80_MAX_STATEMENTS];
+    unsigned int control_edge_count;
+    uint32_t active_loops;
+    unsigned int loop_depth;
     unsigned int visited_statements;
     int returned;
 };
@@ -150,6 +166,7 @@ static unsigned int create_block(struct lower_context *context)
     block->first_instruction = MIGA80_INVALID_BLOCK;
     block->successors[0] = MIGA80_INVALID_BLOCK;
     block->successors[1] = MIGA80_INVALID_BLOCK;
+    context->ir->block_loop_membership[index] = context->active_loops;
     return index;
 }
 
@@ -181,6 +198,128 @@ static int finish_block(struct lower_context *context, unsigned int block,
         result->successors[1] = second_successor;
     }
     return 1;
+}
+
+static int patch_edge(struct lower_context *context,
+                      const struct lower_edge *edge, unsigned int target)
+{
+    struct miga80_ir_basic_block *block;
+    struct miga80_ir_instruction *instruction;
+
+    if (edge->block >= context->ir->block_count ||
+        edge->instruction >= context->ir->instruction_count ||
+        target >= context->ir->block_count) {
+        return fail(context->diagnostic, 0U, 0U,
+                    "unable to patch typed IR control edge");
+    }
+    block = &context->ir->blocks[edge->block];
+    instruction = &context->ir->instructions[edge->instruction];
+    if (edge->successor_index >= block->successor_count ||
+        block->successors[edge->successor_index] != MIGA80_INVALID_BLOCK ||
+        instruction->operand != MIGA80_INVALID_BLOCK ||
+        (instruction->opcode != MIGA80_IR_JUMP &&
+         instruction->opcode != MIGA80_IR_BRANCH_FALSE)) {
+        return fail(context->diagnostic, instruction->line,
+                    instruction->column,
+                    "typed IR control edge was already patched");
+    }
+    block->successors[edge->successor_index] = target;
+    instruction->operand = target;
+    return 1;
+}
+
+static int finish_open_jump(struct lower_context *context,
+                            unsigned int block, unsigned int line,
+                            unsigned int column, struct lower_edge *edge)
+{
+    const unsigned int instruction = context->ir->instruction_count;
+
+    if (!emit_instruction(context->ir, MIGA80_IR_JUMP,
+                          MIGA80_INVALID_BLOCK, line, column,
+                          context->diagnostic) ||
+        !finish_block(context, block, MIGA80_INVALID_BLOCK,
+                      MIGA80_INVALID_BLOCK, 1U)) {
+        return 0;
+    }
+    edge->block = (uint16_t)block;
+    edge->instruction = (uint16_t)instruction;
+    edge->successor_index = 0U;
+    return 1;
+}
+
+static int record_loop_control(struct lower_context *context,
+                               unsigned int block,
+                               enum lower_loop_control_kind kind,
+                               unsigned int line, unsigned int column)
+{
+    struct lower_edge *edge;
+
+    if (context->loop_depth == 0U) {
+        return fail(context->diagnostic, line, column,
+                    "loop control is outside while");
+    }
+    if (context->control_edge_count == MIGA80_MAX_STATEMENTS) {
+        return fail(context->diagnostic, line, column,
+                    "too many pending loop-control edges");
+    }
+    edge = &context->control_edges[context->control_edge_count];
+    if (!finish_open_jump(context, block, line, column, edge)) {
+        return 0;
+    }
+    edge->kind = (unsigned char)kind;
+    ++context->control_edge_count;
+    return 1;
+}
+
+static int add_funnel_edge(struct lower_context *context,
+                           const struct lower_edge *edge,
+                           struct lower_edge *pending, int *has_pending,
+                           unsigned int line, unsigned int column)
+{
+    unsigned int merge_block;
+
+    if (!*has_pending) {
+        *pending = *edge;
+        *has_pending = 1;
+        return 1;
+    }
+    merge_block = create_block(context);
+    if (merge_block == MIGA80_INVALID_BLOCK ||
+        !patch_edge(context, pending, merge_block) ||
+        !patch_edge(context, edge, merge_block)) {
+        return 0;
+    }
+    begin_block(context, merge_block);
+    return finish_open_jump(context, merge_block, line, column, pending);
+}
+
+static int build_control_funnel(
+    struct lower_context *context, unsigned int control_start,
+    enum lower_loop_control_kind kind, const struct lower_edge *implicit_edge,
+    int has_implicit_edge, unsigned int target, unsigned int line,
+    unsigned int column)
+{
+    struct lower_edge pending;
+    unsigned int index;
+    int has_pending = 0;
+
+    for (index = control_start; index < context->control_edge_count; ++index) {
+        if (context->control_edges[index].kind == kind &&
+            !add_funnel_edge(context, &context->control_edges[index],
+                             &pending, &has_pending, line, column)) {
+            return 0;
+        }
+    }
+    if (has_implicit_edge &&
+        !add_funnel_edge(context, implicit_edge, &pending, &has_pending,
+                         line, column)) {
+        return 0;
+    }
+    if (!has_pending) {
+        return fail(context->diagnostic, line, column,
+                    "loop-control funnel has no incoming edge");
+    }
+    return patch_edge(context, &pending, target);
 }
 
 static int lower_statement_list(struct lower_context *context,
@@ -227,9 +366,12 @@ static int lower_statement_list(struct lower_context *context,
         } else if (statement->kind == MIGA80_AST_IF) {
             unsigned int then_block;
             unsigned int else_block;
-            unsigned int join_block;
             unsigned int then_end;
             unsigned int else_end;
+            struct lower_edge then_edge;
+            struct lower_edge else_edge;
+            int then_falls_through;
+            int else_falls_through;
 
             if (!lower_node(context->ast, statement->expression, context->ir,
                             context->diagnostic)) {
@@ -237,10 +379,8 @@ static int lower_statement_list(struct lower_context *context,
             }
             then_block = create_block(context);
             else_block = create_block(context);
-            join_block = create_block(context);
             if (then_block == MIGA80_INVALID_BLOCK ||
                 else_block == MIGA80_INVALID_BLOCK ||
-                join_block == MIGA80_INVALID_BLOCK ||
                 !emit_instruction(context->ir, MIGA80_IR_BRANCH_FALSE,
                                   else_block, statement->line,
                                   statement->column, context->diagnostic) ||
@@ -252,43 +392,60 @@ static int lower_statement_list(struct lower_context *context,
             begin_block(context, then_block);
             then_end = then_block;
             if (!lower_statement_list(context, statement->then_statement,
-                                      &then_end) ||
-                !emit_instruction(context->ir, MIGA80_IR_JUMP, join_block,
-                                  statement->line, statement->column,
-                                  context->diagnostic) ||
-                !finish_block(context, then_end, join_block,
-                              MIGA80_INVALID_BLOCK, 1U)) {
+                                      &then_end)) {
+                return 0;
+            }
+            then_falls_through = then_end != MIGA80_INVALID_BLOCK;
+            if (then_falls_through &&
+                !finish_open_jump(context, then_end, statement->line,
+                                  statement->column, &then_edge)) {
                 return 0;
             }
 
             begin_block(context, else_block);
             else_end = else_block;
             if (!lower_statement_list(context, statement->else_statement,
-                                      &else_end) ||
-                !emit_instruction(context->ir, MIGA80_IR_JUMP, join_block,
-                                  statement->line, statement->column,
-                                  context->diagnostic) ||
-                !finish_block(context, else_end, join_block,
-                              MIGA80_INVALID_BLOCK, 1U)) {
+                                      &else_end)) {
                 return 0;
             }
-            begin_block(context, join_block);
-            *current_block = join_block;
+            else_falls_through = else_end != MIGA80_INVALID_BLOCK;
+            if (else_falls_through &&
+                !finish_open_jump(context, else_end, statement->line,
+                                  statement->column, &else_edge)) {
+                return 0;
+            }
+            if (then_falls_through || else_falls_through) {
+                const unsigned int join_block = create_block(context);
+
+                if (join_block == MIGA80_INVALID_BLOCK ||
+                    (then_falls_through &&
+                     !patch_edge(context, &then_edge, join_block)) ||
+                    (else_falls_through &&
+                     !patch_edge(context, &else_edge, join_block))) {
+                    return 0;
+                }
+                begin_block(context, join_block);
+                *current_block = join_block;
+            } else {
+                *current_block = MIGA80_INVALID_BLOCK;
+            }
         } else if (statement->kind == MIGA80_AST_WHILE) {
             unsigned int header_block;
             unsigned int body_block;
-            unsigned int latch_block;
             unsigned int exit_block;
             unsigned int body_end;
+            unsigned int latch_block = MIGA80_INVALID_BLOCK;
+            const unsigned int control_start = context->control_edge_count;
+            const uint32_t outer_loops = context->active_loops;
+            struct lower_edge header_exit_edge;
+            struct lower_edge body_edge;
+            unsigned int control_index;
+            unsigned int continue_count = 0U;
 
             header_block = create_block(context);
             body_block = create_block(context);
-            latch_block = create_block(context);
-            exit_block = create_block(context);
             if (header_block == MIGA80_INVALID_BLOCK ||
                 body_block == MIGA80_INVALID_BLOCK ||
-                latch_block == MIGA80_INVALID_BLOCK ||
-                exit_block == MIGA80_INVALID_BLOCK ||
                 !emit_instruction(context->ir, MIGA80_IR_JUMP,
                                   header_block, statement->line,
                                   statement->column, context->diagnostic) ||
@@ -296,40 +453,102 @@ static int lower_statement_list(struct lower_context *context,
                               MIGA80_INVALID_BLOCK, 1U)) {
                 return 0;
             }
+            context->active_loops |= UINT32_C(1) << header_block;
+            context->ir->block_loop_membership[header_block] =
+                context->active_loops;
+            context->ir->block_loop_membership[body_block] =
+                context->active_loops;
 
             begin_block(context, header_block);
             if (!lower_node(context->ast, statement->expression,
                             context->ir, context->diagnostic) ||
                 !emit_instruction(context->ir, MIGA80_IR_BRANCH_FALSE,
-                                  exit_block, statement->line,
+                                  MIGA80_INVALID_BLOCK, statement->line,
                                   statement->column, context->diagnostic) ||
-                !finish_block(context, header_block, body_block, exit_block,
+                !finish_block(context, header_block, body_block,
+                              MIGA80_INVALID_BLOCK,
                               2U)) {
                 return 0;
             }
+            header_exit_edge.block = (uint16_t)header_block;
+            header_exit_edge.instruction =
+                (uint16_t)(context->ir->instruction_count - 1U);
+            header_exit_edge.successor_index = 1U;
 
             begin_block(context, body_block);
             body_end = body_block;
+            ++context->loop_depth;
             if (!lower_statement_list(context, statement->then_statement,
-                                      &body_end) ||
-                !emit_instruction(context->ir, MIGA80_IR_JUMP,
-                                  latch_block, statement->line,
-                                  statement->column, context->diagnostic) ||
-                !finish_block(context, body_end, latch_block,
-                              MIGA80_INVALID_BLOCK, 1U)) {
+                                      &body_end)) {
+                --context->loop_depth;
                 return 0;
             }
+            --context->loop_depth;
+            if (body_end != MIGA80_INVALID_BLOCK &&
+                !finish_open_jump(context, body_end, statement->line,
+                                  statement->column, &body_edge)) {
+                return 0;
+            }
+            for (control_index = control_start;
+                 control_index < context->control_edge_count;
+                 ++control_index) {
+                if (context->control_edges[control_index].kind ==
+                    LOWER_LOOP_CONTINUE) {
+                    ++continue_count;
+                }
+            }
+            if (body_end != MIGA80_INVALID_BLOCK) {
+                ++continue_count;
+            }
+            if (continue_count != 0U) {
+                latch_block = create_block(context);
+            }
+            exit_block = create_block(context);
+            if ((continue_count != 0U &&
+                 latch_block == MIGA80_INVALID_BLOCK) ||
+                exit_block == MIGA80_INVALID_BLOCK) {
+                return 0;
+            }
+            context->ir->block_loop_membership[exit_block] = outer_loops;
 
-            begin_block(context, latch_block);
-            if (!emit_instruction(context->ir, MIGA80_IR_JUMP,
-                                  header_block, statement->line,
-                                  statement->column, context->diagnostic) ||
-                !finish_block(context, latch_block, header_block,
-                              MIGA80_INVALID_BLOCK, 1U)) {
+            if (continue_count != 0U) {
+                if (!build_control_funnel(
+                        context, control_start, LOWER_LOOP_CONTINUE,
+                        &body_edge, body_end != MIGA80_INVALID_BLOCK,
+                        latch_block, statement->line, statement->column)) {
+                    return 0;
+                }
+                begin_block(context, latch_block);
+                if (!emit_instruction(context->ir, MIGA80_IR_JUMP,
+                                      header_block, statement->line,
+                                      statement->column,
+                                      context->diagnostic) ||
+                    !finish_block(context, latch_block, header_block,
+                                  MIGA80_INVALID_BLOCK, 1U)) {
+                    return 0;
+                }
+            }
+            if (!build_control_funnel(
+                    context, control_start, LOWER_LOOP_BREAK,
+                    &header_exit_edge, 1, exit_block, statement->line,
+                    statement->column)) {
                 return 0;
             }
+            context->control_edge_count = control_start;
+            context->active_loops = outer_loops;
             begin_block(context, exit_block);
             *current_block = exit_block;
+        } else if (statement->kind == MIGA80_AST_BREAK ||
+                   statement->kind == MIGA80_AST_CONTINUE) {
+            const enum lower_loop_control_kind kind =
+                statement->kind == MIGA80_AST_BREAK ? LOWER_LOOP_BREAK
+                                                   : LOWER_LOOP_CONTINUE;
+
+            if (!record_loop_control(context, *current_block, kind,
+                                     statement->line, statement->column)) {
+                return 0;
+            }
+            *current_block = MIGA80_INVALID_BLOCK;
         } else if (statement->kind == MIGA80_AST_RETURN) {
             if (statement->next_statement != MIGA80_INVALID_STATEMENT ||
                 !lower_node(context->ast, statement->expression, context->ir,
@@ -348,6 +567,14 @@ static int lower_statement_list(struct lower_context *context,
                         statement->column, "unknown AST statement kind");
         }
         statement_index = statement->next_statement;
+        if (*current_block == MIGA80_INVALID_BLOCK &&
+            statement_index != MIGA80_INVALID_STATEMENT) {
+            const struct miga80_ast_statement *next =
+                &context->ast->statements[statement_index];
+
+            return fail(context->diagnostic, next->line, next->column,
+                        "AST statement follows terminating control flow");
+        }
     }
     return 1;
 }
@@ -556,6 +783,7 @@ int miga80_validate_ir(const struct miga80_ir_function *ir,
                        struct miga80_diagnostic *diagnostic)
 {
     unsigned char instruction_owners[MIGA80_MAX_IR_INSTRUCTIONS];
+    uint32_t valid_loop_bits;
     unsigned int block_index;
     unsigned int index;
 
@@ -571,6 +799,10 @@ int miga80_validate_ir(const struct miga80_ir_function *ir,
         return fail(diagnostic, 0U, 0U,
                     "typed IR function exceeds bounded storage");
     }
+    valid_loop_bits =
+        ir->block_count == MIGA80_MAX_BASIC_BLOCKS
+            ? UINT32_MAX
+            : (UINT32_C(1) << ir->block_count) - UINT32_C(1);
     (void)memset(instruction_owners, 0, sizeof(instruction_owners));
     for (block_index = 0U; block_index < ir->block_count; ++block_index) {
         const struct miga80_ir_basic_block *block = &ir->blocks[block_index];
@@ -582,6 +814,11 @@ int miga80_validate_ir(const struct miga80_ir_function *ir,
             block->successor_count > MIGA80_MAX_BLOCK_SUCCESSORS) {
             return fail(diagnostic, 0U, 0U,
                         "typed IR basic block has invalid bounds");
+        }
+        if ((ir->block_loop_membership[block_index] & ~valid_loop_bits) !=
+            0U) {
+            return fail(diagnostic, 0U, 0U,
+                        "typed IR block has invalid loop membership");
         }
         for (index = 0U; index < MIGA80_MAX_BLOCK_SUCCESSORS; ++index) {
             if ((index < block->successor_count &&
