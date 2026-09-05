@@ -35,7 +35,7 @@ balance, callee-saved registers, memory guards, and instruction limit, and
 retains a short disassembly trace on failure. It is the foundation for the Lua
 compiler path exercised below.
 
-Build the initial typed MIGA Lua compiler, verify native ABI 0.3,
+Build the initial typed MIGA Lua compiler, verify native ABI 0.4,
 and validate generated 68020 code against its typed-IR oracle with:
 
 ```sh
@@ -49,9 +49,9 @@ its typed-IR evaluator plus `-O1` renderer under `vamos` with:
 gmake compiler-amiga-test
 ```
 
-The implemented subset accepts one explicitly annotated scalar function with
-up to three immutable `i8`/`u8`/`i16`/`u16`/`i32`/`bool` parameters and 16
-explicitly typed locals,
+The implemented subset accepts one explicitly annotated typed function with up
+to three scalar `i8`/`u8`/`i16`/`u16`/`i32`/`bool`/`symbol` parameters, two
+`string` parameters, and 16 explicitly typed locals,
 initialized declarations, reassignment, one final return, arithmetic, all six
 comparisons (`!=` aliases `~=`), nested `if`/`then`/`else`/`end`, and nested
 `while`/`do`/`end` loops with loop-carried values, `break`, and `continue`.
@@ -68,8 +68,8 @@ coalesces compatible `phi` slots, schedules parallel edge copies, and uses
 bounded ABI frames when transfers or register pressure require them. See the [compiler
 bootstrap](documentation/MIGA-Lua-compiler-bootstrap.md)
 for its exact grammar, the [native ABI
-0.3](documentation/MIGA-Lua-native-ABI-v0.md) for the frozen register, stack,
-and fault core, and the [optimization
+0.4](documentation/MIGA-Lua-native-ABI-v0.md) for the frozen register, stack,
+immutable-value, and fault core, and the [optimization
 strategy](documentation/MIGA-Lua-optimization-strategy.md) for the bounded
 on-Amiga compiler plan.
 
@@ -79,9 +79,11 @@ polymorphic/union types, and multiple returns are excluded from version 1. The
 bootstrap only adapts an `i32` constant expression when it provably fits its
 narrow destination. Future fixed arrays are zero-based, with valid indices `0`
 through `N - 1`.
-There are no `byte`/`word` aliases. `string` and `symbol` are reserved type
-names; their immutable constant pool, descriptors, relocations, and address ABI
-form the next data tranche and are not yet accepted as runtime values.
+There are no `byte`/`word` aliases. Immutable short `string` literals use
+single or double quotes and a bounded deduplicated descriptor pool;
+`symbol("name")` creates an opaque interned scalar ID. Equality is constant
+time for both, no implicit conversion exists between them, string values use
+the ABI address class, and emitted pool references are PC-relative.
 
 Run the inverse dual-playfield decoder and compositor → C2P → decoder differential with:
 

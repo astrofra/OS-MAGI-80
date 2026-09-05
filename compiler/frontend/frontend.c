@@ -9,6 +9,7 @@ enum token_kind {
     TOKEN_INVALID,
     TOKEN_IDENTIFIER,
     TOKEN_INTEGER,
+    TOKEN_STRING_LITERAL,
     TOKEN_FUNCTION,
     TOKEN_LOCAL,
     TOKEN_IF,
@@ -241,6 +242,42 @@ static struct token next_token(struct lexer *lexer)
         return token;
     }
 
+    if (character == '\'' || character == '"') {
+        const char quote = character;
+
+        token.kind = TOKEN_STRING_LITERAL;
+        token.start = &lexer->source[lexer->offset];
+        for (;;) {
+            character = peek(lexer, 0U);
+            if (character == '\0' || character == '\n' ||
+                character == '\r') {
+                token.kind = TOKEN_INVALID;
+                set_diagnostic(lexer->diagnostic, token.line, token.column,
+                               "unterminated string literal");
+                return token;
+            }
+            if (character == quote) {
+                token.length =
+                    (size_t)(&lexer->source[lexer->offset] - token.start);
+                (void)advance(lexer);
+                return token;
+            }
+            (void)advance(lexer);
+            if (character == '\\') {
+                character = peek(lexer, 0U);
+                if (character == '\0' || character == '\n' ||
+                    character == '\r') {
+                    token.kind = TOKEN_INVALID;
+                    set_diagnostic(lexer->diagnostic, token.line,
+                                   token.column,
+                                   "unterminated string escape");
+                    return token;
+                }
+                (void)advance(lexer);
+            }
+        }
+    }
+
     switch (character) {
     case '(':
         token.kind = TOKEN_LEFT_PAREN;
@@ -339,6 +376,8 @@ static const char *token_name(enum token_kind kind)
         return "identifier";
     case TOKEN_INTEGER:
         return "integer";
+    case TOKEN_STRING_LITERAL:
+        return "string literal";
     case TOKEN_FUNCTION:
         return "'function'";
     case TOKEN_LOCAL:
@@ -632,6 +671,22 @@ int miga80_type_is_signed_integer(enum miga80_type type)
            type == MIGA80_TYPE_I16;
 }
 
+int miga80_type_is_scalar(enum miga80_type type)
+{
+    return type == MIGA80_TYPE_BOOL || type == MIGA80_TYPE_SYMBOL ||
+           miga80_type_is_integer(type);
+}
+
+int miga80_type_is_address(enum miga80_type type)
+{
+    return type == MIGA80_TYPE_STRING;
+}
+
+int miga80_type_is_value(enum miga80_type type)
+{
+    return miga80_type_is_scalar(type) || miga80_type_is_address(type);
+}
+
 uint32_t miga80_normalize_integer(enum miga80_type type, uint32_t value)
 {
     if (type == MIGA80_TYPE_U8) {
@@ -659,6 +714,218 @@ int miga80_integer_value_is_canonical(enum miga80_type type, uint32_t value)
 {
     return miga80_type_is_integer(type) &&
            miga80_normalize_integer(type, value) == value;
+}
+
+const unsigned char *miga80_pool_entry_bytes(
+    const struct miga80_constant_pool *pool, unsigned int entry_index)
+{
+    const struct miga80_pool_entry *entry;
+
+    if (pool == NULL || entry_index >= pool->entry_count) {
+        return NULL;
+    }
+    entry = &pool->entries[entry_index];
+    if ((unsigned int)entry->offset + (unsigned int)entry->length >
+        pool->bytes_used) {
+        return NULL;
+    }
+    return &pool->bytes[entry->offset];
+}
+
+uint32_t miga80_pool_symbol_id(const struct miga80_constant_pool *pool,
+                               unsigned int entry_index)
+{
+    uint32_t symbol_id = 0U;
+    unsigned int index;
+
+    if (pool == NULL || entry_index >= pool->entry_count ||
+        pool->entries[entry_index].type != MIGA80_TYPE_SYMBOL) {
+        return 0U;
+    }
+    for (index = 0U; index <= entry_index; ++index) {
+        if (pool->entries[index].type == MIGA80_TYPE_SYMBOL) {
+            ++symbol_id;
+        }
+    }
+    return symbol_id;
+}
+
+int miga80_validate_constant_pool(const struct miga80_constant_pool *pool)
+{
+    unsigned int index;
+
+    if (pool == NULL || pool->entry_count > MIGA80_MAX_POOL_ENTRIES ||
+        pool->bytes_used > MIGA80_MAX_POOL_BYTES) {
+        return 0;
+    }
+    for (index = 0U; index < pool->entry_count; ++index) {
+        const struct miga80_pool_entry *entry = &pool->entries[index];
+        const unsigned char *bytes =
+            miga80_pool_entry_bytes(pool, index);
+        unsigned int previous;
+
+        if ((entry->type != MIGA80_TYPE_STRING &&
+             entry->type != MIGA80_TYPE_SYMBOL) ||
+            bytes == NULL) {
+            return 0;
+        }
+        for (previous = 0U; previous < index; ++previous) {
+            const struct miga80_pool_entry *candidate =
+                &pool->entries[previous];
+
+            if (candidate->type == entry->type &&
+                candidate->length == entry->length &&
+                memcmp(miga80_pool_entry_bytes(pool, previous), bytes,
+                       entry->length) == 0) {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+static int hex_digit(char character)
+{
+    if (character >= '0' && character <= '9') {
+        return character - '0';
+    }
+    if (character >= 'a' && character <= 'f') {
+        return character - 'a' + 10;
+    }
+    if (character >= 'A' && character <= 'F') {
+        return character - 'A' + 10;
+    }
+    return -1;
+}
+
+static int decode_literal_byte(struct parser *parser,
+                               const struct token *token,
+                               unsigned int *source_offset,
+                               unsigned int *byte)
+{
+    *byte = (unsigned char)token->start[*source_offset];
+    if (*byte != (unsigned int)'\\') {
+        return 1;
+    }
+    if (++*source_offset == token->length) {
+        set_diagnostic(parser->diagnostic, token->line, token->column,
+                       "unterminated string escape");
+        parser->failed = 1;
+        return 0;
+    }
+    {
+        const char escape = token->start[*source_offset];
+
+        if (escape == 'n') {
+            *byte = (unsigned int)'\n';
+        } else if (escape == 'r') {
+            *byte = (unsigned int)'\r';
+        } else if (escape == 't') {
+            *byte = (unsigned int)'\t';
+        } else if (escape == '0') {
+            *byte = 0U;
+        } else if (escape == '\\' || escape == '\'' || escape == '"') {
+            *byte = (unsigned char)escape;
+        } else if (escape == 'x') {
+            int high;
+            int low;
+
+            if (*source_offset + 2U >= token->length ||
+                (high = hex_digit(token->start[*source_offset + 1U])) < 0 ||
+                (low = hex_digit(token->start[*source_offset + 2U])) < 0) {
+                set_diagnostic(
+                    parser->diagnostic, token->line, token->column,
+                    "string escape requires two hexadecimal digits");
+                parser->failed = 1;
+                return 0;
+            }
+            *byte = (unsigned int)((high << 4) | low);
+            *source_offset += 2U;
+        } else {
+            set_diagnostic(parser->diagnostic, token->line, token->column,
+                           "unsupported string escape '\\%c'", escape);
+            parser->failed = 1;
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int intern_pool_literal(struct parser *parser,
+                               const struct token *token,
+                               enum miga80_type type)
+{
+    struct miga80_constant_pool *pool = &parser->function->pool;
+    unsigned int source_offset;
+    unsigned int length = 0U;
+    unsigned int index;
+
+    for (source_offset = 0U; source_offset < token->length;
+         ++source_offset) {
+        unsigned int byte;
+
+        if (!decode_literal_byte(parser, token, &source_offset, &byte)) {
+            return -1;
+        }
+        if (length == MIGA80_MAX_POOL_BYTES) {
+            set_diagnostic(parser->diagnostic, token->line, token->column,
+                           "immutable literal exceeds %u bytes",
+                           MIGA80_MAX_POOL_BYTES);
+            parser->failed = 1;
+            return -1;
+        }
+        ++length;
+    }
+    for (index = 0U; index < pool->entry_count; ++index) {
+        const struct miga80_pool_entry *entry = &pool->entries[index];
+        unsigned int decoded_offset = 0U;
+        int equal = entry->type == type && entry->length == length;
+
+        for (source_offset = 0U; equal && source_offset < token->length;
+             ++source_offset) {
+            unsigned int byte;
+
+            if (!decode_literal_byte(parser, token, &source_offset, &byte)) {
+                return -1;
+            }
+            if (pool->bytes[entry->offset + decoded_offset] !=
+                (unsigned char)byte) {
+                equal = 0;
+            }
+            ++decoded_offset;
+        }
+        if (equal) {
+            return (int)index;
+        }
+    }
+    if (pool->entry_count == MIGA80_MAX_POOL_ENTRIES) {
+        set_diagnostic(parser->diagnostic, token->line, token->column,
+                       "immutable pool exceeds %u entries",
+                       MIGA80_MAX_POOL_ENTRIES);
+        parser->failed = 1;
+        return -1;
+    }
+    if (length > MIGA80_MAX_POOL_BYTES - pool->bytes_used) {
+        set_diagnostic(parser->diagnostic, token->line, token->column,
+                       "immutable pool exceeds %u bytes",
+                       MIGA80_MAX_POOL_BYTES);
+        parser->failed = 1;
+        return -1;
+    }
+    index = pool->entry_count++;
+    pool->entries[index].type = type;
+    pool->entries[index].offset = pool->bytes_used;
+    pool->entries[index].length = (uint16_t)length;
+    for (source_offset = 0U; source_offset < token->length;
+         ++source_offset) {
+        unsigned int byte;
+
+        if (!decode_literal_byte(parser, token, &source_offset, &byte)) {
+            return -1;
+        }
+        pool->bytes[pool->bytes_used++] = (unsigned char)byte;
+    }
+    return (int)index;
 }
 
 static int parse_type(struct parser *parser, enum miga80_type *type)
@@ -704,7 +971,7 @@ static int parse_type(struct parser *parser, enum miga80_type *type)
         return 1;
     }
     set_diagnostic(parser->diagnostic, parser->current.line,
-                   parser->current.column, "expected scalar type, found %s",
+                   parser->current.column, "expected value type, found %s",
                    token_name(parser->current.kind));
     parser->failed = 1;
     return 0;
@@ -715,11 +982,11 @@ static int require_bootstrap_value_type(struct parser *parser,
                                         unsigned int line,
                                         unsigned int column)
 {
-    if (type == MIGA80_TYPE_BOOL || miga80_type_is_integer(type)) {
+    if (miga80_type_is_value(type)) {
         return 1;
     }
     set_diagnostic(parser->diagnostic, line, column,
-                   "%s requires the immutable-pool and address ABI tranche",
+                   "unsupported bootstrap value type '%s'",
                    miga80_type_name(type));
     parser->failed = 1;
     return 0;
@@ -834,6 +1101,42 @@ static int parse_primary(struct parser *parser)
 {
     const struct token token = parser->current;
 
+    if (token.kind == TOKEN_STRING_LITERAL) {
+        const int pool_index =
+            intern_pool_literal(parser, &token, MIGA80_TYPE_STRING);
+
+        parser_advance(parser);
+        if (pool_index < 0) {
+            return MIGA80_INVALID_NODE;
+        }
+        return add_node(parser, MIGA80_AST_LITERAL_STRING, token.line,
+                        token.column, MIGA80_INVALID_NODE,
+                        MIGA80_INVALID_NODE, 0U,
+                        (unsigned int)pool_index, MIGA80_TYPE_STRING);
+    }
+    if (token.kind == TOKEN_SYMBOL) {
+        struct token literal;
+        int pool_index;
+
+        parser_advance(parser);
+        if (!expect(parser, TOKEN_LEFT_PAREN)) {
+            return MIGA80_INVALID_NODE;
+        }
+        literal = parser->current;
+        if (!expect(parser, TOKEN_STRING_LITERAL)) {
+            return MIGA80_INVALID_NODE;
+        }
+        pool_index =
+            intern_pool_literal(parser, &literal, MIGA80_TYPE_SYMBOL);
+        if (pool_index < 0 || !expect(parser, TOKEN_RIGHT_PAREN)) {
+            return MIGA80_INVALID_NODE;
+        }
+        return add_node(parser, MIGA80_AST_LITERAL_SYMBOL, token.line,
+                        token.column, MIGA80_INVALID_NODE,
+                        MIGA80_INVALID_NODE, 0U,
+                        (unsigned int)pool_index, MIGA80_TYPE_SYMBOL);
+    }
+
     if (token.kind == TOKEN_INTEGER) {
         parser_advance(parser);
         return add_node(parser, MIGA80_AST_LITERAL_I32, token.line,
@@ -893,7 +1196,7 @@ static int parse_primary(struct parser *parser)
     }
 
     set_diagnostic(parser->diagnostic, token.line, token.column,
-                   "expected scalar expression, found %s",
+                   "expected value expression, found %s",
                    token_name(token.kind));
     parser->failed = 1;
     return MIGA80_INVALID_NODE;
@@ -1109,6 +1412,28 @@ static int parse_parameter(struct parser *parser)
     }
     if (!require_bootstrap_value_type(parser, type, name.line, name.column)) {
         return 0;
+    }
+    {
+        const int address_class = miga80_type_is_address(type);
+        const unsigned int limit = address_class
+                                       ? MIGA80_ABI_MAX_ADDRESS_ARGUMENTS
+                                       : MIGA80_ABI_MAX_SCALAR_ARGUMENTS;
+        unsigned int class_count = 0U;
+
+        for (index = 0U; index < parser->function->parameter_count; ++index) {
+            if (miga80_type_is_address(
+                    parser->function->parameter_types[index]) ==
+                address_class) {
+                ++class_count;
+            }
+        }
+        if (class_count == limit) {
+            set_diagnostic(parser->diagnostic, name.line, name.column,
+                           "initial ABI supports at most %u %s parameters",
+                           limit, address_class ? "address" : "scalar");
+            parser->failed = 1;
+            return 0;
+        }
     }
     parser->function->parameter_types[index] = type;
     ++parser->function->parameter_count;

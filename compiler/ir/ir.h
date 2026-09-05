@@ -16,6 +16,8 @@
 enum miga80_ir_opcode {
     MIGA80_IR_PUSH_I32,
     MIGA80_IR_PUSH_BOOL,
+    MIGA80_IR_PUSH_STRING,
+    MIGA80_IR_PUSH_SYMBOL,
     MIGA80_IR_PUSH_PARAMETER_I32,
     MIGA80_IR_PUSH_PARAMETER_BOOL,
     MIGA80_IR_PUSH_LOCAL_I32,
@@ -74,6 +76,7 @@ struct miga80_ir_function {
     uint32_t block_loop_membership[MIGA80_MAX_BASIC_BLOCKS];
     unsigned int block_count;
     unsigned int entry_block;
+    struct miga80_constant_pool pool;
 };
 
 int miga80_lower_function(const struct miga80_ast_function *ast,

@@ -1,21 +1,21 @@
 # MIGA Lua Compiler Bootstrap
 
-**Status:** exact-width integers, typed locals, signed/unsigned division,
-controlled faults, normalized loops, `break`/`continue`, loop `phi`, `-O1`,
-and spills implemented
+**Status:** exact-width integers, immutable strings/symbols, typed locals,
+signed/unsigned division, controlled faults, normalized loops,
+`break`/`continue`, loop `phi`, `-O1`, and spills implemented
 
 ## Scope
 
 The bootstrap compiler proves the complete host development path without
 claiming the version 1.0 grammar is frozen. Its accepted source is exactly one
-public scalar function:
+public typed function:
 
 ```ebnf
 function   = "function", name, "(", [ parameters ], ")", ":", value-type,
              { statement }, return-statement, "end" ;
 parameters = parameter, { ",", parameter } ;
 parameter  = name, ":", value-type ;
-value-type = integer-type | "bool" ;
+value-type = integer-type | "bool" | "string" | "symbol" ;
 integer-type = "i8" | "u8" | "i16" | "u16" | "i32" ;
 statement  = local-declaration | control-statement ;
 control-statement = assignment | if-statement | while-statement
@@ -30,14 +30,18 @@ return-statement = "return", expression ;
 expression = sum, { ( "==" | "~=" | "!=" | "<" | "<=" | ">" | ">=" ), sum } ;
 sum        = product, { ( "+" | "-" ), product } ;
 product    = unary, { ( "*" | "/" ), unary } ;
-unary      = "-", unary | integer | "true" | "false"
+unary      = "-", unary | integer | "true" | "false" | string-literal
+             | "symbol", "(", string-literal, ")"
              | parameter-name | local-name
              | "(", expression, ")" ;
+string-literal = single-quoted-string | double-quoted-string ;
 ```
 
 Whitespace and Lua line comments beginning with `--` are accepted. Decimal
-literals are limited to `0` through `2147483647`. A function has at most 16
-function-scoped scalar locals and 32 statements including nested branches and
+literals are limited to `0` through `2147483647`. Short string literals use
+single or double quotes and accept `\\`, `\'`, `\"`, `\n`, `\r`, `\t`,
+`\0`, and `\xNN`; raw newlines are rejected. A function has at most 16
+function-scoped typed locals and 32 statements including nested branches and
 the final return.
 Declarations require an initializer; a local is visible only after that
 initializer, cannot shadow a parameter or another local, and parameters are
@@ -46,35 +50,37 @@ implemented exception adapts an `i32` constant expression to `i8`, `u8`,
 `i16`, or `u16` when its final value is representable in the destination type;
 an out-of-range constant is rejected. Arithmetic, `/`, and ordered comparisons
 require two operands of the same integer type. `==`, `~=`, and its exact alias
-`!=` require two operands of the same scalar type; `if` and `while` conditions
+`!=` require two operands of the same value type; `if` and `while` conditions
 require `bool`. `if` currently requires an
 explicit `else`. Declarations and returns inside `if` branches or loop bodies
 remain rejected until lexical scopes and multiple exit blocks are specified.
 `break` and `continue` are valid only within the nearest enclosing `while` and
 must terminate their immediate statement list; a following statement remains
 valid when it is reached through another branch of an enclosing `if`. The
-initial ABI supports at most three
-scalar parameters in `D0` through `D2`, with one scalar result in `D0`.
+initial ABI supports at most three scalar parameters in `D0` through `D2` and
+two `string` parameters in `A0`/`A1`. A scalar result uses `D0`; a `string`
+result uses `A0`.
 Arithmetic wraps at the declared width. Signed `/` truncates toward zero and
 minimum-value divided by `-1` wraps to that minimum value; unsigned `/` uses
 ordinary unsigned division. A provably constant zero divisor is a compile-time
 error. Every other divisor not proven nonzero is checked before `DIVS.L` or
 `DIVU.L` and branches to a controlled, source-located runtime fault when zero.
 Register, frame, and fault placement follows
-[MIGA Lua Native ABI 0.3](./MIGA-Lua-native-ABI-v0.md).
+[MIGA Lua Native ABI 0.4](./MIGA-Lua-native-ABI-v0.md).
 
 The version 1 language contract requires an explicit return annotation and
 includes `void`, but `void` code generation is not in this bootstrap tranche.
-The exact spellings `string` and `symbol` are reserved and recognized as types,
-but using either currently produces an explicit immutable-pool/address-ABI
-dependency diagnostic. `string` is planned as an immutable byte sequence
-backed by a deduplicated constant pool and represented by an address plus a
-length. `symbol` is planned as a cartridge-wide interned, opaque 32-bit
-identity, with equality but no arithmetic or ordering. The string descriptor,
-relocations, literal grammar, interning step, and mixed scalar/address calling
-convention must be implemented together in the next data tranche. There are no
-`byte` or `word` aliases: the source spellings remain `i8`, `u8`, `i16`, and
-`u16`.
+`string` and `symbol` are implemented immutable value types. A string value is
+the canonical address of a read-only `{ u32 byte_length; byte payload[]; }`
+descriptor emitted in `.text`; it has no trailing-NUL requirement. Equivalent
+decoded literals are deduplicated, making equality a pointer comparison.
+`symbol("name")` interns a compile-time spelling into an opaque nonzero 32-bit
+ID, also compared in constant time. Neither type permits arithmetic, ordering,
+or implicit conversion to the other. The current per-function pool is bounded
+to 32 deduplicated entries and 1,024 decoded payload bytes. Cartridge-wide
+pool merging and ID rewriting remain part of the future multi-function
+pack/link step. There are no `byte` or `word` aliases: the source spellings
+remain `i8`, `u8`, `i16`, and `u16`.
 
 Calls, fixed point, multiple functions, multiple returns, hexadecimal
 source literals, and the minimum `i32` literal spelling are likewise rejected
@@ -93,8 +99,9 @@ same statement-only rule.
 
 The implementation has four bounded, host-buildable layers:
 
-1. The frontend produces a typed scalar AST with bounded node, statement, and local
-   tables and reports the first error with a one-based line and column.
+1. The frontend produces a typed AST with bounded node, statement, local, and
+   immutable-pool tables and reports the first error with a one-based line and
+   column.
 2. Lowering produces a typed stack IR with explicit local loads/stores,
    comparisons, conditional/unconditional terminators, and up to 32 basic
    blocks with two successor slots each. A `while` has the canonical shape
@@ -126,12 +133,16 @@ The implementation has four bounded, host-buildable layers:
    parameter/local slots and expression-stack temporaries as a baseline. The
    default `-O1` keeps current local and expression values in registers and
    preserves any allocated `D3-D7` registers with `MOVEM`. Spilling functions
-   use ABI 0.3 `LINK`/`UNLK` frames, negative `A6` offsets, and `D7` as a saved
+   use ABI 0.4 `LINK`/`UNLK` frames, negative `A6` offsets, and `D7` as a saved
    scratch register. Both backends omit an unconditional jump when its target
    is the next emitted block, so the dedicated latch does not add a redundant
    branch to the hot loop path. Dynamic divisions add one `TST.L` and one
    normally untaken branch before native `DIVS.L` or `DIVU.L`; cold per-site stubs pass the
    fault code, line, and column to the handler pointer in the `A5` context.
+   String literals use PC-relative `LEA` and leave no relocation in the flat
+   image. O1 currently copies live `A0`/`A1` string inputs into its uniform
+   data-register value allocator; dedicated address-register allocation is a
+   later measured optimization, not an ABI requirement.
 
 For the current local toolchain, GNU `m68k-amigaos-as` retains a relocatable
 Amiga object and `m68k-amigaos-objcopy` extracts the flat image consumed by
@@ -155,6 +166,11 @@ Evaluate the same typed IR on the host:
 ```sh
 build/host/miga80c/miga80c tests/compile/arithmetic.lua --eval 7 5 2
 ```
+
+`--eval` also accepts `true`/`false` for Boolean inputs and raw string or symbol
+spellings that already exist in the function's immutable pool. This is an
+oracle convenience: embedded NUL bytes and external runtime descriptors are
+not representable as command-line arguments.
 
 Run native frontend/IR tests and the complete differential path:
 
@@ -184,8 +200,11 @@ produce the same `D0` value as the typed-IR interpreter. An eighth signed-
 division corpus adds 12 successful results and four controlled zero faults. A
 ninth exact-width corpus adds 12 successful `i8`/`u8`/`i16`/`u16` results and
 two controlled zero faults, including signed/unsigned comparisons, divisions,
-and wrapping normalization. A synthetic value-IR schedule then forces three
-spills and adds six more oracle comparisons, bringing the total to 120. This is
+and wrapping normalization. A tenth immutable-value corpus adds four
+executions covering both CFG paths at both optimization levels,
+decoded-literal deduplication, string/symbol `phi` values, pointer/ID equality,
+and PC-relative descriptors. A synthetic value-IR schedule then forces three
+spills and adds six more oracle comparisons, bringing the total to 124. This is
 necessary because the current bounded source subset cannot naturally exceed
 all eight data registers. The reports retain image size, executed instruction
 count, and maximum callee stack use, while the runner

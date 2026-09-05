@@ -56,6 +56,14 @@ static int lower_node(const struct miga80_ast_function *ast, int node_index,
         return emit_instruction(ir, MIGA80_IR_PUSH_BOOL, MIGA80_TYPE_BOOL,
                                 node->value,
                                 node->line, node->column, diagnostic);
+    case MIGA80_AST_LITERAL_STRING:
+        return emit_instruction(ir, MIGA80_IR_PUSH_STRING,
+                                MIGA80_TYPE_STRING, node->symbol_index,
+                                node->line, node->column, diagnostic);
+    case MIGA80_AST_LITERAL_SYMBOL:
+        return emit_instruction(ir, MIGA80_IR_PUSH_SYMBOL,
+                                MIGA80_TYPE_SYMBOL, node->symbol_index,
+                                node->line, node->column, diagnostic);
     case MIGA80_AST_PARAMETER_I32:
         return emit_instruction(ir, MIGA80_IR_PUSH_PARAMETER_I32,
                                 node->type, node->symbol_index, node->line,
@@ -642,6 +650,7 @@ int miga80_lower_function(const struct miga80_ast_function *ast,
     ir->parameter_count = ast->parameter_count;
     ir->local_count = ast->local_count;
     ir->result_type = ast->result_type;
+    (void)memcpy(&ir->pool, &ast->pool, sizeof(ir->pool));
     (void)memset(&context, 0, sizeof(context));
     context.ast = ast;
     context.ir = ir;
@@ -691,6 +700,8 @@ static int validate_block_stack(const struct miga80_ir_function *ir,
         }
         if (instruction->opcode == MIGA80_IR_PUSH_I32 ||
             instruction->opcode == MIGA80_IR_PUSH_BOOL ||
+            instruction->opcode == MIGA80_IR_PUSH_STRING ||
+            instruction->opcode == MIGA80_IR_PUSH_SYMBOL ||
             instruction->opcode == MIGA80_IR_PUSH_PARAMETER_I32 ||
             instruction->opcode == MIGA80_IR_PUSH_PARAMETER_BOOL ||
             instruction->opcode == MIGA80_IR_PUSH_LOCAL_I32 ||
@@ -700,18 +711,32 @@ static int validate_block_stack(const struct miga80_ir_function *ir,
                 instruction->opcode == MIGA80_IR_PUSH_BOOL ||
                 instruction->opcode == MIGA80_IR_PUSH_PARAMETER_BOOL ||
                 instruction->opcode == MIGA80_IR_PUSH_LOCAL_BOOL;
+            const int string_literal =
+                instruction->opcode == MIGA80_IR_PUSH_STRING;
+            const int symbol_literal =
+                instruction->opcode == MIGA80_IR_PUSH_SYMBOL;
+            const int nonbool_opcode =
+                instruction->opcode == MIGA80_IR_PUSH_I32 ||
+                instruction->opcode == MIGA80_IR_PUSH_PARAMETER_I32 ||
+                instruction->opcode == MIGA80_IR_PUSH_LOCAL_I32;
 
             if (stack_size == MIGA80_MAX_IR_STACK) {
                 return fail(diagnostic, instruction->line,
                             instruction->column, "typed IR stack overflow");
             }
             if ((bool_opcode && type != MIGA80_TYPE_BOOL) ||
-                (!bool_opcode && !miga80_type_is_integer(type)) ||
+                (nonbool_opcode &&
+                 (type == MIGA80_TYPE_BOOL || !miga80_type_is_value(type))) ||
+                (string_literal && type != MIGA80_TYPE_STRING) ||
+                (symbol_literal && type != MIGA80_TYPE_SYMBOL) ||
                 (instruction->opcode == MIGA80_IR_PUSH_BOOL &&
                  instruction->operand > 1U) ||
                 (instruction->opcode == MIGA80_IR_PUSH_I32 &&
                  !miga80_integer_value_is_canonical(type,
                                                      instruction->operand)) ||
+                ((string_literal || symbol_literal) &&
+                 (instruction->operand >= ir->pool.entry_count ||
+                  ir->pool.entries[instruction->operand].type != type)) ||
                 ((instruction->opcode == MIGA80_IR_PUSH_PARAMETER_I32 ||
                   instruction->opcode == MIGA80_IR_PUSH_PARAMETER_BOOL) &&
                  (instruction->operand >= ir->parameter_count ||
@@ -722,7 +747,7 @@ static int validate_block_stack(const struct miga80_ir_function *ir,
                   ir->local_types[instruction->operand] != type))) {
                 return fail(diagnostic, instruction->line,
                             instruction->column,
-                            "typed IR scalar load has invalid type or index");
+                            "typed IR value load has invalid type or index");
             }
             stack[stack_size++] = type;
         } else if (instruction->opcode == MIGA80_IR_STORE_LOCAL_I32 ||
@@ -732,7 +757,8 @@ static int validate_block_stack(const struct miga80_ir_function *ir,
             if (stack_size != 1U || instruction->operand >= ir->local_count ||
                 (instruction->opcode == MIGA80_IR_STORE_LOCAL_BOOL
                      ? type != MIGA80_TYPE_BOOL
-                     : !miga80_type_is_integer(type)) ||
+                     : type == MIGA80_TYPE_BOOL ||
+                           !miga80_type_is_value(type)) ||
                 ir->local_types[instruction->operand] != type ||
                 stack[0] != type) {
                 return fail(diagnostic, instruction->line,
@@ -792,9 +818,16 @@ static int validate_block_stack(const struct miga80_ir_function *ir,
                  instruction->opcode <= MIGA80_IR_GE_U32);
             const enum miga80_type operand_type = instruction->type;
 
-            if ((bool_comparison
-                     ? operand_type != MIGA80_TYPE_BOOL
-                     : !miga80_type_is_integer(operand_type)) ||
+            const int nonbool_equality =
+                instruction->opcode == MIGA80_IR_EQ_I32 ||
+                instruction->opcode == MIGA80_IR_NE_I32;
+
+            if ((bool_comparison && operand_type != MIGA80_TYPE_BOOL) ||
+                (nonbool_equality &&
+                 (operand_type == MIGA80_TYPE_BOOL ||
+                  !miga80_type_is_value(operand_type))) ||
+                (!bool_comparison && !nonbool_equality &&
+                 !miga80_type_is_integer(operand_type)) ||
                 (signed_operation &&
                  !miga80_type_is_signed_integer(operand_type)) ||
                 (unsigned_operation &&
@@ -860,6 +893,8 @@ int miga80_validate_ir(const struct miga80_ir_function *ir,
 {
     unsigned char instruction_owners[MIGA80_MAX_IR_INSTRUCTIONS];
     uint32_t valid_loop_bits;
+    unsigned int scalar_parameters = 0U;
+    unsigned int address_parameters = 0U;
     unsigned int block_index;
     unsigned int index;
 
@@ -875,24 +910,35 @@ int miga80_validate_ir(const struct miga80_ir_function *ir,
         return fail(diagnostic, 0U, 0U,
                     "typed IR function exceeds bounded storage");
     }
-    if (ir->result_type != MIGA80_TYPE_BOOL &&
-        !miga80_type_is_integer(ir->result_type)) {
+    if (!miga80_type_is_value(ir->result_type)) {
         return fail(diagnostic, 0U, 0U,
                     "typed IR function has invalid result type");
     }
     for (index = 0U; index < ir->parameter_count; ++index) {
-        if (ir->parameter_types[index] != MIGA80_TYPE_BOOL &&
-            !miga80_type_is_integer(ir->parameter_types[index])) {
+        if (!miga80_type_is_value(ir->parameter_types[index])) {
             return fail(diagnostic, 0U, 0U,
                         "typed IR function has invalid parameter type");
         }
+        if (miga80_type_is_address(ir->parameter_types[index])) {
+            ++address_parameters;
+        } else {
+            ++scalar_parameters;
+        }
+    }
+    if (scalar_parameters > MIGA80_ABI_MAX_SCALAR_ARGUMENTS ||
+        address_parameters > MIGA80_ABI_MAX_ADDRESS_ARGUMENTS) {
+        return fail(diagnostic, 0U, 0U,
+                    "typed IR function exceeds register class ABI");
     }
     for (index = 0U; index < ir->local_count; ++index) {
-        if (ir->local_types[index] != MIGA80_TYPE_BOOL &&
-            !miga80_type_is_integer(ir->local_types[index])) {
+        if (!miga80_type_is_value(ir->local_types[index])) {
             return fail(diagnostic, 0U, 0U,
                         "typed IR function has invalid local type");
         }
+    }
+    if (!miga80_validate_constant_pool(&ir->pool)) {
+        return fail(diagnostic, 0U, 0U,
+                    "typed IR immutable pool is invalid");
     }
     valid_loop_bits =
         ir->block_count == MIGA80_MAX_BASIC_BLOCKS
@@ -993,6 +1039,32 @@ int miga80_evaluate_ir(const struct miga80_ir_function *ir,
             return fail(diagnostic, 0U, 0U,
                         "integer argument is not canonical");
         }
+        if (ir->parameter_types[index] == MIGA80_TYPE_STRING &&
+            (arguments[index] == 0U ||
+             arguments[index] > ir->pool.entry_count ||
+             ir->pool.entries[arguments[index] - 1U].type !=
+                 MIGA80_TYPE_STRING)) {
+            return fail(diagnostic, 0U, 0U,
+                        "string argument is not in the immutable pool");
+        }
+        if (ir->parameter_types[index] == MIGA80_TYPE_SYMBOL) {
+            unsigned int entry;
+            int found = 0;
+
+            for (entry = 0U; entry < ir->pool.entry_count; ++entry) {
+                if (ir->pool.entries[entry].type == MIGA80_TYPE_SYMBOL &&
+                    arguments[index] != 0U &&
+                    miga80_pool_symbol_id(&ir->pool, entry) ==
+                    arguments[index]) {
+                    found = 1;
+                    break;
+                }
+            }
+            if (!found) {
+                return fail(diagnostic, 0U, 0U,
+                            "symbol argument is not interned");
+            }
+        }
     }
     current_block = ir->entry_block;
     for (;;) {
@@ -1015,6 +1087,13 @@ int miga80_evaluate_ir(const struct miga80_ir_function *ir,
             case MIGA80_IR_PUSH_I32:
             case MIGA80_IR_PUSH_BOOL:
                 stack[stack_size++] = instruction->operand;
+                break;
+            case MIGA80_IR_PUSH_STRING:
+                stack[stack_size++] = instruction->operand + 1U;
+                break;
+            case MIGA80_IR_PUSH_SYMBOL:
+                stack[stack_size++] = miga80_pool_symbol_id(
+                    &ir->pool, instruction->operand);
                 break;
             case MIGA80_IR_PUSH_PARAMETER_I32:
             case MIGA80_IR_PUSH_PARAMETER_BOOL:

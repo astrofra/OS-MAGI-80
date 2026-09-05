@@ -139,7 +139,7 @@ static int test_valid_function(void)
         fread(assembly_prefix, 1U, sizeof(assembly_prefix) - 1U, assembly);
     assembly_prefix[assembly_prefix_size] = '\0';
     if (ferror(assembly) ||
-        strstr(assembly_prefix, "native ABI 0.3") == NULL ||
+        strstr(assembly_prefix, "native ABI 0.4") == NULL ||
         strstr(assembly_prefix, "move.l  %d0,-4(%a6)") == NULL) {
         emitted = 0;
     }
@@ -489,6 +489,256 @@ static int test_narrow_integer_types(void)
     }
     closed = fclose(assembly);
     return emitted && closed == 0;
+}
+
+static int test_immutable_values(void)
+{
+    static const char source[] =
+        "function immutable(flag: bool): bool\n"
+        "  local text: string = \"same\\n\"\n"
+        "  local key: symbol = symbol(\"hero\")\n"
+        "  if flag then\n"
+        "    text = 'same\\x0a'\n"
+        "    key = symbol('hero')\n"
+        "  else\n"
+        "    text = \"other\"\n"
+        "    key = symbol(\"enemy\")\n"
+        "  end\n"
+        "  return (text == \"same\\n\") == (key == symbol(\"hero\"))\n"
+        "end\n";
+    static const char address_result_source[] =
+        "function pass(s: string): string return s end";
+    static const char address_argument_source[] =
+        "function matches(s: string): bool return s == \"same\" end";
+    static const char symbol_argument_source[] =
+        "function symbol_matches(s: symbol): bool "
+        "return s == symbol(\"hero\") end";
+    static const char mixed_signature_source[] =
+        "function mixed(a: string, b: i32, c: string, d: symbol, "
+        "e: bool): string return a end";
+    static const char mixed_o1_source[] =
+        "function mixed_o1(a: string, b: i32, c: string, d: symbol, "
+        "e: bool): bool "
+        "return (((a == c) == (b == 1)) == (d == symbol(\"key\"))) == e "
+        "end";
+    struct miga80_ir_function ir;
+    struct miga80_value_function value_ir;
+    struct miga80_diagnostic diagnostic;
+    char assembly_text[32768];
+    const unsigned char expected_same[] = {'s', 'a', 'm', 'e', '\n'};
+    uint32_t result;
+    size_t assembly_size;
+    FILE *assembly;
+    int emitted;
+    int closed;
+
+    if (!compile_source(source, &ir, &diagnostic) ||
+        ir.pool.entry_count != 4U || ir.pool.bytes_used != 19U ||
+        ir.pool.entries[0].type != MIGA80_TYPE_STRING ||
+        ir.pool.entries[0].length != sizeof(expected_same) ||
+        memcmp(miga80_pool_entry_bytes(&ir.pool, 0U), expected_same,
+               sizeof(expected_same)) != 0 ||
+        ir.pool.entries[1].type != MIGA80_TYPE_SYMBOL ||
+        miga80_pool_symbol_id(&ir.pool, 1U) != 1U ||
+        ir.pool.entries[2].type != MIGA80_TYPE_STRING ||
+        ir.pool.entries[3].type != MIGA80_TYPE_SYMBOL ||
+        miga80_pool_symbol_id(&ir.pool, 3U) != 2U ||
+        !miga80_evaluate_ir(&ir, (const uint32_t[]){0U}, 1U, &result,
+                            &diagnostic) ||
+        result != 1U ||
+        !miga80_evaluate_ir(&ir, (const uint32_t[]){1U}, 1U, &result,
+                            &diagnostic) ||
+        result != 1U ||
+        !miga80_build_value_ir(&ir, &value_ir, &diagnostic)) {
+        fprintf(stderr, "immutable value mismatch: %s\n",
+                diagnostic.message);
+        return 0;
+    }
+
+    assembly = tmpfile();
+    if (assembly == NULL) {
+        return 0;
+    }
+    emitted = miga80_emit_gnu_m68k(assembly, &ir, &diagnostic);
+    rewind(assembly);
+    assembly_size =
+        fread(assembly_text, 1U, sizeof(assembly_text) - 1U, assembly);
+    assembly_text[assembly_size] = '\0';
+    if (ferror(assembly) ||
+        strstr(assembly_text,
+               "lea     .L_immutable_string_0(%pc),%a0") == NULL ||
+        strstr(assembly_text, ".L_immutable_string_0:") == NULL ||
+        strstr(assembly_text, ".L_immutable_string_2:") == NULL ||
+        strstr(assembly_text, ".L_immutable_string_1:") != NULL ||
+        strstr(assembly_text, "        .long   5") == NULL ||
+        strstr(assembly_text, "0x73,0x61,0x6d,0x65,0x0a") == NULL ||
+        strstr(assembly_text, "#0x00000002") == NULL) {
+        emitted = 0;
+    }
+    closed = fclose(assembly);
+    if (!emitted || closed != 0) {
+        fprintf(stderr, "immutable O0 emission mismatch: %s\n",
+                diagnostic.message);
+        return 0;
+    }
+
+    assembly = tmpfile();
+    if (assembly == NULL) {
+        return 0;
+    }
+    emitted = miga80_emit_gnu_m68k_o1(assembly, &value_ir, &diagnostic);
+    rewind(assembly);
+    assembly_size =
+        fread(assembly_text, 1U, sizeof(assembly_text) - 1U, assembly);
+    assembly_text[assembly_size] = '\0';
+    if (ferror(assembly) ||
+        strstr(assembly_text,
+               "lea     .L_immutable_string_0(%pc),%a0") == NULL ||
+        strstr(assembly_text, ".L_immutable_string_2:") == NULL ||
+        strstr(assembly_text, ".L_immutable_string_1:") != NULL ||
+        strstr(assembly_text, "cmp.l   %a0") == NULL) {
+        emitted = 0;
+    }
+    closed = fclose(assembly);
+    if (!emitted || closed != 0 ||
+        !compile_source(address_argument_source, &ir, &diagnostic) ||
+        !miga80_evaluate_ir(&ir, (const uint32_t[]){1U}, 1U, &result,
+                            &diagnostic) ||
+        result != 1U ||
+        miga80_evaluate_ir(&ir, (const uint32_t[]){0U}, 1U, &result,
+                           &diagnostic) ||
+        strstr(diagnostic.message, "not in the immutable pool") == NULL ||
+        !compile_source(symbol_argument_source, &ir, &diagnostic) ||
+        !miga80_evaluate_ir(&ir, (const uint32_t[]){1U}, 1U, &result,
+                            &diagnostic) ||
+        result != 1U ||
+        miga80_evaluate_ir(&ir, (const uint32_t[]){0U}, 1U, &result,
+                           &diagnostic) ||
+        strstr(diagnostic.message, "not interned") == NULL ||
+        !compile_source(address_result_source, &ir, &diagnostic) ||
+        !miga80_build_value_ir(&ir, &value_ir, &diagnostic)) {
+        fprintf(stderr, "immutable O1 emission mismatch: %s\n",
+                diagnostic.message);
+        return 0;
+    }
+
+    assembly = tmpfile();
+    if (assembly == NULL) {
+        return 0;
+    }
+    emitted = miga80_emit_gnu_m68k_o1(assembly, &value_ir, &diagnostic);
+    rewind(assembly);
+    assembly_size =
+        fread(assembly_text, 1U, sizeof(assembly_text) - 1U, assembly);
+    assembly_text[assembly_size] = '\0';
+    if (ferror(assembly) || strstr(assembly_text, "move.l  %a0,%d0") == NULL ||
+        strstr(assembly_text, "movea.l %d0,%a0") == NULL) {
+        emitted = 0;
+    }
+    closed = fclose(assembly);
+    if (!emitted || closed != 0 ||
+        !compile_source(mixed_signature_source, &ir, &diagnostic)) {
+        return 0;
+    }
+
+    assembly = tmpfile();
+    if (assembly == NULL) {
+        return 0;
+    }
+    emitted = miga80_emit_gnu_m68k(assembly, &ir, &diagnostic);
+    rewind(assembly);
+    assembly_size =
+        fread(assembly_text, 1U, sizeof(assembly_text) - 1U, assembly);
+    assembly_text[assembly_size] = '\0';
+    if (ferror(assembly) || strstr(assembly_text, "move.l  %a0,-4(%a6)") == NULL ||
+        strstr(assembly_text, "move.l  %d0,-8(%a6)") == NULL ||
+        strstr(assembly_text, "move.l  %a1,-12(%a6)") == NULL ||
+        strstr(assembly_text, "move.l  %d1,-16(%a6)") == NULL ||
+        strstr(assembly_text, "move.l  %d2,-20(%a6)") == NULL ||
+        strstr(assembly_text, "movea.l (%a7)+,%a0") == NULL) {
+        emitted = 0;
+    }
+    closed = fclose(assembly);
+    if (!emitted || closed != 0 ||
+        !compile_source(mixed_o1_source, &ir, &diagnostic) ||
+        !miga80_build_value_ir(&ir, &value_ir, &diagnostic)) {
+        return 0;
+    }
+    assembly = tmpfile();
+    if (assembly == NULL) {
+        return 0;
+    }
+    emitted = miga80_emit_gnu_m68k_o1(assembly, &value_ir, &diagnostic);
+    rewind(assembly);
+    assembly_size =
+        fread(assembly_text, 1U, sizeof(assembly_text) - 1U, assembly);
+    assembly_text[assembly_size] = '\0';
+    if (ferror(assembly) ||
+        strstr(assembly_text, "movem.l %d3/%d4,-(%a7)") == NULL ||
+        strstr(assembly_text, "move.l  %a0,%d3") == NULL ||
+        strstr(assembly_text, "move.l  %a1,%d4") == NULL) {
+        emitted = 0;
+    }
+    closed = fclose(assembly);
+    return emitted && closed == 0;
+}
+
+static int test_immutable_pool_dedup_capacity(void)
+{
+    static const char prefix[] =
+        "function long_duplicate(): bool local a: string = \"";
+    static const char middle[] = "\" local b: string = \"";
+    static const char suffix[] = "\" return a == b end";
+    char source[2300];
+    char *cursor = source;
+    struct miga80_ir_function ir;
+    struct miga80_diagnostic diagnostic;
+    uint32_t result;
+
+    (void)memcpy(cursor, prefix, sizeof(prefix) - 1U);
+    cursor += sizeof(prefix) - 1U;
+    (void)memset(cursor, 'x', MIGA80_MAX_POOL_BYTES);
+    cursor += MIGA80_MAX_POOL_BYTES;
+    (void)memcpy(cursor, middle, sizeof(middle) - 1U);
+    cursor += sizeof(middle) - 1U;
+    (void)memset(cursor, 'x', MIGA80_MAX_POOL_BYTES);
+    cursor += MIGA80_MAX_POOL_BYTES;
+    (void)memcpy(cursor, suffix, sizeof(suffix));
+
+    return compile_source(source, &ir, &diagnostic) &&
+           ir.pool.entry_count == 1U &&
+           ir.pool.bytes_used == MIGA80_MAX_POOL_BYTES &&
+           ir.pool.entries[0].length == MIGA80_MAX_POOL_BYTES &&
+           miga80_evaluate_ir(&ir, NULL, 0U, &result, &diagnostic) &&
+           result == 1U;
+}
+
+static int test_string_escapes(void)
+{
+    static const char source[] =
+        "function bytes(): string return \""
+        "\\0"
+        "\\t"
+        "\\r"
+        "\\\\"
+        "\\'"
+        "\\\""
+        "\" end";
+    static const unsigned char expected[] = {
+        0U, '\t', '\r', '\\', '\'', '"'
+    };
+    struct miga80_ir_function ir;
+    struct miga80_diagnostic diagnostic;
+    uint32_t result;
+
+    return compile_source(source, &ir, &diagnostic) &&
+           ir.pool.entry_count == 1U &&
+           ir.pool.entries[0].type == MIGA80_TYPE_STRING &&
+           ir.pool.entries[0].length == sizeof(expected) &&
+           memcmp(miga80_pool_entry_bytes(&ir.pool, 0U), expected,
+                  sizeof(expected)) == 0 &&
+           miga80_evaluate_ir(&ir, NULL, 0U, &result, &diagnostic) &&
+           result == 1U;
 }
 
 static int test_locals_and_entry_block(void)
@@ -1047,6 +1297,9 @@ int main(int argc, char **argv)
     if (!test_valid_function() || !test_constant_folding() ||
         !test_signed_division_and_fault_liveness() ||
         !test_narrow_integer_types() ||
+        !test_immutable_values() ||
+        !test_immutable_pool_dedup_capacity() ||
+        !test_string_escapes() ||
         !test_locals_and_entry_block() ||
         !test_bool_comparisons_and_cfg() ||
         !test_while_cfg_and_loop_phis() ||
@@ -1066,7 +1319,7 @@ int main(int argc, char **argv)
                       20U, "duplicate parameter") ||
         !expect_error("function f(a: i32, b: i32, c: i32, d: i32): i32 "
                       "return a end",
-                      1U, 36U, "at most 3 parameters") ||
+                      1U, 36U, "at most 3 scalar parameters") ||
         !expect_error("function f(a: i32): i32 local a: i32 = 1 return a end",
                       1U, 31U, "duplicate local") ||
         !expect_error("function f(): i32 local x: i32 = 1 local x: i32 = 2 "
@@ -1097,14 +1350,19 @@ int main(int argc, char **argv)
                       40U, "matching integer operands") ||
         !expect_error("function f(a: u8): u8 return -a end", 1U, 30U,
                       "unary '-' requires a signed integer") ||
-        !expect_error("function f(s: string): bool return true end", 1U,
-                      12U, "immutable-pool and address ABI tranche") ||
-        !expect_error("function f(): symbol return 0 end", 1U, 10U,
-                      "immutable-pool and address ABI tranche") ||
+        !expect_error("function f(a: string, b: string, c: string): bool "
+                      "return true end",
+                      1U, 34U, "at most 2 address parameters") ||
+        !expect_error("function f(): bool return \"x\" == symbol(\"x\") end",
+                      1U, 31U, "different types") ||
+        !expect_error("function f(): bool return \"x\" < \"y\" end", 1U,
+                      31U, "ordered comparison requires integer") ||
+        !expect_error("function f(): string return \"\\q\" end", 1U, 29U,
+                      "unsupported string escape") ||
         !expect_error("function f(a: byte): i32 return 0 end", 1U, 15U,
-                      "expected scalar type, found identifier") ||
+                      "expected value type, found identifier") ||
         !expect_error("function f(a: word): i32 return 0 end", 1U, 15U,
-                      "expected scalar type, found identifier") ||
+                      "expected value type, found identifier") ||
         !expect_error("function f(flag: bool): i32 if flag /= true then "
                       "else end return 0 end",
                       1U, 37U, "expected 'then', found '/='") ||
@@ -1128,7 +1386,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    printf("PASS  compiler CFG, narrow integers, integer division faults, "
-           "loop control, phis, O0/O1, and spills\n");
+    printf("PASS  compiler CFG, narrow integers, immutable values, integer "
+           "division faults, loop control, phis, O0/O1, and spills\n");
     return 0;
 }

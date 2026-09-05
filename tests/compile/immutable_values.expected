@@ -1,0 +1,6 @@
+PASS  generated-o0/false D0=00000001 instructions=46 code_bytes=196 stack_bytes=28
+PASS  generated-o0/true D0=00000001 instructions=47 code_bytes=196 stack_bytes=28
+PASS  generated-o1/false D0=00000001 instructions=23 code_bytes=136 stack_bytes=16
+PASS  generated-o1/true D0=00000001 instructions=24 code_bytes=136 stack_bytes=16
+PASS  compiler immutable strings/symbols match typed-IR oracle (4 cases)
+PASS  compiler O1 immutable-value code size reduced from 196 to 136 bytes

@@ -21,5 +21,12 @@ int miga80_emit_gnu_m68k_fault_tail(FILE *output,
 int miga80_emit_gnu_m68k_normalize_integer(FILE *output,
                                            enum miga80_type type,
                                            const char *reg);
+int miga80_emit_gnu_m68k_string_address(FILE *output,
+                                        const char *function_name,
+                                        unsigned int pool_index,
+                                        const char *address_register);
+int miga80_emit_gnu_m68k_constant_pool(
+    FILE *output, const char *function_name,
+    const struct miga80_constant_pool *pool);
 
 #endif

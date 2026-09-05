@@ -8,10 +8,12 @@
 #include "compiler/abi/abi.h"
 
 #define MIGA80_MAX_NAME 31U
-#define MIGA80_MAX_PARAMETERS MIGA80_ABI_MAX_SCALAR_ARGUMENTS
+#define MIGA80_MAX_PARAMETERS MIGA80_ABI_MAX_ARGUMENTS
 #define MIGA80_MAX_LOCALS 16U
 #define MIGA80_MAX_STATEMENTS 32U
 #define MIGA80_MAX_AST_NODES 128U
+#define MIGA80_MAX_POOL_ENTRIES 32U
+#define MIGA80_MAX_POOL_BYTES 1024U
 #define MIGA80_INVALID_NODE (-1)
 #define MIGA80_INVALID_STATEMENT UINT_MAX
 
@@ -27,6 +29,19 @@ enum miga80_type {
     MIGA80_TYPE_NONE
 };
 
+struct miga80_pool_entry {
+    enum miga80_type type;
+    uint16_t offset;
+    uint16_t length;
+};
+
+struct miga80_constant_pool {
+    struct miga80_pool_entry entries[MIGA80_MAX_POOL_ENTRIES];
+    unsigned char bytes[MIGA80_MAX_POOL_BYTES];
+    uint16_t entry_count;
+    uint16_t bytes_used;
+};
+
 struct miga80_diagnostic {
     unsigned int line;
     unsigned int column;
@@ -36,6 +51,8 @@ struct miga80_diagnostic {
 enum miga80_ast_kind {
     MIGA80_AST_LITERAL_I32,
     MIGA80_AST_LITERAL_BOOL,
+    MIGA80_AST_LITERAL_STRING,
+    MIGA80_AST_LITERAL_SYMBOL,
     MIGA80_AST_PARAMETER_I32,
     MIGA80_AST_PARAMETER_BOOL,
     MIGA80_AST_LOCAL_I32,
@@ -106,6 +123,7 @@ struct miga80_ast_function {
     unsigned int first_statement;
     enum miga80_type result_type;
     int result;
+    struct miga80_constant_pool pool;
 };
 
 int miga80_parse_function(const char *source, size_t source_size,
@@ -116,8 +134,16 @@ int miga80_divide_i32(uint32_t dividend, uint32_t divisor,
 const char *miga80_type_name(enum miga80_type type);
 int miga80_type_is_integer(enum miga80_type type);
 int miga80_type_is_signed_integer(enum miga80_type type);
+int miga80_type_is_scalar(enum miga80_type type);
+int miga80_type_is_address(enum miga80_type type);
+int miga80_type_is_value(enum miga80_type type);
 uint32_t miga80_normalize_integer(enum miga80_type type, uint32_t value);
 int miga80_integer_value_is_canonical(enum miga80_type type,
                                       uint32_t value);
+int miga80_validate_constant_pool(const struct miga80_constant_pool *pool);
+const unsigned char *miga80_pool_entry_bytes(
+    const struct miga80_constant_pool *pool, unsigned int entry_index);
+uint32_t miga80_pool_symbol_id(const struct miga80_constant_pool *pool,
+                               unsigned int entry_index);
 
 #endif

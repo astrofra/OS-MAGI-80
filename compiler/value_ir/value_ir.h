@@ -80,6 +80,7 @@ struct miga80_value_function {
     unsigned int block_order[MIGA80_MAX_BASIC_BLOCKS];
     unsigned int block_order_count;
     unsigned int result;
+    struct miga80_constant_pool pool;
 };
 
 int miga80_build_value_ir(const struct miga80_ir_function *source,

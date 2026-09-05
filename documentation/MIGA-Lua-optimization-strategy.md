@@ -1,8 +1,9 @@
 # MIGA Lua Optimization Strategy
 
-**Status:** exact-width integers, signed/unsigned division with controlled
-faults, normalized `break`/`continue` loops, cyclic CFG liveness, branch/loop
-`phi`, parallel edge copies, `-O1`, spilling, and frame layout implemented
+**Status:** exact-width integers, immutable strings/symbols, signed/unsigned
+division with controlled faults, normalized `break`/`continue` loops, cyclic
+CFG liveness, branch/loop `phi`, parallel edge copies, `-O1`, spilling, and
+frame layout implemented
 
 MIGA Lua is a statically typed, ahead-of-time compiled dialect designed for
 native 68EC020/68020 code. Familiar Lua syntax is a usability goal. Dynamic Lua
@@ -37,8 +38,11 @@ moving. With the current 32-bit enum/index ABI, an AST node occupies 32 bytes,
 a typed stack-IR instruction 20 bytes, a stack-IR block 20 bytes, a value-IR
 instruction 48 bytes, and a value-IR block 40 bytes. A separate 128-byte
 membership bitset table identifies structured loop regions without enlarging
-each block. At all configured maxima, an `-O1` compilation with a 64 KiB source
-uses approximately 100 KiB for the source buffer, main arenas, CFG bitsets, and
+each block. The immutable pool is a 1,284-byte fixed record: 32 eight-byte
+entries plus 1,024 decoded payload bytes and two 16-bit counters. It is copied
+through the AST, stack IR, and value IR so each layer is independently valid.
+At all configured maxima, an `-O1` compilation with a 64 KiB source uses
+approximately 104 KiB for the source buffer, main arenas, CFG bitsets, and
 optimizer workspace, excluding libc buffers and the compiler's own stack.
 
 This is a measured design budget, not the final representation. Once the
@@ -109,7 +113,7 @@ The allocator first tries all eight data registers, so ordinary leaf functions
 do not lose `D7` merely to reserve a scratch register. If that plan needs a
 spill, a second bounded pass allocates values in `D0-D6`, reserves `D7` as the
 spill scratch, and reuses four-byte spill slots after their last use. The
-backend emits an ABI 0.3 `A6` frame with `LINK`/`UNLK`, addresses slots at
+backend emits an ABI 0.4 `A6` frame with `LINK`/`UNLK`, addresses slots at
 negative `A6` offsets, consumes spilled operands directly as 68020 memory
 operands where possible, and preserves `D7` with the other used saved
 registers. Frame size is checked before any assembly is emitted.
@@ -140,8 +144,15 @@ Statement-only `/=` is implemented as a typed read/divide/write and can never
 participate directly in a CFG condition. Statement-only `++`, `--`, `+=`,
 `-=`, and `*=` remain recorded language work and will follow the same rule.
 
+Immutable string literals are canonical pool pointers and symbols are interned
+IDs, so equality uses one 32-bit comparison and needs neither a helper call nor
+a byte loop. Pool addresses are materialized with PC-relative `LEA`. Live
+string parameters arrive in `A0/A1` under ABI 0.4 and are copied into the
+current uniform data-register allocator; using `A2-A4` for long-lived address
+values remains a future measured optimization.
+
 The first 68020-specific choices include keeping scalars in data registers,
-keeping future addresses in address registers, folding constant displacements
+eventually keeping long-lived addresses in address registers, folding constant displacements
 into effective addresses, preferring compact immediate forms, strength-reducing
 constant multiplication when profitable, arranging fall-through branches, and
 removing redundant extensions, moves, loads, and stores. Speed and code size
@@ -178,8 +189,9 @@ measurements on a stock physical A1200 under a declared DMA and memory profile.
 The first optimization milestone is met. Across seven ordinary source corpora
 with six edge inputs each, a signed-division corpus with twelve successful
 executions and four controlled faults, an exact-width corpus with twelve
-successful executions and two controlled faults, and a six-input spill fixture,
-both optimization levels agree with the typed IR under Musashi. The current
+successful executions and two controlled faults, an immutable-value corpus
+with four executions, and a six-input spill fixture, both optimization levels
+agree with the typed IR under Musashi. The current
 regression measurements are shown as code bytes / executed instructions /
 maximum callee stack bytes:
 
@@ -194,18 +206,24 @@ maximum callee stack bytes:
 | multiple `break`/`continue` sites and binary funnels | 356 / 69-684 / 32 | 288 / 39-352 / 32 |
 | signed `/` and `/=`, including controlled faults | 108 / 16-28 / 28 | 44 / 7-11 / 0 |
 | `i8`/`u8`/`i16`/`u16`, signed/unsigned division and wrapping | 472 / 43-110 / 44 | 220 / 15-34 / 20 |
+| immutable string/symbol pool, equality, and CFG joins | 196 / 46-47 / 28 | 136 / 23-24 / 16 |
 
 The register-pressure corpus forces simultaneous `D3/D4` allocation and
 verifies their ABI preservation. A separate deliberately pressure-heavy value
 IR fixture forces three reusable spill slots; its 96-byte image executes 33
 instructions with 36 callee stack bytes and agrees with the source-level oracle
-for six edge inputs. This brings the current Musashi compiler total to 120
+for six edge inputs. This brings the current Musashi compiler total to 124
 executions.
 
-The `-Os` 68020/libnix compiler currently has a 57,500-byte linked
-text/data/BSS footprint (57,100 text, 280 data, 120 BSS). Its host and Amiga
+The `-Os` 68020/libnix compiler currently has a 62,632-byte linked
+text/data/BSS footprint (62,232 text, 280 data, 120 BSS). Its host and Amiga
 builds emit byte-identical ordinary, local-heavy, conditional, loop,
-loop-control, division, exact-width, and synthetic spilling `-O1` assembly.
+loop-control, division, exact-width, immutable-value, and synthetic spilling
+`-O1` assembly.
+Relative to the exact-width tranche, immutable parsing, pool validation, and
+dual-class ABI support add 5,132 text bytes and no linked data/BSS bytes. This
+growth is recorded explicitly; pool capacity is arena storage allocated while
+compiling, not permanent linked BSS.
 Unconditional jumps to the physically next block are elided at both
 optimization levels. This
 lets the dedicated latch normalize the IR without adding an extra runtime
@@ -225,3 +243,9 @@ path from 28 to 7 instructions, and generated stack use from 28 bytes to zero.
 The fault paths execute 8 or 11 instructions at O1 and preserve the exact
 source line and column. These figures measure this corpus, not general division
 latency or physical A1200 cycles.
+
+On the immutable-value corpus, whose image sizes include both string
+descriptors and payload bytes, O1 reduces 196 bytes to 136, 46-47 executed
+instructions to 23-24, and stack high-water from 28 bytes to 16. Runtime
+equality remains a register-sized pointer or ID comparison; literal decoding,
+deduplication, and symbol interning occur only during compilation.

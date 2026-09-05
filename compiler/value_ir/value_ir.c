@@ -839,6 +839,17 @@ static int lower_block_values(const struct miga80_ir_function *source,
                                   instruction->operand, instruction->line,
                                   instruction->column, diagnostic);
             break;
+        case MIGA80_IR_PUSH_STRING:
+            value = make_constant(result, MIGA80_TYPE_STRING,
+                                  instruction->operand, instruction->line,
+                                  instruction->column, diagnostic);
+            break;
+        case MIGA80_IR_PUSH_SYMBOL:
+            value = make_constant(
+                result, MIGA80_TYPE_SYMBOL,
+                miga80_pool_symbol_id(&source->pool, instruction->operand),
+                instruction->line, instruction->column, diagnostic);
+            break;
         case MIGA80_IR_PUSH_PARAMETER_I32:
         case MIGA80_IR_PUSH_PARAMETER_BOOL:
             value = instruction->operand;
@@ -1079,6 +1090,7 @@ int miga80_build_value_ir(const struct miga80_ir_function *source,
     result->block_count = source->block_count;
     result->entry_block = source->entry_block;
     result->result = MIGA80_INVALID_VALUE;
+    (void)memcpy(&result->pool, &source->pool, sizeof(result->pool));
     if (!build_predecessors(source, result, diagnostic)) {
         return 0;
     }

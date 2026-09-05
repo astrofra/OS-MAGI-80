@@ -16,7 +16,7 @@ static void usage(const char *program)
 {
     fprintf(stderr,
             "Usage: %s source.lua [-O0|-O1] -S -o output.s\n"
-            "       %s source.lua --eval [scalar-argument ...]\n",
+            "       %s source.lua --eval [typed-argument ...]\n",
             program, program);
 }
 
@@ -75,6 +75,44 @@ static int parse_argument(const char *text, uint32_t *value)
     }
     *value = (uint32_t)parsed;
     return 1;
+}
+
+static int parse_typed_argument(const struct miga80_ir_function *function,
+                                unsigned int parameter_index,
+                                const char *text, uint32_t *value)
+{
+    const enum miga80_type type =
+        function->parameter_types[parameter_index];
+    unsigned int entry;
+
+    if (type == MIGA80_TYPE_BOOL) {
+        if (strcmp(text, "false") == 0) {
+            *value = MIGA80_ABI_BOOL_FALSE;
+            return 1;
+        }
+        if (strcmp(text, "true") == 0) {
+            *value = MIGA80_ABI_BOOL_TRUE;
+            return 1;
+        }
+    }
+    if (type != MIGA80_TYPE_STRING && type != MIGA80_TYPE_SYMBOL) {
+        return parse_argument(text, value);
+    }
+    for (entry = 0U; entry < function->pool.entry_count; ++entry) {
+        const struct miga80_pool_entry *candidate =
+            &function->pool.entries[entry];
+        const size_t length = strlen(text);
+
+        if (candidate->type == type && candidate->length == length &&
+            memcmp(miga80_pool_entry_bytes(&function->pool, entry), text,
+                   length) == 0) {
+            *value = type == MIGA80_TYPE_STRING
+                         ? entry + 1U
+                         : miga80_pool_symbol_id(&function->pool, entry);
+            return 1;
+        }
+    }
+    return 0;
 }
 
 static void print_diagnostic(const char *path,
@@ -200,9 +238,12 @@ int main(int argc, char **argv)
                     ir->parameter_count, argument_count);
         } else {
             for (index = 0; index < argument_count; ++index) {
-                if (!parse_argument(argv[index + 3U], &arguments[index])) {
-                    fprintf(stderr, "%s: invalid scalar argument '%s'\n",
-                            argv[1], argv[index + 3U]);
+                if (!parse_typed_argument(ir, index, argv[index + 3U],
+                                          &arguments[index])) {
+                    fprintf(stderr, "%s: invalid %s argument '%s'\n",
+                            argv[1],
+                            miga80_type_name(ir->parameter_types[index]),
+                            argv[index + 3U]);
                     break;
                 }
             }

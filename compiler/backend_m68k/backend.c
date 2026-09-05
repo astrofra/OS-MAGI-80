@@ -55,6 +55,81 @@ int miga80_emit_gnu_m68k_normalize_integer(FILE *output,
     return type == MIGA80_TYPE_I32;
 }
 
+int miga80_emit_gnu_m68k_string_address(FILE *output,
+                                        const char *function_name,
+                                        unsigned int pool_index,
+                                        const char *address_register)
+{
+    return output != NULL && function_name != NULL &&
+           address_register != NULL &&
+           output_line(output, "        lea     .L_%s_string_%u(%%pc),%s\n",
+                       function_name, pool_index, address_register);
+}
+
+int miga80_emit_gnu_m68k_constant_pool(
+    FILE *output, const char *function_name,
+    const struct miga80_constant_pool *pool)
+{
+    unsigned int index;
+
+    if (output == NULL || function_name == NULL ||
+        !miga80_validate_constant_pool(pool)) {
+        return 0;
+    }
+    for (index = 0U; index < pool->entry_count; ++index) {
+        const struct miga80_pool_entry *entry = &pool->entries[index];
+        const unsigned char *bytes;
+        unsigned int offset;
+
+        if (entry->type != MIGA80_TYPE_STRING) {
+            continue;
+        }
+        bytes = miga80_pool_entry_bytes(pool, index);
+        if (bytes == NULL ||
+            !output_line(output,
+                         "        .balign 4\n"
+                         ".L_%s_string_%u:\n"
+                         "        .long   %u\n",
+                         function_name, index,
+                         (unsigned int)entry->length)) {
+            return 0;
+        }
+        for (offset = 0U; offset < entry->length; ++offset) {
+            if (offset % 12U == 0U &&
+                !output_line(output, "        .byte   ")) {
+                return 0;
+            }
+            if (!output_line(output, "%s0x%02x",
+                             offset % 12U == 0U ? "" : ",",
+                             (unsigned int)bytes[offset])) {
+                return 0;
+            }
+            if ((offset + 1U) % 12U == 0U ||
+                offset + 1U == entry->length) {
+                if (!output_line(output, "\n")) {
+                    return 0;
+                }
+            }
+        }
+    }
+    return 1;
+}
+
+static unsigned int parameter_class_index(
+    const enum miga80_type *types, unsigned int parameter_index,
+    int address_class)
+{
+    unsigned int class_index = 0U;
+    unsigned int index;
+
+    for (index = 0U; index < parameter_index; ++index) {
+        if (miga80_type_is_address(types[index]) == address_class) {
+            ++class_index;
+        }
+    }
+    return class_index;
+}
+
 int miga80_emit_gnu_m68k_fault_site(FILE *output, const char *function_name,
                                     unsigned int site, unsigned int line,
                                     unsigned int column)
@@ -103,7 +178,7 @@ int miga80_emit_gnu_m68k(FILE *output,
     frame_size = (function->parameter_count + function->local_count) * 4U;
     if (!miga80_abi_frame_size_is_valid(frame_size)) {
         (void)snprintf(diagnostic->message, sizeof(diagnostic->message),
-                       "function frame violates native ABI 0.3");
+                       "function frame violates native ABI 0.4");
         return 0;
     }
 
@@ -122,14 +197,22 @@ int miga80_emit_gnu_m68k(FILE *output,
     for (index = 0; index < function->parameter_count; ++index) {
         enum miga80_abi_register argument_register;
         const char *argument_name;
+        const int address_class =
+            miga80_type_is_address(function->parameter_types[index]);
+        const unsigned int class_index = parameter_class_index(
+            function->parameter_types, index, address_class);
 
-        if (!miga80_abi_scalar_argument_register(index, &argument_register) ||
+        if (!(address_class
+                  ? miga80_abi_address_argument_register(class_index,
+                                                         &argument_register)
+                  : miga80_abi_scalar_argument_register(class_index,
+                                                        &argument_register)) ||
             (argument_name =
                  miga80_abi_gnu_register_name(argument_register)) == NULL) {
             diagnostic->line = 0U;
             diagnostic->column = 0U;
             (void)snprintf(diagnostic->message, sizeof(diagnostic->message),
-                           "unable to map argument through native ABI 0.3");
+                           "unable to map argument through native ABI 0.4");
             return 0;
         }
         if (!output_line(output, "        move.l  %s,-%u(%%a6)\n",
@@ -159,6 +242,20 @@ int miga80_emit_gnu_m68k(FILE *output,
             success = output_line(output,
                                   "        move.l  #0x%08x,-(%%a7)\n",
                                   (unsigned int)instruction->operand);
+            break;
+        case MIGA80_IR_PUSH_STRING:
+            success = miga80_emit_gnu_m68k_string_address(
+                          output, function->name,
+                          (unsigned int)instruction->operand, "%a0") &&
+                      output_line(output,
+                                  "        move.l  %%a0,-(%%a7)\n");
+            break;
+        case MIGA80_IR_PUSH_SYMBOL:
+            success = output_line(
+                output, "        move.l  #0x%08x,-(%%a7)\n",
+                miga80_pool_symbol_id(
+                    &function->pool,
+                    (unsigned int)instruction->operand));
             break;
         case MIGA80_IR_PUSH_PARAMETER_I32:
         case MIGA80_IR_PUSH_PARAMETER_BOOL:
@@ -336,10 +433,17 @@ int miga80_emit_gnu_m68k(FILE *output,
             }
             break;
         case MIGA80_IR_RETURN:
-            success = output_line(output,
-                                  "        move.l  (%%a7)+,%%d0\n"
-                                  "        unlk    %%a6\n"
-                                  "        rts\n");
+            if (instruction->type == MIGA80_TYPE_STRING) {
+                success = output_line(output,
+                                      "        movea.l (%%a7)+,%%a0\n"
+                                      "        unlk    %%a6\n"
+                                      "        rts\n");
+            } else {
+                success = output_line(output,
+                                      "        move.l  (%%a7)+,%%d0\n"
+                                      "        unlk    %%a6\n"
+                                      "        rts\n");
+            }
             break;
         default:
             diagnostic->line = instruction->line;
@@ -375,6 +479,11 @@ int miga80_emit_gnu_m68k(FILE *output,
             !miga80_emit_gnu_m68k_fault_tail(output, function->name)) {
             return output_failure(diagnostic, NULL);
         }
+    }
+
+    if (!miga80_emit_gnu_m68k_constant_pool(output, function->name,
+                                             &function->pool)) {
+        return output_failure(diagnostic, NULL);
     }
 
     if (fflush(output) != 0 || ferror(output)) {
