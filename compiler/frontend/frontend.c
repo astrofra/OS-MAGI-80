@@ -14,6 +14,8 @@ enum token_kind {
     TOKEN_IF,
     TOKEN_THEN,
     TOKEN_ELSE,
+    TOKEN_WHILE,
+    TOKEN_DO,
     TOKEN_RETURN,
     TOKEN_END,
     TOKEN_I32,
@@ -171,6 +173,10 @@ static struct token next_token(struct lexer *lexer)
             token.kind = TOKEN_THEN;
         } else if (token_is_word(&token, "else")) {
             token.kind = TOKEN_ELSE;
+        } else if (token_is_word(&token, "while")) {
+            token.kind = TOKEN_WHILE;
+        } else if (token_is_word(&token, "do")) {
+            token.kind = TOKEN_DO;
         } else if (token_is_word(&token, "return")) {
             token.kind = TOKEN_RETURN;
         } else if (token_is_word(&token, "end")) {
@@ -307,6 +313,10 @@ static const char *token_name(enum token_kind kind)
         return "'then'";
     case TOKEN_ELSE:
         return "'else'";
+    case TOKEN_WHILE:
+        return "'while'";
+    case TOKEN_DO:
+        return "'do'";
     case TOKEN_RETURN:
         return "'return'";
     case TOKEN_END:
@@ -867,18 +877,23 @@ static unsigned int parse_assignment(struct parser *parser)
 }
 
 static unsigned int parse_if_statement(struct parser *parser);
+static unsigned int parse_while_statement(struct parser *parser);
 
-static int parse_conditional_statement_list(struct parser *parser,
-                                            struct statement_list *list)
+static int parse_control_statement_list(struct parser *parser,
+                                        struct statement_list *list,
+                                        const char *owner)
 {
     initialize_statement_list(list);
     while (!parser->failed &&
            (parser->current.kind == TOKEN_IDENTIFIER ||
-            parser->current.kind == TOKEN_IF)) {
+            parser->current.kind == TOKEN_IF ||
+            parser->current.kind == TOKEN_WHILE)) {
         unsigned int statement;
 
         if (parser->current.kind == TOKEN_IF) {
             statement = parse_if_statement(parser);
+        } else if (parser->current.kind == TOKEN_WHILE) {
+            statement = parse_while_statement(parser);
         } else {
             statement = parse_assignment(parser);
         }
@@ -889,14 +904,15 @@ static int parse_conditional_statement_list(struct parser *parser,
     if (parser->current.kind == TOKEN_LOCAL) {
         set_diagnostic(parser->diagnostic, parser->current.line,
                        parser->current.column,
-                       "local declarations inside if are not implemented");
+                       "local declarations inside %s are not implemented",
+                       owner);
         parser->failed = 1;
         return 0;
     }
     if (parser->current.kind == TOKEN_RETURN) {
         set_diagnostic(parser->diagnostic, parser->current.line,
                        parser->current.column,
-                       "return inside if is not implemented");
+                       "return inside %s is not implemented", owner);
         parser->failed = 1;
         return 0;
     }
@@ -922,9 +938,9 @@ static unsigned int parse_if_statement(struct parser *parser)
         allocate_statement(parser, MIGA80_AST_IF, 0U, condition,
                            if_token.line, if_token.column);
     if (statement_index == MIGA80_INVALID_STATEMENT ||
-        !parse_conditional_statement_list(parser, &then_list) ||
+        !parse_control_statement_list(parser, &then_list, "if") ||
         !expect(parser, TOKEN_ELSE) ||
-        !parse_conditional_statement_list(parser, &else_list) ||
+        !parse_control_statement_list(parser, &else_list, "if") ||
         !expect(parser, TOKEN_END)) {
         return MIGA80_INVALID_STATEMENT;
     }
@@ -932,6 +948,34 @@ static unsigned int parse_if_statement(struct parser *parser)
         then_list.first;
     parser->function->statements[statement_index].else_statement =
         else_list.first;
+    return statement_index;
+}
+
+static unsigned int parse_while_statement(struct parser *parser)
+{
+    const struct token while_token = parser->current;
+    struct statement_list body;
+    unsigned int statement_index;
+    int condition;
+
+    parser_advance(parser);
+    condition = parse_expression(parser);
+    if (!require_type(parser, condition, MIGA80_TYPE_BOOL,
+                      while_token.line, while_token.column,
+                      "while condition") ||
+        !expect(parser, TOKEN_DO)) {
+        return MIGA80_INVALID_STATEMENT;
+    }
+    statement_index =
+        allocate_statement(parser, MIGA80_AST_WHILE, 0U, condition,
+                           while_token.line, while_token.column);
+    if (statement_index == MIGA80_INVALID_STATEMENT ||
+        !parse_control_statement_list(parser, &body, "while") ||
+        !expect(parser, TOKEN_END)) {
+        return MIGA80_INVALID_STATEMENT;
+    }
+    parser->function->statements[statement_index].then_statement =
+        body.first;
     return statement_index;
 }
 
@@ -988,13 +1032,16 @@ int miga80_parse_function(const char *source, size_t source_size,
 
     while (!parser.failed && (parser.current.kind == TOKEN_LOCAL ||
                               parser.current.kind == TOKEN_IDENTIFIER ||
-                              parser.current.kind == TOKEN_IF)) {
+                              parser.current.kind == TOKEN_IF ||
+                              parser.current.kind == TOKEN_WHILE)) {
         unsigned int statement;
 
         if (parser.current.kind == TOKEN_LOCAL) {
             statement = parse_local_declaration(&parser);
         } else if (parser.current.kind == TOKEN_IF) {
             statement = parse_if_statement(&parser);
+        } else if (parser.current.kind == TOKEN_WHILE) {
+            statement = parse_while_statement(&parser);
         } else {
             statement = parse_assignment(&parser);
         }

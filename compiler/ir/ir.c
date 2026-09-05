@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#define MIGA80_MAX_EVALUATED_BLOCKS (MIGA80_MAX_BASIC_BLOCKS * 1024U)
+
 static int fail(struct miga80_diagnostic *diagnostic, unsigned int line,
                 unsigned int column, const char *message)
 {
@@ -272,6 +274,50 @@ static int lower_statement_list(struct lower_context *context,
             }
             begin_block(context, join_block);
             *current_block = join_block;
+        } else if (statement->kind == MIGA80_AST_WHILE) {
+            unsigned int header_block;
+            unsigned int body_block;
+            unsigned int exit_block;
+            unsigned int body_end;
+
+            header_block = create_block(context);
+            body_block = create_block(context);
+            exit_block = create_block(context);
+            if (header_block == MIGA80_INVALID_BLOCK ||
+                body_block == MIGA80_INVALID_BLOCK ||
+                exit_block == MIGA80_INVALID_BLOCK ||
+                !emit_instruction(context->ir, MIGA80_IR_JUMP,
+                                  header_block, statement->line,
+                                  statement->column, context->diagnostic) ||
+                !finish_block(context, *current_block, header_block,
+                              MIGA80_INVALID_BLOCK, 1U)) {
+                return 0;
+            }
+
+            begin_block(context, header_block);
+            if (!lower_node(context->ast, statement->expression,
+                            context->ir, context->diagnostic) ||
+                !emit_instruction(context->ir, MIGA80_IR_BRANCH_FALSE,
+                                  exit_block, statement->line,
+                                  statement->column, context->diagnostic) ||
+                !finish_block(context, header_block, body_block, exit_block,
+                              2U)) {
+                return 0;
+            }
+
+            begin_block(context, body_block);
+            body_end = body_block;
+            if (!lower_statement_list(context, statement->then_statement,
+                                      &body_end) ||
+                !emit_instruction(context->ir, MIGA80_IR_JUMP,
+                                  header_block, statement->line,
+                                  statement->column, context->diagnostic) ||
+                !finish_block(context, body_end, header_block,
+                              MIGA80_INVALID_BLOCK, 1U)) {
+                return 0;
+            }
+            begin_block(context, exit_block);
+            *current_block = exit_block;
         } else if (statement->kind == MIGA80_AST_RETURN) {
             if (statement->next_statement != MIGA80_INVALID_STATEMENT ||
                 !lower_node(context->ast, statement->expression, context->ir,
@@ -605,7 +651,7 @@ int miga80_evaluate_ir(const struct miga80_ir_function *ir,
         int transferred = 0;
         unsigned int offset;
 
-        if (++executed_blocks > MIGA80_MAX_BASIC_BLOCKS * 4U) {
+        if (++executed_blocks > MIGA80_MAX_EVALUATED_BLOCKS) {
             return fail(diagnostic, 0U, 0U,
                         "typed IR control-flow budget exceeded");
         }

@@ -2,7 +2,7 @@
 
 ## Fast compiler development without launching UAE
 
-**Status:** runner, typed compiler, CFG-aware value-IR `-O1`, and spills implemented
+**Status:** runner, typed compiler, cyclic CFG/loop `phi` value-IR `-O1`, and spills implemented
 
 **Primary target:** stock Amiga 1200, 68EC020 at approximately 14 MHz  
 **Host platforms:** macOS, Linux, and Windows  
@@ -566,17 +566,17 @@ circular disassembly trace for failures. Run it with `gmake miga68k-test`.
 
 **Initial connection implemented:** `miga80c` parses one explicitly annotated
 `i32`/`bool` function with typed local declarations, assignments, comparisons,
-and nested `if`/`else`, lowers it to typed stack IR and value IR, renders GNU
+nested `if`/`else`, and nested `while`, lowers it to typed stack IR and value IR, renders GNU
 m68k assembly at `-O0` or `-O1`, and provides a host CFG evaluator. The IR has
-up to 32 blocks with bounded successors; O1 inserts typed join values. The
-optimizer solves bounded per-block liveness, treats `phi` inputs as edge uses,
-reuses registers across exclusive branches, and coalesces compatible `phi`
-slots. The
-ordinary test path assembles both levels for five corpora and checks six inputs
-per corpus against Musashi. A synthetic value-IR fixture forces three reusable
+up to 32 blocks with bounded successors and backedges; O1 inserts typed branch
+and loop join values. The optimizer solves bounded per-block liveness, treats
+`phi` inputs as edge uses, reuses registers across exclusive branches,
+coalesces compatible `phi` slots, and schedules parallel edge copies with a
+bounded cycle-breaking temporary. The ordinary test path assembles both levels
+for six corpora and checks six inputs per corpus against Musashi. A synthetic value-IR fixture forces three reusable
 spill slots in an `A6` frame and checks six more inputs, saved registers, stack
 balance, and maximum stack use. Host and 68020 test programs must render
-ordinary, local-heavy, conditional, and spilling assembly byte-identically.
+ordinary, local-heavy, conditional, loop, and spilling assembly byte-identically.
 The current GNU toolchain
 retains an Amiga relocatable object; ELF linking, symbol manifests, and broader
 language semantics remain pending. See
@@ -612,7 +612,8 @@ including a deliberate clobber negative control. See
 ### Phase 3 — expand semantics
 
 - comparisons, `bool`, and nested `if`/`else`; **implemented**
-- loops and loop-carried value joins;
+- `while`, nested loops, and loop-carried value joins; **implemented without
+  `break`, `continue`, declarations, or returns inside loop bodies**
 - fixed-point arithmetic;
 - globals and arrays;
 - restricted tables/strings;
@@ -623,12 +624,14 @@ including a deliberate clobber negative control. See
 
 **Initial signals implemented:** the generic runner reports image bytes,
 executed instructions, and maximum callee stack bytes. The differential suite
-locks reviewed `-O0`/`-O1` figures for five source corpora, including nested
-conditional control flow, plus a forced spill fixture. These are optimizer
+locks reviewed `-O0`/`-O1` figures for six source corpora, including nested
+conditional control flow and cyclic loop transfers, plus a forced spill
+fixture: 78 Musashi executions in total. These are optimizer
 regressions only, not cycle or wall-time claims. In the conditional corpus,
 CFG-aware allocation reduces the `-O1` result to 380 code bytes, 63 executed
 instructions, and 24 maximum callee stack bytes; six live `phi` values share
-two slots.
+two slots. In the loop corpus, O1 reduces 316 code bytes, 315 instructions, and
+48 stack bytes to 196, 166, and 28 respectively.
 
 - record code size, instruction counts, and stack use; **implemented for the bootstrap**
 - add core-cycle estimates;

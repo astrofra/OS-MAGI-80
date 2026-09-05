@@ -1,6 +1,6 @@
 # MIGA Lua Compiler Bootstrap
 
-**Status:** `bool`, comparisons, `if`/`else` CFG, typed locals, `-O1`, and spills implemented
+**Status:** typed locals, `bool`, `if`/`else`, `while`, loop `phi`, `-O1`, and spills implemented
 
 ## Scope
 
@@ -14,12 +14,13 @@ function   = "function", name, "(", [ parameters ], ")", ":", scalar-type,
 parameters = parameter, { ",", parameter } ;
 parameter  = name, ":", scalar-type ;
 scalar-type = "i32" | "bool" ;
-statement  = local-declaration | assignment | if-statement ;
-conditional-statement = assignment | if-statement ;
+statement  = local-declaration | assignment | control-statement ;
+control-statement = assignment | if-statement | while-statement ;
 local-declaration = "local", name, ":", scalar-type, "=", expression ;
 assignment = local-name, "=", expression ;
-if-statement = "if", expression, "then", { conditional-statement },
-               "else", { conditional-statement }, "end" ;
+if-statement = "if", expression, "then", { control-statement },
+               "else", { control-statement }, "end" ;
+while-statement = "while", expression, "do", { control-statement }, "end" ;
 return-statement = "return", expression ;
 expression = sum, { ( "==" | "~=" | "!=" | "<" | "<=" | ">" | ">=" ), sum } ;
 sum        = product, { ( "+" | "-" ), product } ;
@@ -38,17 +39,17 @@ initializer, cannot shadow a parameter or another local, and parameters are
 immutable. Types are exact: the bootstrap performs no implicit conversion,
 including between constants. Arithmetic and ordered comparisons require `i32`;
 `==`, `~=`, and its exact alias `!=` require two operands of the same scalar
-type; conditions require `bool`. `if` currently requires an explicit `else`.
-Declarations and returns
-inside a conditional branch remain rejected until lexical scopes and multiple
-exit blocks are specified. The initial ABI supports at most three scalar
-parameters in `D0` through `D2`, with one scalar result in `D0`. Arithmetic has
+type; `if` and `while` conditions require `bool`. `if` currently requires an
+explicit `else`. Declarations and returns inside `if` branches or loop bodies
+remain rejected until lexical scopes and multiple exit blocks are specified.
+There is no `break` or `continue` yet. The initial ABI supports at most three
+scalar parameters in `D0` through `D2`, with one scalar result in `D0`. Arithmetic has
 defined two's-complement wrapping semantics. Register and frame placement
 follows [MIGA Lua Native ABI 0.1](./MIGA-Lua-native-ABI-v0.md).
 
 The version 1 language contract requires an explicit return annotation and
 includes `void`, but `void` code generation is not in this bootstrap tranche.
-Calls, `while`, other types, multiple functions, multiple returns, hexadecimal
+Calls, other types, multiple functions, multiple returns, hexadecimal
 source literals, and the minimum `i32` literal spelling are likewise rejected
 rather than guessed.
 
@@ -64,17 +65,21 @@ The implementation has four bounded, host-buildable layers:
    tables and reports the first error with a one-based line and column.
 2. Lowering produces a typed stack IR with explicit local loads/stores,
    comparisons, conditional/unconditional terminators, and up to 32 basic
-   blocks with two successor slots each. The host interpreter follows this CFG
+   blocks with two successor slots each. A `while` has an explicit preheader,
+   header, body, exit, and backward edge. The host interpreter follows this CFG
    as the semantic oracle and uses unsigned C operations to specify 32-bit
    wrapping and implementation-independent signed comparisons.
-3. `-O1` renames locals to values within the acyclic CFG and creates typed
-   `phi` values at two-predecessor joins. It folds and simplifies constants,
-   removes dead values and overwritten assignments, solves bounded CFG
-   `live-in`/`live-out` sets with edge-specific `phi` uses, and allocates
-   `D0-D7` per block. Non-overlapping `phi` live regions reuse stack slots,
-   while source/destination conflicts at a join remain separated. Cyclic value
-   flow for `while` remains deliberately rejected. Calls will need an explicit
-   side-effect rule before value renaming crosses them.
+3. `-O1` renames locals to values throughout the CFG and creates typed `phi`
+   values at two-predecessor joins and loop headers. It identifies natural
+   loops with bounded dominator analysis, creates provisional loop `phi`
+   operands before the latch has been lowered, then completes their backward
+   inputs and removes trivial self-joins. Constant folding, simplification,
+   dead-value removal, and `live-in`/`live-out` analysis all accept cyclic value
+   flow. `phi` operands are edge-specific uses. Non-overlapping `phi` live
+   regions reuse stack slots; edge transfers are scheduled as parallel copies,
+   with one bounded temporary slot reserved only when a genuine copy cycle must
+   be broken. Calls will need an explicit side-effect rule before value
+   renaming crosses them.
 4. The development backend renders GNU m68k assembly. `-O0` retains fixed `A6`
    parameter/local slots and expression-stack temporaries as a baseline. The
    default `-O1` keeps current local and expression values in registers and
@@ -125,12 +130,13 @@ machine-code emission; the shipping encoder and instruction-cache
 synchronization remain later work.
 
 The differential tests preserve `-O0`/`-O1` assembly, relocatable objects, and
-flat binaries under the compiler pipeline build directories. Five source
-corpora—including typed locals and a nested 19-block comparison/branch
-fixture—use six edge inputs each at both levels. Those 60 executions must
+flat binaries under the compiler pipeline build directories. Six source
+corpora—including typed locals, a nested 19-block comparison/branch fixture,
+and a `while` fixture with loop-carried values and a cyclic parallel copy—use
+six edge inputs each at both levels. Those 72 executions must
 produce the same `D0` value as the typed-IR interpreter. A synthetic value-IR
 schedule then forces three spills and adds six more oracle comparisons,
-bringing the total to 66. This is necessary because the current bounded source
+bringing the total to 78. This is necessary because the current bounded source
 subset cannot naturally exceed all eight data registers. The reports retain
 image size,
 executed instruction count, and maximum callee stack use, while the runner

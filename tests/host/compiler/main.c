@@ -457,6 +457,147 @@ static int test_bool_comparisons_and_cfg(void)
     return emitted && closed == 0;
 }
 
+static int test_while_cfg_and_loop_phis(void)
+{
+    static const char source[] =
+        "function loops(a: i32, b: i32, c: i32): i32 "
+        "local i: i32 = 0 local x: i32 = a local y: i32 = b "
+        "local temp: i32 = 0 local total: i32 = c "
+        "while i < 5 do temp = x x = y y = temp "
+        "if i != 2 then total = total + x + i "
+        "else total = total - y end i = i + 1 end "
+        "return total + x * 3 - y end";
+    static const uint32_t arguments[] = {7U, 5U, 2U};
+    struct miga80_ir_function ir;
+    struct miga80_value_function value_ir;
+    struct miga80_diagnostic diagnostic;
+    char assembly_text[8192];
+    unsigned int live_phis = 0U;
+    unsigned int forward_phis = 0U;
+    unsigned int index;
+    uint32_t result = 0U;
+    size_t assembly_size;
+    FILE *assembly;
+    int emitted;
+    int closed;
+
+    (void)memset(&ir, 0, sizeof(ir));
+    (void)memset(&value_ir, 0, sizeof(value_ir));
+    (void)memset(&diagnostic, 0, sizeof(diagnostic));
+    if (!compile_source(source, &ir, &diagnostic) || ir.block_count != 7U ||
+        ir.blocks[0].successor_count != 1U ||
+        ir.blocks[0].successors[0] != 1U ||
+        ir.blocks[1].successor_count != 2U ||
+        ir.blocks[1].successors[0] != 2U ||
+        ir.blocks[1].successors[1] != 3U ||
+        ir.blocks[6].successor_count != 1U ||
+        ir.blocks[6].successors[0] != 1U ||
+        !miga80_evaluate_ir(&ir, arguments, ARRAY_COUNT(arguments), &result,
+                            &diagnostic) ||
+        result != 35U ||
+        !miga80_build_value_ir(&ir, &value_ir, &diagnostic) ||
+        value_ir.block_order_count != 7U ||
+        value_ir.block_order[0] != 0U || value_ir.block_order[1] != 1U ||
+        value_ir.block_order[2] != 2U || value_ir.block_order[3] != 4U ||
+        value_ir.block_order[4] != 5U || value_ir.block_order[5] != 6U ||
+        value_ir.block_order[6] != 3U) {
+        fprintf(stderr,
+                "while CFG mismatch: blocks=%u order=%u,%u,%u,%u,%u,%u,%u "
+                "result=%08x diagnostic=%s\n",
+                ir.block_count, value_ir.block_order[0],
+                value_ir.block_order[1], value_ir.block_order[2],
+                value_ir.block_order[3], value_ir.block_order[4],
+                value_ir.block_order[5], value_ir.block_order[6],
+                (unsigned int)result, diagnostic.message);
+        return 0;
+    }
+    for (index = 0U; index < value_ir.value_count; ++index) {
+        if (value_ir.values[index].live &&
+            value_ir.values[index].opcode == MIGA80_VALUE_PHI) {
+            ++live_phis;
+            if (value_ir.values[index].right > index) {
+                ++forward_phis;
+            }
+        }
+    }
+    if (live_phis != 5U || forward_phis != 3U ||
+        (assembly = tmpfile()) == NULL) {
+        fprintf(stderr, "while phi mismatch: live=%u forward=%u\n",
+                live_phis, forward_phis);
+        return 0;
+    }
+    emitted = miga80_emit_gnu_m68k_o1(assembly, &value_ir, &diagnostic);
+    rewind(assembly);
+    assembly_size =
+        fread(assembly_text, 1U, sizeof(assembly_text) - 1U, assembly);
+    assembly_text[assembly_size] = '\0';
+    if (ferror(assembly) ||
+        strstr(assembly_text, "link.w  %a6,#-20") == NULL ||
+        strstr(assembly_text, "move.l  %d7,-20(%a6)") == NULL ||
+        strstr(assembly_text, "bra     .L_loops_b1") == NULL) {
+        emitted = 0;
+    }
+    closed = fclose(assembly);
+    return emitted && closed == 0;
+}
+
+static int test_nested_while_and_trivial_phi(void)
+{
+    static const char source[] =
+        "function nested(a: i32, b: i32, c: i32): i32 "
+        "local outer: i32 = 0 local inner: i32 = 0 "
+        "local total: i32 = a local stable: i32 = b "
+        "while outer < 3 do stable = stable inner = 0 "
+        "while inner < 2 do total = total + stable + c "
+        "inner = inner + 1 end outer = outer + 1 end "
+        "return total + stable end";
+    static const uint32_t arguments[] = {7U, 5U, 2U};
+    struct miga80_ir_function ir;
+    struct miga80_value_function value_ir;
+    struct miga80_diagnostic diagnostic;
+    uint32_t result;
+    unsigned int index;
+    unsigned int live_phis = 0U;
+    FILE *assembly;
+    int emitted;
+    int closed;
+
+    if (!compile_source(source, &ir, &diagnostic) || ir.block_count != 7U ||
+        !miga80_evaluate_ir(&ir, arguments, ARRAY_COUNT(arguments), &result,
+                            &diagnostic) ||
+        result != 54U ||
+        !miga80_build_value_ir(&ir, &value_ir, &diagnostic)) {
+        return 0;
+    }
+    for (index = 0U; index < value_ir.value_count; ++index) {
+        if (value_ir.values[index].live &&
+            value_ir.values[index].opcode == MIGA80_VALUE_PHI) {
+            ++live_phis;
+        }
+    }
+    assembly = tmpfile();
+    if (live_phis != 4U || assembly == NULL) {
+        return 0;
+    }
+    emitted = miga80_emit_gnu_m68k_o1(assembly, &value_ir, &diagnostic);
+    closed = fclose(assembly);
+    return emitted && closed == 0;
+}
+
+static int test_while_evaluation_budget(void)
+{
+    static const char source[] =
+        "function spin(): i32 while true do end return 0 end";
+    struct miga80_ir_function ir;
+    struct miga80_diagnostic diagnostic;
+    uint32_t result;
+
+    return compile_source(source, &ir, &diagnostic) &&
+           !miga80_evaluate_ir(&ir, NULL, 0U, &result, &diagnostic) &&
+           strcmp(diagnostic.message,
+                  "typed IR control-flow budget exceeded") == 0;
+}
+
 static int test_spill_frame(void)
 {
     struct miga80_value_function value_ir;
@@ -520,6 +661,9 @@ int main(int argc, char **argv)
     if (!test_valid_function() || !test_constant_folding() ||
         !test_locals_and_entry_block() ||
         !test_bool_comparisons_and_cfg() ||
+        !test_while_cfg_and_loop_phis() ||
+        !test_nested_while_and_trivial_phi() ||
+        !test_while_evaluation_budget() ||
         !test_spill_frame() ||
         !expect_error("function f(a): i32 return a end", 1U, 13U,
                       "expected ':'") ||
@@ -551,6 +695,8 @@ int main(int argc, char **argv)
                       "function return requires bool") ||
         !expect_error("function f(a: i32): i32 if a then else end return a end",
                       1U, 25U, "if condition requires bool") ||
+        !expect_error("function f(): i32 while 1 do end return 0 end", 1U,
+                      19U, "while condition requires bool") ||
         !expect_error("function f(): bool return true < false end", 1U, 32U,
                       "ordered comparison requires i32") ||
         !expect_error("function f(): bool return 1 == true end", 1U, 29U,
@@ -564,6 +710,6 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    printf("PASS  compiler CFG liveness, phi-slot coalescing, O0/O1, and spill frames\n");
+    printf("PASS  compiler CFG liveness, loop phis, O0/O1, and spill frames\n");
     return 0;
 }

@@ -23,6 +23,7 @@ struct allocation_plan {
     unsigned int spill_slots[MIGA80_MAX_VALUE_INSTRUCTIONS];
     int saved_registers[MIGA80_DATA_REGISTER_COUNT];
     unsigned int spill_slot_count;
+    unsigned int phi_temporary_slot;
 };
 
 struct cfg_liveness {
@@ -147,8 +148,16 @@ static int validate_value_function(
             return fail(diagnostic, value->line, value->column,
                         "invalid O1 value instruction");
         }
-        if ((opcode_has_left(value->opcode) && value->left >= index) ||
-            (opcode_has_right(value->opcode) && value->right >= index)) {
+        if (value->opcode == MIGA80_VALUE_PHI &&
+            (value->left >= function->value_count ||
+             value->right >= function->value_count ||
+             value->left == index || value->right == index)) {
+            return fail(diagnostic, value->line, value->column,
+                        "invalid O1 phi operand");
+        }
+        if (value->opcode != MIGA80_VALUE_PHI &&
+            ((opcode_has_left(value->opcode) && value->left >= index) ||
+             (opcode_has_right(value->opcode) && value->right >= index))) {
             return fail(diagnostic, value->line, value->column,
                         "invalid O1 value operand");
         }
@@ -431,6 +440,107 @@ static int allocate_phi_slots(
     return 1;
 }
 
+static int phi_source_for_edge(
+    const struct miga80_value_instruction *phi, unsigned int predecessor,
+    unsigned int *source)
+{
+    if (phi->left_block == predecessor) {
+        *source = phi->left;
+        return 1;
+    }
+    if (phi->right_block == predecessor) {
+        *source = phi->right;
+        return 1;
+    }
+    return 0;
+}
+
+static int reserve_phi_temporary_if_needed(
+    const struct miga80_value_function *function,
+    struct allocation_plan *plan, unsigned int phi_slot_count,
+    struct miga80_diagnostic *diagnostic)
+{
+    unsigned int predecessor;
+
+    plan->phi_temporary_slot = MIGA80_NO_SPILL_SLOT;
+    for (predecessor = 0U; predecessor < function->block_count;
+         ++predecessor) {
+        const struct miga80_value_basic_block *predecessor_block =
+            &function->blocks[predecessor];
+        unsigned int edge;
+
+        for (edge = 0U; edge < predecessor_block->successor_count; ++edge) {
+            const unsigned int successor = predecessor_block->successors[edge];
+            const struct miga80_value_basic_block *successor_block =
+                &function->blocks[successor];
+            unsigned int mapping[MIGA80_MAX_VALUE_INSTRUCTIONS];
+            unsigned int offset;
+            unsigned int slot;
+
+            for (slot = 0U; slot < phi_slot_count; ++slot) {
+                mapping[slot] = MIGA80_NO_SPILL_SLOT;
+            }
+            for (offset = 0U; offset < successor_block->value_count;
+                 ++offset) {
+                const unsigned int phi_index =
+                    successor_block->first_value + offset;
+                const struct miga80_value_instruction *phi =
+                    &function->values[phi_index];
+                unsigned int source;
+                unsigned int destination_slot;
+                unsigned int source_slot;
+
+                if (!phi->live || phi->opcode != MIGA80_VALUE_PHI) {
+                    continue;
+                }
+                if (!phi_source_for_edge(phi, predecessor, &source)) {
+                    return fail(diagnostic, phi->line, phi->column,
+                                "O1 phi does not match CFG predecessor");
+                }
+                destination_slot = plan->spill_slots[phi_index];
+                source_slot = plan->spill_slots[source];
+                if (destination_slot >= phi_slot_count ||
+                    source_slot == MIGA80_NO_SPILL_SLOT ||
+                    source_slot >= phi_slot_count ||
+                    source_slot == destination_slot) {
+                    continue;
+                }
+                if (mapping[destination_slot] != MIGA80_NO_SPILL_SLOT) {
+                    return fail(diagnostic, phi->line, phi->column,
+                                "O1 phi destinations share an edge slot");
+                }
+                mapping[destination_slot] = source_slot;
+            }
+            for (slot = 0U; slot < phi_slot_count; ++slot) {
+                unsigned int current = slot;
+                unsigned int step;
+
+                for (step = 0U; step < phi_slot_count; ++step) {
+                    if (mapping[current] == MIGA80_NO_SPILL_SLOT) {
+                        break;
+                    }
+                    current = mapping[current];
+                }
+                if (step == phi_slot_count &&
+                    mapping[current] != MIGA80_NO_SPILL_SLOT) {
+                    const unsigned int frame_size =
+                        (plan->spill_slot_count + 1U) * 4U;
+
+                    if (plan->spill_slot_count ==
+                            MIGA80_MAX_VALUE_INSTRUCTIONS ||
+                        !miga80_abi_frame_size_is_valid(frame_size)) {
+                        return fail(diagnostic, 0U, 0U,
+                                    "O1 phi temporary exceeds ABI limit");
+                    }
+                    plan->phi_temporary_slot = plan->spill_slot_count++;
+                    return 1;
+                }
+            }
+        }
+    }
+    return 1;
+}
+
 static int find_free_register(const unsigned int *owners,
                               unsigned int register_count,
                               unsigned int preferred)
@@ -478,6 +588,11 @@ static int build_allocation_plan(
         parameter_owners[index] = MIGA80_INVALID_VALUE;
     }
     if (!allocate_phi_slots(function, liveness, plan, diagnostic)) {
+        return 0;
+    }
+    phi_slot_count = plan->spill_slot_count;
+    if (!reserve_phi_temporary_if_needed(function, plan, phi_slot_count,
+                                         diagnostic)) {
         return 0;
     }
     phi_slot_count = plan->spill_slot_count;
@@ -1042,6 +1157,49 @@ static int build_saved_register_list(const struct allocation_plan *plan,
     return 1;
 }
 
+struct phi_edge_copy {
+    unsigned int phi_index;
+    unsigned int source;
+    unsigned int source_slot;
+    int pending;
+};
+
+static int emit_phi_copy(FILE *output,
+                         const struct miga80_value_function *function,
+                         const struct allocation_plan *plan,
+                         const struct phi_edge_copy *copy)
+{
+    if (copy->source == MIGA80_INVALID_VALUE) {
+        if (plan->phi_temporary_slot == MIGA80_NO_SPILL_SLOT) {
+            return 0;
+        }
+        return output_line(output,
+                           "        move.l  -%u(%%a6),%%d7\n"
+                           "        move.l  %%d7,-%u(%%a6)\n",
+                           (plan->phi_temporary_slot + 1U) * 4U,
+                           spill_offset(plan, copy->phi_index));
+    }
+    if (function->values[copy->source].opcode == MIGA80_VALUE_CONSTANT) {
+        return output_line(
+            output, "        move.l  #0x%08x,-%u(%%a6)\n",
+            (unsigned int)function->values[copy->source].immediate,
+            spill_offset(plan, copy->phi_index));
+    }
+    if (plan->registers[copy->source] != MIGA80_NO_REGISTER) {
+        return output_line(output, "        move.l  %s,-%u(%%a6)\n",
+                           data_register_name(plan->registers[copy->source]),
+                           spill_offset(plan, copy->phi_index));
+    }
+    if (plan->spill_slots[copy->source] != MIGA80_NO_SPILL_SLOT) {
+        return output_line(output,
+                           "        move.l  -%u(%%a6),%%d7\n"
+                           "        move.l  %%d7,-%u(%%a6)\n",
+                           spill_offset(plan, copy->source),
+                           spill_offset(plan, copy->phi_index));
+    }
+    return 0;
+}
+
 static int emit_phi_edge(FILE *output,
                          const struct miga80_value_function *function,
                          const struct allocation_plan *plan,
@@ -1050,6 +1208,9 @@ static int emit_phi_edge(FILE *output,
 {
     const struct miga80_value_basic_block *block =
         &function->blocks[successor];
+    struct phi_edge_copy copies[MIGA80_MAX_LOCALS];
+    unsigned int copy_count = 0U;
+    unsigned int remaining;
     unsigned int offset;
 
     for (offset = 0U; offset < block->value_count; ++offset) {
@@ -1057,45 +1218,93 @@ static int emit_phi_edge(FILE *output,
         const struct miga80_value_instruction *phi =
             &function->values[phi_index];
         unsigned int source;
+        unsigned int source_slot;
 
         if (!phi->live || phi->opcode != MIGA80_VALUE_PHI) {
             continue;
         }
-        if (phi->left_block == predecessor) {
-            source = phi->left;
-        } else if (phi->right_block == predecessor) {
-            source = phi->right;
-        } else {
+        if (!phi_source_for_edge(phi, predecessor, &source) ||
+            plan->spill_slots[phi_index] == MIGA80_NO_SPILL_SLOT) {
             return 0;
         }
-        if (plan->spill_slots[phi_index] == MIGA80_NO_SPILL_SLOT) {
-            return 0;
-        }
-        if (function->values[source].opcode == MIGA80_VALUE_CONSTANT) {
-            if (!output_line(output, "        move.l  #0x%08x,-%u(%%a6)\n",
-                             (unsigned int)function->values[source].immediate,
-                             spill_offset(plan, phi_index))) {
-                return 0;
-            }
-        } else if (plan->registers[source] != MIGA80_NO_REGISTER) {
-            if (!output_line(output, "        move.l  %s,-%u(%%a6)\n",
-                             data_register_name(plan->registers[source]),
-                             spill_offset(plan, phi_index))) {
-                return 0;
-            }
-        } else if (plan->spill_slots[source] ==
-                   plan->spill_slots[phi_index]) {
+        source_slot = plan->spill_slots[source];
+        if (source_slot == plan->spill_slots[phi_index]) {
             continue;
-        } else if (plan->spill_slots[source] != MIGA80_NO_SPILL_SLOT) {
-            if (!output_line(output,
-                             "        move.l  -%u(%%a6),%%d7\n"
-                             "        move.l  %%d7,-%u(%%a6)\n",
-                             spill_offset(plan, source),
-                             spill_offset(plan, phi_index))) {
+        }
+        if (copy_count == MIGA80_MAX_LOCALS) {
+            return 0;
+        }
+        copies[copy_count].phi_index = phi_index;
+        copies[copy_count].source = source;
+        copies[copy_count].source_slot = source_slot;
+        copies[copy_count].pending = 1;
+        ++copy_count;
+    }
+
+    remaining = copy_count;
+    while (remaining != 0U) {
+        unsigned int safe = MIGA80_INVALID_VALUE;
+        unsigned int copy_index;
+
+        for (copy_index = 0U; copy_index < copy_count; ++copy_index) {
+            unsigned int other;
+            int destination_is_source = 0;
+
+            if (!copies[copy_index].pending) {
+                continue;
+            }
+            for (other = 0U; other < copy_count; ++other) {
+                if (other != copy_index && copies[other].pending &&
+                    copies[other].source_slot ==
+                        plan->spill_slots[copies[copy_index].phi_index]) {
+                    destination_is_source = 1;
+                    break;
+                }
+            }
+            if (!destination_is_source) {
+                safe = copy_index;
+                break;
+            }
+        }
+        if (safe != MIGA80_INVALID_VALUE) {
+            if (!emit_phi_copy(output, function, plan, &copies[safe])) {
                 return 0;
             }
-        } else {
+            copies[safe].pending = 0;
+            --remaining;
+            continue;
+        }
+        if (plan->phi_temporary_slot == MIGA80_NO_SPILL_SLOT) {
             return 0;
+        }
+        for (copy_index = 0U; copy_index < copy_count; ++copy_index) {
+            if (copies[copy_index].pending) {
+                unsigned int other;
+                const unsigned int destination_slot =
+                    plan->spill_slots[copies[copy_index].phi_index];
+                int replaced = 0;
+
+                if (!output_line(output,
+                                 "        move.l  -%u(%%a6),%%d7\n"
+                                 "        move.l  %%d7,-%u(%%a6)\n",
+                                 (destination_slot + 1U) * 4U,
+                                 (plan->phi_temporary_slot + 1U) * 4U)) {
+                    return 0;
+                }
+                for (other = 0U; other < copy_count; ++other) {
+                    if (copies[other].pending &&
+                        copies[other].source_slot == destination_slot) {
+                        copies[other].source = MIGA80_INVALID_VALUE;
+                        copies[other].source_slot =
+                            plan->phi_temporary_slot;
+                        replaced = 1;
+                    }
+                }
+                if (!replaced) {
+                    return 0;
+                }
+                break;
+            }
         }
     }
     return 1;

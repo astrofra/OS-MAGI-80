@@ -1,4 +1,4 @@
-# OS-MIGA-80
+# MIGA-80
 
 Fantasy OS for the Amiga 1200
 
@@ -52,13 +52,13 @@ gmake compiler-amiga-test
 The implemented subset accepts one explicitly annotated scalar function with
 up to three immutable `i32`/`bool` parameters and 16 explicitly typed locals,
 initialized declarations, reassignment, one final return, arithmetic, all six
-comparisons (`!=` aliases `~=`), and nested `if`/`then`/`else`/`end`. The typed
-IR carries up to 32 basic blocks. Assembly generation defaults to the value-IR
-`-O1` backend;
+comparisons (`!=` aliases `~=`), nested `if`/`then`/`else`/`end`, and nested
+`while`/`do`/`end` loops with loop-carried values. The typed IR carries up to 32
+basic blocks. Assembly generation defaults to the value-IR `-O1` backend;
 `-O0` keeps the stack baseline for comparison. `-O1` removes dead assignments,
-creates typed join values, computes CFG-aware liveness, coalesces compatible
-`phi` slots, and uses bounded ABI frames when edge transfers or register
-pressure require them. See the [compiler
+creates typed branch and loop join values, computes cyclic CFG-aware liveness,
+coalesces compatible `phi` slots, schedules parallel edge copies, and uses
+bounded ABI frames when transfers or register pressure require them. See the [compiler
 bootstrap](documentation/MIGA-Lua-compiler-bootstrap.md)
 for its exact grammar, the [native ABI
 0.1](documentation/MIGA-Lua-native-ABI-v0.md) for the frozen register/stack

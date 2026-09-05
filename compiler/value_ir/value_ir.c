@@ -7,6 +7,10 @@
 struct value_lower_state {
     unsigned int entry_locals[MIGA80_MAX_BASIC_BLOCKS][MIGA80_MAX_LOCALS];
     unsigned int exit_locals[MIGA80_MAX_BASIC_BLOCKS][MIGA80_MAX_LOCALS];
+    unsigned int loop_phis[MIGA80_MAX_BASIC_BLOCKS][MIGA80_MAX_LOCALS];
+    unsigned int loop_preheader[MIGA80_MAX_BASIC_BLOCKS];
+    unsigned int loop_backedge[MIGA80_MAX_BASIC_BLOCKS];
+    uint32_t loop_assigned_locals[MIGA80_MAX_BASIC_BLOCKS];
     unsigned char processed[MIGA80_MAX_BASIC_BLOCKS];
 };
 
@@ -219,6 +223,22 @@ static unsigned int make_phi(struct miga80_value_function *function,
     return result;
 }
 
+static unsigned int make_loop_phi(
+    struct miga80_value_function *function, enum miga80_type type,
+    unsigned int initial, unsigned int preheader, unsigned int backedge,
+    struct miga80_diagnostic *diagnostic)
+{
+    const unsigned int result =
+        add_value(function, type, MIGA80_VALUE_PHI, initial,
+                  MIGA80_INVALID_VALUE, 0U, 0U, 0U, 0U, diagnostic);
+
+    if (result != MIGA80_INVALID_VALUE) {
+        function->values[result].left_block = preheader;
+        function->values[result].right_block = backedge;
+    }
+    return result;
+}
+
 static int opcode_has_left(enum miga80_value_opcode opcode)
 {
     return opcode == MIGA80_VALUE_NEG || opcode == MIGA80_VALUE_ADD ||
@@ -234,58 +254,62 @@ static int opcode_has_right(enum miga80_value_opcode opcode)
 }
 
 static int mark_root(struct miga80_value_function *function,
-                     unsigned int value,
+                     unsigned int value, unsigned int *worklist,
+                     unsigned int *worklist_size,
                      struct miga80_diagnostic *diagnostic)
 {
     if (value >= function->value_count) {
         return fail(diagnostic, 0U, 0U, "value IR root is invalid");
     }
-    function->values[value].live = 1;
     ++function->values[value].use_count;
+    if (!function->values[value].live) {
+        function->values[value].live = 1;
+        worklist[(*worklist_size)++] = value;
+    }
     return 1;
 }
 
 static int mark_live_values(struct miga80_value_function *function,
                             struct miga80_diagnostic *diagnostic)
 {
+    unsigned int worklist[MIGA80_MAX_VALUE_INSTRUCTIONS];
+    unsigned int worklist_size = 0U;
     unsigned int block_index;
-    unsigned int remaining;
 
-    if (!mark_root(function, function->result, diagnostic)) {
+    if (!mark_root(function, function->result, worklist, &worklist_size,
+                   diagnostic)) {
         return 0;
     }
     for (block_index = 0U; block_index < function->block_count;
          ++block_index) {
         if (function->blocks[block_index].terminator == MIGA80_VALUE_BRANCH &&
             !mark_root(function, function->blocks[block_index].condition,
-                       diagnostic)) {
+                       worklist, &worklist_size, diagnostic)) {
             return 0;
         }
     }
-    remaining = function->value_count;
-    while (remaining != 0U) {
-        struct miga80_value_instruction *value;
+    while (worklist_size != 0U) {
+        const unsigned int value_index = worklist[--worklist_size];
+        struct miga80_value_instruction *value =
+            &function->values[value_index];
 
-        --remaining;
-        value = &function->values[remaining];
-        if (!value->live) {
-            continue;
-        }
         if (opcode_has_left(value->opcode)) {
-            if (value->left >= remaining) {
+            if (value->left >= function->value_count ||
+                value->left == value_index ||
+                !mark_root(function, value->left, worklist,
+                           &worklist_size, diagnostic)) {
                 return fail(diagnostic, value->line, value->column,
                             "value IR left operand is invalid");
             }
-            function->values[value->left].live = 1;
-            ++function->values[value->left].use_count;
         }
         if (opcode_has_right(value->opcode)) {
-            if (value->right >= remaining) {
+            if (value->right >= function->value_count ||
+                value->right == value_index ||
+                !mark_root(function, value->right, worklist,
+                           &worklist_size, diagnostic)) {
                 return fail(diagnostic, value->line, value->column,
                             "value IR right operand is invalid");
             }
-            function->values[value->right].live = 1;
-            ++function->values[value->right].use_count;
         }
     }
     return 1;
@@ -358,6 +382,178 @@ static int build_predecessors(const struct miga80_ir_function *source,
     return 1;
 }
 
+static uint32_t block_bit(unsigned int block_index)
+{
+    return UINT32_C(1) << block_index;
+}
+
+static int analyze_loops(const struct miga80_ir_function *source,
+                         const struct miga80_value_function *result,
+                         struct value_lower_state *state,
+                         struct miga80_diagnostic *diagnostic)
+{
+    uint32_t dominators[MIGA80_MAX_BASIC_BLOCKS];
+    const uint32_t all_blocks =
+        source->block_count == MIGA80_MAX_BASIC_BLOCKS
+            ? UINT32_MAX
+            : block_bit(source->block_count) - UINT32_C(1);
+    unsigned int block_index;
+    unsigned int pass_count = 0U;
+    int changed;
+
+    for (block_index = 0U; block_index < source->block_count;
+         ++block_index) {
+        dominators[block_index] =
+            block_index == source->entry_block ? block_bit(block_index)
+                                               : all_blocks;
+    }
+    do {
+        changed = 0;
+        for (block_index = 0U; block_index < source->block_count;
+             ++block_index) {
+            const struct miga80_value_basic_block *block =
+                &result->blocks[block_index];
+            uint32_t merged = all_blocks;
+            uint32_t updated;
+            unsigned int predecessor_index;
+
+            if (block_index == source->entry_block) {
+                continue;
+            }
+            if (block->predecessor_count == 0U) {
+                return fail(diagnostic, 0U, 0U,
+                            "value IR contains an unreachable block");
+            }
+            for (predecessor_index = 0U;
+                 predecessor_index < block->predecessor_count;
+                 ++predecessor_index) {
+                merged &= dominators[block->predecessors[predecessor_index]];
+            }
+            updated = merged | block_bit(block_index);
+            if (updated != dominators[block_index]) {
+                dominators[block_index] = updated;
+                changed = 1;
+            }
+        }
+        if (++pass_count > source->block_count * source->block_count + 1U) {
+            return fail(diagnostic, 0U, 0U,
+                        "value IR dominators did not converge");
+        }
+    } while (changed);
+
+    for (block_index = 0U; block_index < source->block_count;
+         ++block_index) {
+        const struct miga80_value_basic_block *block =
+            &result->blocks[block_index];
+        unsigned int edge;
+
+        for (edge = 0U; edge < block->successor_count; ++edge) {
+            const unsigned int successor = block->successors[edge];
+
+            if ((dominators[block_index] & block_bit(successor)) == 0U) {
+                continue;
+            }
+            if (state->loop_backedge[successor] != MIGA80_INVALID_BLOCK) {
+                return fail(diagnostic, 0U, 0U,
+                            "multiple loop backedges are not implemented");
+            }
+            state->loop_backedge[successor] = block_index;
+        }
+    }
+
+    for (block_index = 0U; block_index < source->block_count;
+         ++block_index) {
+        const struct miga80_value_basic_block *header =
+            &result->blocks[block_index];
+        const unsigned int backedge = state->loop_backedge[block_index];
+        uint32_t loop_blocks;
+        uint32_t pending;
+        unsigned int predecessor_index;
+        unsigned int local_mask = 0U;
+
+        if (backedge == MIGA80_INVALID_BLOCK) {
+            continue;
+        }
+        if (header->predecessor_count != 2U) {
+            return fail(diagnostic, 0U, 0U,
+                        "loop header must have two predecessors");
+        }
+        for (predecessor_index = 0U;
+             predecessor_index < header->predecessor_count;
+             ++predecessor_index) {
+            const unsigned int predecessor =
+                header->predecessors[predecessor_index];
+
+            if (predecessor != backedge) {
+                if (state->loop_preheader[block_index] !=
+                    MIGA80_INVALID_BLOCK) {
+                    return fail(diagnostic, 0U, 0U,
+                                "loop header has multiple preheaders");
+                }
+                state->loop_preheader[block_index] = predecessor;
+            }
+        }
+        if (state->loop_preheader[block_index] == MIGA80_INVALID_BLOCK) {
+            return fail(diagnostic, 0U, 0U,
+                        "loop header has no preheader");
+        }
+
+        loop_blocks = block_bit(block_index) | block_bit(backedge);
+        pending = block_bit(backedge);
+        while (pending != 0U) {
+            unsigned int current = 0U;
+            const struct miga80_value_basic_block *block;
+
+            while ((pending & block_bit(current)) == 0U) {
+                ++current;
+            }
+            pending &= ~block_bit(current);
+            block = &result->blocks[current];
+            for (predecessor_index = 0U;
+                 predecessor_index < block->predecessor_count;
+                 ++predecessor_index) {
+                const unsigned int predecessor =
+                    block->predecessors[predecessor_index];
+                uint32_t predecessor_bit;
+
+                if (predecessor >= source->block_count) {
+                    return fail(diagnostic, 0U, 0U,
+                                "loop predecessor is outside the CFG");
+                }
+                predecessor_bit = block_bit(predecessor);
+
+                if (predecessor != block_index &&
+                    (loop_blocks & predecessor_bit) == 0U) {
+                    loop_blocks |= predecessor_bit;
+                    pending |= predecessor_bit;
+                }
+            }
+        }
+        for (predecessor_index = 0U;
+             predecessor_index < source->block_count;
+             ++predecessor_index) {
+            const struct miga80_ir_basic_block *block;
+            unsigned int offset;
+
+            if ((loop_blocks & block_bit(predecessor_index)) == 0U) {
+                continue;
+            }
+            block = &source->blocks[predecessor_index];
+            for (offset = 0U; offset < block->instruction_count; ++offset) {
+                const struct miga80_ir_instruction *instruction =
+                    &source->instructions[block->first_instruction + offset];
+
+                if (instruction->opcode == MIGA80_IR_STORE_LOCAL_I32 ||
+                    instruction->opcode == MIGA80_IR_STORE_LOCAL_BOOL) {
+                    local_mask |= UINT32_C(1) << instruction->operand;
+                }
+            }
+        }
+        state->loop_assigned_locals[block_index] = local_mask;
+    }
+    return 1;
+}
+
 static int predecessors_processed(
     const struct miga80_value_function *function,
     const struct value_lower_state *state, unsigned int block_index)
@@ -367,7 +563,9 @@ static int predecessors_processed(
     unsigned int index;
 
     for (index = 0U; index < block->predecessor_count; ++index) {
-        if (!state->processed[block->predecessors[index]]) {
+        if (block->predecessors[index] !=
+                state->loop_backedge[block_index] &&
+            !state->processed[block->predecessors[index]]) {
             return 0;
         }
     }
@@ -384,6 +582,39 @@ static int merge_local_values(const struct miga80_ir_function *source,
         &result->blocks[block_index];
     unsigned int local;
 
+    if (state->loop_backedge[block_index] != MIGA80_INVALID_BLOCK) {
+        const unsigned int preheader = state->loop_preheader[block_index];
+
+        if (!state->processed[preheader]) {
+            return fail(diagnostic, 0U, 0U,
+                        "loop preheader is not available");
+        }
+        for (local = 0U; local < source->local_count; ++local) {
+            const unsigned int initial =
+                state->exit_locals[preheader][local];
+
+            if ((state->loop_assigned_locals[block_index] &
+                 (UINT32_C(1) << local)) == 0U) {
+                state->entry_locals[block_index][local] = initial;
+                continue;
+            }
+            if (initial == MIGA80_INVALID_VALUE) {
+                return fail(diagnostic, 0U, 0U,
+                            "loop local is not initialized before entry");
+            }
+            state->loop_phis[block_index][local] =
+                make_loop_phi(result, source->local_types[local], initial,
+                              preheader, state->loop_backedge[block_index],
+                              diagnostic);
+            if (state->loop_phis[block_index][local] ==
+                MIGA80_INVALID_VALUE) {
+                return 0;
+            }
+            state->entry_locals[block_index][local] =
+                state->loop_phis[block_index][local];
+        }
+        return 1;
+    }
     if (block->predecessor_count == 0U) {
         return block_index == result->entry_block;
     }
@@ -521,7 +752,138 @@ static int lower_block_values(const struct miga80_ir_function *source,
     }
     block->value_count = result->value_count - block->first_value;
     state->processed[block_index] = 1U;
-    result->block_order[result->block_order_count++] = block_index;
+    return 1;
+}
+
+static int finalize_loop_phis(
+    const struct miga80_ir_function *source,
+    struct miga80_value_function *result,
+    const struct value_lower_state *state, unsigned int backedge,
+    struct miga80_diagnostic *diagnostic)
+{
+    unsigned int header;
+
+    for (header = 0U; header < source->block_count; ++header) {
+        unsigned int local;
+
+        if (state->loop_backedge[header] != backedge) {
+            continue;
+        }
+        for (local = 0U; local < source->local_count; ++local) {
+            const unsigned int phi = state->loop_phis[header][local];
+            const unsigned int value = state->exit_locals[backedge][local];
+
+            if (phi == MIGA80_INVALID_VALUE) {
+                continue;
+            }
+            if (value == MIGA80_INVALID_VALUE) {
+                return fail(diagnostic, 0U, 0U,
+                            "loop local is not initialized on the backedge");
+            }
+            result->values[phi].right = value;
+        }
+    }
+    return 1;
+}
+
+static void replace_value(struct miga80_value_function *function,
+                          unsigned int replaced,
+                          unsigned int replacement)
+{
+    unsigned int index;
+
+    for (index = 0U; index < function->value_count; ++index) {
+        struct miga80_value_instruction *value = &function->values[index];
+
+        if (opcode_has_left(value->opcode) && value->left == replaced) {
+            value->left = replacement;
+        }
+        if (opcode_has_right(value->opcode) && value->right == replaced) {
+            value->right = replacement;
+        }
+    }
+    for (index = 0U; index < function->block_count; ++index) {
+        if (function->blocks[index].condition == replaced) {
+            function->blocks[index].condition = replacement;
+        }
+    }
+    if (function->result == replaced) {
+        function->result = replacement;
+    }
+}
+
+static int remove_trivial_loop_phis(
+    struct miga80_value_function *function,
+    struct miga80_diagnostic *diagnostic)
+{
+    int changed;
+
+    do {
+        unsigned int index;
+
+        changed = 0;
+        for (index = 0U; index < function->value_count; ++index) {
+            struct miga80_value_instruction *value =
+                &function->values[index];
+            unsigned int replacement = MIGA80_INVALID_VALUE;
+
+            if (value->opcode != MIGA80_VALUE_PHI) {
+                continue;
+            }
+            if (value->left == MIGA80_INVALID_VALUE ||
+                value->right == MIGA80_INVALID_VALUE) {
+                return fail(diagnostic, value->line, value->column,
+                            "loop phi is incomplete");
+            }
+            if (value->left == value->right || value->right == index) {
+                replacement = value->left;
+            } else if (value->left == index) {
+                replacement = value->right;
+            }
+            if (replacement == MIGA80_INVALID_VALUE ||
+                replacement == index) {
+                continue;
+            }
+            replace_value(function, index, replacement);
+            value->opcode = MIGA80_VALUE_CONSTANT;
+            value->left = MIGA80_INVALID_VALUE;
+            value->right = MIGA80_INVALID_VALUE;
+            value->immediate = 0U;
+            changed = 1;
+        }
+    } while (changed);
+    return 1;
+}
+
+static int build_block_layout_order(
+    const struct miga80_ir_function *source,
+    struct miga80_value_function *result,
+    struct miga80_diagnostic *diagnostic)
+{
+    unsigned char selected[MIGA80_MAX_BASIC_BLOCKS];
+    unsigned int order_index;
+
+    (void)memset(selected, 0, sizeof(selected));
+    for (order_index = 0U; order_index < source->block_count; ++order_index) {
+        unsigned int best = MIGA80_INVALID_BLOCK;
+        unsigned int block_index;
+
+        for (block_index = 0U; block_index < source->block_count;
+             ++block_index) {
+            if (!selected[block_index] &&
+                (best == MIGA80_INVALID_BLOCK ||
+                 source->blocks[block_index].first_instruction <
+                     source->blocks[best].first_instruction)) {
+                best = block_index;
+            }
+        }
+        if (best == MIGA80_INVALID_BLOCK) {
+            return fail(diagnostic, 0U, 0U,
+                        "unable to order value IR basic blocks");
+        }
+        selected[best] = 1U;
+        result->block_order[result->block_order_count++] = best;
+    }
     return 1;
 }
 
@@ -571,13 +933,20 @@ int miga80_build_value_ir(const struct miga80_ir_function *source,
     (void)memset(state, 0, sizeof(*state));
     for (block_index = 0U; block_index < MIGA80_MAX_BASIC_BLOCKS;
          ++block_index) {
+        state->loop_preheader[block_index] = MIGA80_INVALID_BLOCK;
+        state->loop_backedge[block_index] = MIGA80_INVALID_BLOCK;
         for (local_index = 0U; local_index < MIGA80_MAX_LOCALS;
              ++local_index) {
             state->entry_locals[block_index][local_index] =
                 MIGA80_INVALID_VALUE;
             state->exit_locals[block_index][local_index] =
                 MIGA80_INVALID_VALUE;
+            state->loop_phis[block_index][local_index] =
+                MIGA80_INVALID_VALUE;
         }
+    }
+    if (!analyze_loops(source, result, state, diagnostic)) {
+        goto done;
     }
     while (processed_count < source->block_count) {
         int progressed = 0;
@@ -586,6 +955,8 @@ int miga80_build_value_ir(const struct miga80_ir_function *source,
             if (!state->processed[index] &&
                 predecessors_processed(result, state, index)) {
                 if (!lower_block_values(source, result, state, index,
+                                        diagnostic) ||
+                    !finalize_loop_phis(source, result, state, index,
                                         diagnostic)) {
                     goto done;
                 }
@@ -603,7 +974,9 @@ int miga80_build_value_ir(const struct miga80_ir_function *source,
         (void)fail(diagnostic, 0U, 0U, "typed IR has no value return");
         goto done;
     }
-    success = mark_live_values(result, diagnostic);
+    success = remove_trivial_loop_phis(result, diagnostic) &&
+              build_block_layout_order(source, result, diagnostic) &&
+              mark_live_values(result, diagnostic);
 
 done:
     free(state);
