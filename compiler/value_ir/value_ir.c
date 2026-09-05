@@ -75,6 +75,9 @@ static unsigned int make_constant(struct miga80_value_function *function,
                                   unsigned int line, unsigned int column,
                                   struct miga80_diagnostic *diagnostic)
 {
+    if (miga80_type_is_integer(type)) {
+        constant = miga80_normalize_integer(type, constant);
+    }
     return add_value(function, type, MIGA80_VALUE_CONSTANT,
                      MIGA80_INVALID_VALUE, MIGA80_INVALID_VALUE, constant, 0U,
                      line, column, diagnostic);
@@ -86,15 +89,34 @@ static unsigned int make_neg(struct miga80_value_function *function,
                              struct miga80_diagnostic *diagnostic)
 {
     uint32_t constant;
+    const enum miga80_type type = function->values[operand].type;
 
     if (is_constant(function, operand, &constant)) {
-        return make_constant(function, MIGA80_TYPE_I32, 0U - constant, line,
+        return make_constant(function, type, 0U - constant, line,
                              column, diagnostic);
     }
     if (function->values[operand].opcode == MIGA80_VALUE_NEG) {
         return function->values[operand].left;
     }
-    return add_value(function, MIGA80_TYPE_I32, MIGA80_VALUE_NEG, operand,
+    return add_value(function, type, MIGA80_VALUE_NEG, operand,
+                     MIGA80_INVALID_VALUE, 0U, 0U, line, column, diagnostic);
+}
+
+static unsigned int make_normalize_integer(
+    struct miga80_value_function *function, unsigned int operand,
+    enum miga80_type type, unsigned int line, unsigned int column,
+    struct miga80_diagnostic *diagnostic)
+{
+    uint32_t constant;
+
+    if (function->values[operand].type == type) {
+        return operand;
+    }
+    if (is_constant(function, operand, &constant)) {
+        return make_constant(function, type, constant, line, column,
+                             diagnostic);
+    }
+    return add_value(function, type, MIGA80_VALUE_NORMALIZE_INTEGER, operand,
                      MIGA80_INVALID_VALUE, 0U, 0U, line, column, diagnostic);
 }
 
@@ -119,12 +141,27 @@ static uint32_t fold_comparison(enum miga80_value_opcode opcode,
     if (opcode == MIGA80_VALUE_GT_I32) {
         return signed_left > signed_right ? 1U : 0U;
     }
-    return signed_left >= signed_right ? 1U : 0U;
+    if (opcode == MIGA80_VALUE_GE_I32) {
+        return signed_left >= signed_right ? 1U : 0U;
+    }
+    if (opcode == MIGA80_VALUE_LT_U32) {
+        return left < right ? 1U : 0U;
+    }
+    if (opcode == MIGA80_VALUE_LE_U32) {
+        return left <= right ? 1U : 0U;
+    }
+    if (opcode == MIGA80_VALUE_GT_U32) {
+        return left > right ? 1U : 0U;
+    }
+    return left >= right ? 1U : 0U;
 }
 
 static int comparison_opcode(enum miga80_value_opcode opcode)
 {
-    return opcode >= MIGA80_VALUE_EQ && opcode <= MIGA80_VALUE_GE_I32;
+    return (opcode >= MIGA80_VALUE_EQ &&
+            opcode <= MIGA80_VALUE_GE_I32) ||
+           (opcode >= MIGA80_VALUE_LT_U32 &&
+            opcode <= MIGA80_VALUE_GE_U32);
 }
 
 static unsigned int make_binary(struct miga80_value_function *function,
@@ -135,6 +172,7 @@ static unsigned int make_binary(struct miga80_value_function *function,
 {
     uint32_t left_constant = 0U;
     uint32_t right_constant = 0U;
+    const enum miga80_type operand_type = function->values[left].type;
     int left_is_constant = is_constant(function, left, &left_constant);
     int right_is_constant = is_constant(function, right, &right_constant);
 
@@ -148,7 +186,8 @@ static unsigned int make_binary(struct miga80_value_function *function,
         left_is_constant = 0;
         right_is_constant = 1;
     }
-    if (opcode == MIGA80_VALUE_DIV && right_is_constant &&
+    if ((opcode == MIGA80_VALUE_DIV || opcode == MIGA80_VALUE_DIV_U) &&
+        right_is_constant &&
         right_constant == 0U) {
         (void)fail(diagnostic, line, column,
                    "division by zero in constant expression");
@@ -169,12 +208,19 @@ static unsigned int make_binary(struct miga80_value_function *function,
                            "division by zero in constant expression");
                 return MIGA80_INVALID_VALUE;
             }
+        } else if (opcode == MIGA80_VALUE_DIV_U) {
+            if (right_constant == 0U) {
+                (void)fail(diagnostic, line, column,
+                           "division by zero in constant expression");
+                return MIGA80_INVALID_VALUE;
+            }
+            folded = left_constant / right_constant;
         } else {
             folded = fold_comparison(opcode, left_constant, right_constant);
         }
         return make_constant(function,
                              comparison_opcode(opcode) ? MIGA80_TYPE_BOOL
-                                                       : MIGA80_TYPE_I32,
+                                                       : operand_type,
                              folded, line, column, diagnostic);
     }
     if (opcode == MIGA80_VALUE_ADD && right_is_constant &&
@@ -186,31 +232,35 @@ static unsigned int make_binary(struct miga80_value_function *function,
             return left;
         }
         if (left == right) {
-            return make_constant(function, MIGA80_TYPE_I32, 0U, line, column,
+            return make_constant(function, operand_type, 0U, line, column,
                                  diagnostic);
         }
     }
     if (opcode == MIGA80_VALUE_MUL && right_is_constant) {
         if (right_constant == 0U) {
-            return make_constant(function, MIGA80_TYPE_I32, 0U, line, column,
+            return make_constant(function, operand_type, 0U, line, column,
                                  diagnostic);
         }
         if (right_constant == 1U) {
             return left;
         }
     }
-    if (opcode == MIGA80_VALUE_DIV && right_is_constant) {
+    if ((opcode == MIGA80_VALUE_DIV || opcode == MIGA80_VALUE_DIV_U) &&
+        right_is_constant) {
         if (right_constant == 1U) {
             return left;
         }
-        if (right_constant == UINT32_MAX) {
+        if (opcode == MIGA80_VALUE_DIV &&
+            right_constant == UINT32_MAX) {
             return make_neg(function, left, line, column, diagnostic);
         }
     }
     if (comparison_opcode(opcode) && left == right) {
         const uint32_t folded =
             opcode == MIGA80_VALUE_EQ || opcode == MIGA80_VALUE_LE_I32 ||
-                    opcode == MIGA80_VALUE_GE_I32
+                    opcode == MIGA80_VALUE_GE_I32 ||
+                    opcode == MIGA80_VALUE_LE_U32 ||
+                    opcode == MIGA80_VALUE_GE_U32
                 ? 1U
                 : 0U;
 
@@ -219,7 +269,7 @@ static unsigned int make_binary(struct miga80_value_function *function,
     }
     return add_value(function,
                      comparison_opcode(opcode) ? MIGA80_TYPE_BOOL
-                                               : MIGA80_TYPE_I32,
+                                               : operand_type,
                      opcode, left, right, 0U, 0U, line, column, diagnostic);
 }
 
@@ -263,7 +313,8 @@ static int opcode_has_left(enum miga80_value_opcode opcode)
 {
     return opcode == MIGA80_VALUE_NEG || opcode == MIGA80_VALUE_ADD ||
            opcode == MIGA80_VALUE_SUB || opcode == MIGA80_VALUE_MUL ||
-           opcode == MIGA80_VALUE_DIV ||
+           opcode == MIGA80_VALUE_DIV || opcode == MIGA80_VALUE_DIV_U ||
+           opcode == MIGA80_VALUE_NORMALIZE_INTEGER ||
            comparison_opcode(opcode) || opcode == MIGA80_VALUE_PHI;
 }
 
@@ -271,6 +322,7 @@ static int opcode_has_right(enum miga80_value_opcode opcode)
 {
     return opcode == MIGA80_VALUE_ADD || opcode == MIGA80_VALUE_SUB ||
            opcode == MIGA80_VALUE_MUL || opcode == MIGA80_VALUE_DIV ||
+           opcode == MIGA80_VALUE_DIV_U ||
            comparison_opcode(opcode) || opcode == MIGA80_VALUE_PHI;
 }
 
@@ -315,7 +367,8 @@ static int mark_live_values(struct miga80_value_function *function,
         const struct miga80_value_instruction *value =
             &function->values[value_index];
 
-        if (value->opcode == MIGA80_VALUE_DIV &&
+        if ((value->opcode == MIGA80_VALUE_DIV ||
+             value->opcode == MIGA80_VALUE_DIV_U) &&
             !is_constant(function, value->right, NULL) &&
             !mark_root(function, value_index, worklist, &worklist_size,
                        diagnostic)) {
@@ -360,6 +413,8 @@ static enum miga80_value_opcode value_opcode(enum miga80_ir_opcode opcode)
         return MIGA80_VALUE_MUL;
     case MIGA80_IR_DIV_I32:
         return MIGA80_VALUE_DIV;
+    case MIGA80_IR_DIV_U32:
+        return MIGA80_VALUE_DIV_U;
     case MIGA80_IR_EQ_I32:
     case MIGA80_IR_EQ_BOOL:
         return MIGA80_VALUE_EQ;
@@ -372,8 +427,16 @@ static enum miga80_value_opcode value_opcode(enum miga80_ir_opcode opcode)
         return MIGA80_VALUE_LE_I32;
     case MIGA80_IR_GT_I32:
         return MIGA80_VALUE_GT_I32;
-    default:
+    case MIGA80_IR_GE_I32:
         return MIGA80_VALUE_GE_I32;
+    case MIGA80_IR_LT_U32:
+        return MIGA80_VALUE_LT_U32;
+    case MIGA80_IR_LE_U32:
+        return MIGA80_VALUE_LE_U32;
+    case MIGA80_IR_GT_U32:
+        return MIGA80_VALUE_GT_U32;
+    default:
+        return MIGA80_VALUE_GE_U32;
     }
 }
 
@@ -767,7 +830,7 @@ static int lower_block_values(const struct miga80_ir_function *source,
 
         switch (instruction->opcode) {
         case MIGA80_IR_PUSH_I32:
-            value = make_constant(result, MIGA80_TYPE_I32,
+            value = make_constant(result, instruction->type,
                                   instruction->operand, instruction->line,
                                   instruction->column, diagnostic);
             break;
@@ -798,10 +861,16 @@ static int lower_block_values(const struct miga80_ir_function *source,
             value = make_neg(result, stack[--stack_size], instruction->line,
                              instruction->column, diagnostic);
             break;
+        case MIGA80_IR_NORMALIZE_INTEGER:
+            value = make_normalize_integer(
+                result, stack[--stack_size], instruction->type,
+                instruction->line, instruction->column, diagnostic);
+            break;
         case MIGA80_IR_ADD_I32:
         case MIGA80_IR_SUB_I32:
         case MIGA80_IR_MUL_I32:
         case MIGA80_IR_DIV_I32:
+        case MIGA80_IR_DIV_U32:
         case MIGA80_IR_EQ_I32:
         case MIGA80_IR_NE_I32:
         case MIGA80_IR_EQ_BOOL:
@@ -809,7 +878,11 @@ static int lower_block_values(const struct miga80_ir_function *source,
         case MIGA80_IR_LT_I32:
         case MIGA80_IR_LE_I32:
         case MIGA80_IR_GT_I32:
-        case MIGA80_IR_GE_I32: {
+        case MIGA80_IR_GE_I32:
+        case MIGA80_IR_LT_U32:
+        case MIGA80_IR_LE_U32:
+        case MIGA80_IR_GT_U32:
+        case MIGA80_IR_GE_U32: {
             const unsigned int right = stack[--stack_size];
             const unsigned int left = stack[--stack_size];
 

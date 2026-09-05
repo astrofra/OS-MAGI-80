@@ -1,8 +1,8 @@
 # MIGA Lua Optimization Strategy
 
-**Status:** signed division with controlled faults, normalized `break`/`continue`
-loops, cyclic CFG liveness, branch/loop `phi`, parallel edge copies, `-O1`,
-spilling, and frame layout implemented
+**Status:** exact-width integers, signed/unsigned division with controlled
+faults, normalized `break`/`continue` loops, cyclic CFG liveness, branch/loop
+`phi`, parallel edge copies, `-O1`, spilling, and frame layout implemented
 
 MIGA Lua is a statically typed, ahead-of-time compiled dialect designed for
 native 68EC020/68020 code. Familiar Lua syntax is a usability goal. Dynamic Lua
@@ -34,7 +34,7 @@ The lexer already streams over the source and retains only its current token;
 it does not materialize a token list. The bootstrap AST and IR arenas instead
 favor explicit, easily checked C99 records while the semantics are still
 moving. With the current 32-bit enum/index ABI, an AST node occupies 32 bytes,
-a typed stack-IR instruction 16 bytes, a stack-IR block 20 bytes, a value-IR
+a typed stack-IR instruction 20 bytes, a stack-IR block 20 bytes, a value-IR
 instruction 48 bytes, and a value-IR block 40 bytes. A separate 128-byte
 membership bitset table identifies structured loop regions without enlarging
 each block. At all configured maxima, an `-O1` compilation with a 64 KiB source
@@ -93,8 +93,12 @@ branches may reuse locations. Used `D3-D7` registers are preserved once with
 two or three is strength-reduced when the available registers make that
 profitable.
 
-Signed `i32` division truncates toward zero and defines `INT32_MIN / -1` as
-`INT32_MIN`. The optimizer removes `/ 1`, turns `/ -1` into wrapping negation,
+Integer arithmetic preserves its declared `i8`, `u8`, `i16`, `u16`, or `i32`
+type. Narrow results are sign- or zero-extended after each wrapping operation,
+so later 32-bit register operations see a canonical value. Ordered comparisons
+and division select signed or unsigned 68020 operations from that static type.
+Signed division truncates toward zero and defines minimum / `-1` as a wrapping
+minimum. The optimizer removes `/ 1`, turns signed `/ -1` into wrapping negation,
 and folds constant divisions. A division with a dynamic divisor remains a
 liveness root even if its result is overwritten because its zero-divisor fault
 is observable. A proven nonzero constant divisor needs no guard and a dead such
@@ -105,7 +109,7 @@ The allocator first tries all eight data registers, so ordinary leaf functions
 do not lose `D7` merely to reserve a scratch register. If that plan needs a
 spill, a second bounded pass allocates values in `D0-D6`, reserves `D7` as the
 spill scratch, and reuses four-byte spill slots after their last use. The
-backend emits an ABI 0.2 `A6` frame with `LINK`/`UNLK`, addresses slots at
+backend emits an ABI 0.3 `A6` frame with `LINK`/`UNLK`, addresses slots at
 negative `A6` offsets, consumes spilled operands directly as 68020 memory
 operands where possible, and preserves `D7` with the other used saved
 registers. Frame size is checked before any assembly is emitted.
@@ -156,7 +160,8 @@ count.
   but it must use the same semantics and ABI. It must never be required to run
   a cartridge on a stock A1200.
 
-Every optimization must preserve defined 32-bit wrapping, evaluation order,
+Every optimization must preserve defined per-width wrapping, canonical
+sign/zero extension, evaluation order,
 guards, stop checks, and observable runtime calls. `-O0` and `-O1` are compared
 against the same typed-IR oracle and executed under Musashi with deterministic
 inputs. The same rule will apply to `-O2` when it exists.
@@ -172,8 +177,9 @@ measurements on a stock physical A1200 under a declared DMA and memory profile.
 
 The first optimization milestone is met. Across seven ordinary source corpora
 with six edge inputs each, a signed-division corpus with twelve successful
-executions and four controlled faults, and a six-input spill fixture, both
-optimization levels agree with the typed IR under Musashi. The current
+executions and four controlled faults, an exact-width corpus with twelve
+successful executions and two controlled faults, and a six-input spill fixture,
+both optimization levels agree with the typed IR under Musashi. The current
 regression measurements are shown as code bytes / executed instructions /
 maximum callee stack bytes:
 
@@ -187,19 +193,21 @@ maximum callee stack bytes:
 | `while`, loop-carried values, nested `if`, copy cycle | 308 / 313 / 48 | 188 / 164 / 28 |
 | multiple `break`/`continue` sites and binary funnels | 356 / 69-684 / 32 | 288 / 39-352 / 32 |
 | signed `/` and `/=`, including controlled faults | 108 / 16-28 / 28 | 44 / 7-11 / 0 |
+| `i8`/`u8`/`i16`/`u16`, signed/unsigned division and wrapping | 472 / 43-110 / 44 | 220 / 15-34 / 20 |
 
 The register-pressure corpus forces simultaneous `D3/D4` allocation and
 verifies their ABI preservation. A separate deliberately pressure-heavy value
 IR fixture forces three reusable spill slots; its 96-byte image executes 33
 instructions with 36 callee stack bytes and agrees with the source-level oracle
-for six edge inputs. This brings the current Musashi compiler total to 106
+for six edge inputs. This brings the current Musashi compiler total to 120
 executions.
 
-The `-Os` 68020/libnix compiler currently has a 52,084-byte linked
-text/data/BSS footprint (51,684 text, 280 data, 120 BSS). Its host and Amiga
-builds emit byte-identical ordinary, local-heavy, conditional, loop, and
-loop-control, division, and synthetic spilling `-O1` assembly. Unconditional
-jumps to the physically next block are elided at both optimization levels. This
+The `-Os` 68020/libnix compiler currently has a 57,500-byte linked
+text/data/BSS footprint (57,100 text, 280 data, 120 BSS). Its host and Amiga
+builds emit byte-identical ordinary, local-heavy, conditional, loop,
+loop-control, division, exact-width, and synthetic spilling `-O1` assembly.
+Unconditional jumps to the physically next block are elided at both
+optimization levels. This
 lets the dedicated latch normalize the IR without adding an extra runtime
 branch per iteration, and also removes other redundant fall-through jumps. The
 conditional corpus reduces code by

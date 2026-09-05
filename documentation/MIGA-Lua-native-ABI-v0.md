@@ -1,28 +1,40 @@
-# MIGA Lua Native ABI 0.2
+# MIGA Lua Native ABI 0.3
 
-**Status:** frozen bootstrap register, stack, and controlled-fault core
+**Status:** frozen bootstrap exact-width scalar, register, stack, and
+controlled-fault core
 
 This is the private calling convention between generated MIGA Lua functions
 and the trusted MIGA-80 runtime. It is not the Amiga C ABI, an AmigaOS ABI, or
-part of the source-cartridge format. Version 0.2 freezes only the rules needed
-by the scalar compiler bootstrap, register allocator, and first source-located
-runtime fault.
+part of the source-cartridge format. Version 0.3 freezes only the rules needed
+by the scalar compiler bootstrap, exact-width integer normalization, register
+allocator, and first source-located runtime fault.
 
 ## Target and scalar representation
 
 - Generated instructions target user-mode 68EC020/68020 without an FPU or MMU.
-- `i32` and `u32` occupy one 32-bit register or one four-byte aligned slot.
-- Ordinary integer arithmetic wraps modulo 2^32.
-- Signed integer division truncates toward zero. `INT32_MIN / -1` wraps to
-  `INT32_MIN`; division by zero is a controlled fault.
+- `i8`, `u8`, `i16`, `u16`, and `i32` occupy one 32-bit data register or one
+  four-byte aligned scalar slot at this ABI boundary.
+- A stored or transferred `i8`/`i16` value is sign-extended to 32 bits. A stored
+  or transferred `u8`/`u16` value is zero-extended. Non-canonical high bits are
+  invalid on function entry and may not cross a generated call boundary.
+- Ordinary integer arithmetic wraps modulo 2^8, 2^16, or 2^32 according to the
+  declared type, then restores that canonical sign/zero extension.
+- Signed integer division truncates toward zero. A type's minimum value divided
+  by `-1` wraps to that minimum value. Unsigned types use unsigned division;
+  division by zero is a controlled fault for both forms.
 - `bool` occupies a 32-bit scalar: false is exactly zero and true is exactly
   one. Other values are not valid stored Boolean values.
 - The condition-code register is caller-saved and carries no source-language
   value across a call.
 
+The four-byte scalar-slot rule does not freeze in-memory aggregate layout.
+Future arrays and records may pack `i8`/`u8` elements into bytes and
+`i16`/`u16` elements into words, with explicit extension on load; that layout
+will receive its own versioned contract.
+
 ## Register contract
 
-| Register | ABI 0.2 role | Preservation |
+| Register | ABI 0.3 role | Preservation |
 |---|---|---|
 | `D0-D2` | First three scalar arguments; `D0` scalar result | Caller-saved |
 | `D3-D7` | Allocatable scalar values | Callee-saved |
@@ -34,15 +46,17 @@ runtime fault.
 
 Arguments are assigned from left to right within their type class. Mixed
 scalar/address signatures therefore advance the two register sequences
-independently. The bootstrap frontend exposes scalar `i32` and `bool` arguments only;
+independently. The bootstrap frontend exposes scalar `i8`, `u8`, `i16`, `u16`,
+`i32`, and `bool` arguments only;
 address arguments are reserved so the register allocator cannot claim their
 registers.
-There are no stack arguments in ABI 0.2. A signature that exhausts either
+There are no stack arguments in ABI 0.3. A signature that exhausts either
 register class must be rejected until a later ABI version defines aggregates
 and stack argument placement.
 
 Generated code preserves `A5` and may read its first long word at offset zero,
-which ABI 0.2 fixes as the non-null controlled-fault handler address. Remaining
+which ABI 0.2 introduced as the non-null controlled-fault handler address.
+ABI 0.3 retains it unchanged. Remaining
 runtime-context fields and the service jump table require later versioned
 extensions. Addresses used by the Musashi harness are test configuration and
 are not ABI constants.
@@ -55,7 +69,7 @@ are not ABI constants.
 - On entry, `(A7)` is the return PC. A framed function uses
   `link.w A6,#-frame_size`; saved `A6` is then at `0(A6)` and the return PC at
   `4(A6)`.
-- Frame size is a multiple of four and at most 32,768 bytes in ABI 0.2. Locals
+- Frame size is a multiple of four and at most 32,768 bytes in ABI 0.3. Locals
   and spills use negative offsets from `A6`.
 - A leaf may omit the frame and leave `A6` untouched.
 - Before `RTS`, a function restores every callee-saved register and restores
@@ -89,7 +103,7 @@ fault handler. Generated code enters it with:
 | `D2` | One-based source column |
 | `A0` | Scratch register holding the handler address |
 
-A function with a dynamic divisor tests it before `DIVS.L`. Its cold fault
+A function with a dynamic divisor tests it before `DIVS.L` or `DIVU.L`. Its cold fault
 site loads `D1` and `D2`, joins a shared function-local tail that loads `D0`,
 then performs `movea.l 0(A5),A0` and `jmp (A0)`. It never relies on the CPU's
 native divide-by-zero exception. A divisor proven to be a nonzero constant has
@@ -101,6 +115,23 @@ shipping runtime trampoline will restore its saved host stack and transfer
 control back to MIGA-80. That trampoline implementation remains pending, but
 its generated-code entry contract is fixed here. The Musashi harness models it
 with a private sentinel address; that address is test configuration, not ABI.
+
+## Deferred `string` and `symbol` ABI
+
+`string` and `symbol` are reserved source type names but are deliberately not
+part of ABI 0.3. The planned `string` value is an immutable byte slice backed by
+a deduplicated cartridge constant pool, with an address and an explicit byte
+length; it does not require a trailing NUL and equality compares byte contents.
+The planned `symbol` value is an opaque, cartridge-wide interned 32-bit
+identity suitable for constant-time equality and dictionary keys. It is not an
+address or a hash exposed as a language integer.
+
+The pool format, string descriptor, equality helper, literal relocations,
+deterministic collision-free symbol-ID assignment, and mixed scalar/address
+argument placement must be frozen as one compatible ABI extension. Until then
+the compiler recognizes both type spellings but rejects their use rather than
+selecting an unstable representation. No implicit `string`/`symbol` conversion
+is planned.
 
 ## Executable conformance
 
@@ -129,6 +160,10 @@ optimization levels. The signed-division corpus verifies native `DIVS.L`,
 truncation toward zero, wrapping `INT32_MIN / -1`, guard removal for known
 nonzero divisors, and two source-located division-by-zero faults through the
 `A5` handler contract.
+The exact-width corpus additionally verifies canonical signed and unsigned
+arguments/results, per-width wraparound, `DIVS.L` versus `DIVU.L`, signed versus
+unsigned condition codes, and source-located zero-divisor faults at both
+optimization levels.
 
 Run the host contract and generated-code checks with:
 

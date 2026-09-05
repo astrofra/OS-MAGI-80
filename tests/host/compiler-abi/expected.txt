@@ -1,1 +1,1 @@
-PASS  MIGA Lua native ABI 0.2 register, stack, and fault contract
+PASS  MIGA Lua native ABI 0.3 scalar, stack, and fault contract

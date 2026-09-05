@@ -1,6 +1,8 @@
 # MIGA Lua Compiler Bootstrap
 
-**Status:** typed locals, signed division, controlled faults, normalized loops, `break`/`continue`, loop `phi`, `-O1`, and spills implemented
+**Status:** exact-width integers, typed locals, signed/unsigned division,
+controlled faults, normalized loops, `break`/`continue`, loop `phi`, `-O1`,
+and spills implemented
 
 ## Scope
 
@@ -9,15 +11,16 @@ claiming the version 1.0 grammar is frozen. Its accepted source is exactly one
 public scalar function:
 
 ```ebnf
-function   = "function", name, "(", [ parameters ], ")", ":", scalar-type,
+function   = "function", name, "(", [ parameters ], ")", ":", value-type,
              { statement }, return-statement, "end" ;
 parameters = parameter, { ",", parameter } ;
-parameter  = name, ":", scalar-type ;
-scalar-type = "i32" | "bool" ;
+parameter  = name, ":", value-type ;
+value-type = integer-type | "bool" ;
+integer-type = "i8" | "u8" | "i16" | "u16" | "i32" ;
 statement  = local-declaration | control-statement ;
 control-statement = assignment | if-statement | while-statement
                     | loop-control-statement ;
-local-declaration = "local", name, ":", scalar-type, "=", expression ;
+local-declaration = "local", name, ":", value-type, "=", expression ;
 assignment = local-name, ( "=" | "/=" ), expression ;
 if-statement = "if", expression, "then", { control-statement },
                "else", { control-statement }, "end" ;
@@ -38,27 +41,42 @@ function-scoped scalar locals and 32 statements including nested branches and
 the final return.
 Declarations require an initializer; a local is visible only after that
 initializer, cannot shadow a parameter or another local, and parameters are
-immutable. Types are exact: the bootstrap performs no implicit conversion,
-including between constants. Arithmetic and ordered comparisons require `i32`;
-`==`, `~=`, and its exact alias `!=` require two operands of the same scalar
-type; `if` and `while` conditions require `bool`. `if` currently requires an
+immutable. Types are exact. There is no general implicit conversion. The one
+implemented exception adapts an `i32` constant expression to `i8`, `u8`,
+`i16`, or `u16` when its final value is representable in the destination type;
+an out-of-range constant is rejected. Arithmetic, `/`, and ordered comparisons
+require two operands of the same integer type. `==`, `~=`, and its exact alias
+`!=` require two operands of the same scalar type; `if` and `while` conditions
+require `bool`. `if` currently requires an
 explicit `else`. Declarations and returns inside `if` branches or loop bodies
 remain rejected until lexical scopes and multiple exit blocks are specified.
 `break` and `continue` are valid only within the nearest enclosing `while` and
 must terminate their immediate statement list; a following statement remains
 valid when it is reached through another branch of an enclosing `if`. The
 initial ABI supports at most three
-scalar parameters in `D0` through `D2`, with one scalar result in `D0`. Arithmetic has
-defined two's-complement wrapping semantics. Signed `/` truncates toward zero;
-`INT32_MIN / -1` wraps to `INT32_MIN`. A provably constant zero divisor is a
-compile-time error. Every other divisor not proven nonzero is checked before
-`DIVS.L` and branches to a controlled, source-located runtime fault when zero.
+scalar parameters in `D0` through `D2`, with one scalar result in `D0`.
+Arithmetic wraps at the declared width. Signed `/` truncates toward zero and
+minimum-value divided by `-1` wraps to that minimum value; unsigned `/` uses
+ordinary unsigned division. A provably constant zero divisor is a compile-time
+error. Every other divisor not proven nonzero is checked before `DIVS.L` or
+`DIVU.L` and branches to a controlled, source-located runtime fault when zero.
 Register, frame, and fault placement follows
-[MIGA Lua Native ABI 0.2](./MIGA-Lua-native-ABI-v0.md).
+[MIGA Lua Native ABI 0.3](./MIGA-Lua-native-ABI-v0.md).
 
 The version 1 language contract requires an explicit return annotation and
 includes `void`, but `void` code generation is not in this bootstrap tranche.
-Calls, other types, multiple functions, multiple returns, hexadecimal
+The exact spellings `string` and `symbol` are reserved and recognized as types,
+but using either currently produces an explicit immutable-pool/address-ABI
+dependency diagnostic. `string` is planned as an immutable byte sequence
+backed by a deduplicated constant pool and represented by an address plus a
+length. `symbol` is planned as a cartridge-wide interned, opaque 32-bit
+identity, with equality but no arithmetic or ordering. The string descriptor,
+relocations, literal grammar, interning step, and mixed scalar/address calling
+convention must be implemented together in the next data tranche. There are no
+`byte` or `word` aliases: the source spellings remain `i8`, `u8`, `i16`, and
+`u16`.
+
+Calls, fixed point, multiple functions, multiple returns, hexadecimal
 source literals, and the minimum `i32` literal spelling are likewise rejected
 rather than guessed.
 
@@ -87,8 +105,9 @@ The implementation has four bounded, host-buildable layers:
    predecessors and binary `phi` values remain sufficient. A `while` whose
    body has no syntactic path back to the header is represented as acyclic and
    needs no unreachable latch. The host interpreter follows this CFG as the
-   semantic oracle and uses unsigned C operations to specify 32-bit wrapping,
-   signed comparisons, and signed division without C signed-overflow behavior.
+   semantic oracle and uses unsigned C operations to specify per-width
+   wrapping, signed/unsigned comparisons, and division without C
+   signed-overflow behavior.
 3. `-O1` renames locals to values throughout the CFG and creates typed `phi`
    values at two-predecessor joins and loop headers. It identifies natural
    loops with bounded dominator analysis, and validates their single
@@ -107,11 +126,11 @@ The implementation has four bounded, host-buildable layers:
    parameter/local slots and expression-stack temporaries as a baseline. The
    default `-O1` keeps current local and expression values in registers and
    preserves any allocated `D3-D7` registers with `MOVEM`. Spilling functions
-   use ABI 0.2 `LINK`/`UNLK` frames, negative `A6` offsets, and `D7` as a saved
+   use ABI 0.3 `LINK`/`UNLK` frames, negative `A6` offsets, and `D7` as a saved
    scratch register. Both backends omit an unconditional jump when its target
    is the next emitted block, so the dedicated latch does not add a redundant
    branch to the hot loop path. Dynamic divisions add one `TST.L` and one
-   normally untaken branch before native `DIVS.L`; cold per-site stubs pass the
+   normally untaken branch before native `DIVS.L` or `DIVU.L`; cold per-site stubs pass the
    fault code, line, and column to the handler pointer in the `A5` context.
 
 For the current local toolchain, GNU `m68k-amigaos-as` retains a relocatable
@@ -157,17 +176,19 @@ machine-code emission; the shipping encoder and instruction-cache
 synchronization remain later work.
 
 The differential tests preserve `-O0`/`-O1` assembly, relocatable objects, and
-flat binaries under the compiler pipeline build directories. Seven ordinary source
-corpora—including typed locals, a nested 19-block comparison/branch fixture,
-the loop-carried cyclic-copy fixture, and a multi-site `break`/`continue`
+flat binaries under the compiler pipeline build directories. Seven ordinary
+source corpora—including typed locals, a nested 19-block comparison/branch
+fixture, the loop-carried cyclic-copy fixture, and a multi-site `break`/`continue`
 fixture—use six edge inputs each at both levels. Those 84 executions must
 produce the same `D0` value as the typed-IR interpreter. An eighth signed-
 division corpus adds 12 successful results and four controlled zero faults. A
-synthetic value-IR schedule then forces three spills and adds six more oracle
-comparisons, bringing the total to 106. This is necessary because the current bounded source
-subset cannot naturally exceed all eight data registers. The reports retain
-image size,
-executed instruction count, and maximum callee stack use, while the runner
+ninth exact-width corpus adds 12 successful `i8`/`u8`/`i16`/`u16` results and
+two controlled zero faults, including signed/unsigned comparisons, divisions,
+and wrapping normalization. A synthetic value-IR schedule then forces three
+spills and adds six more oracle comparisons, bringing the total to 120. This is
+necessary because the current bounded source subset cannot naturally exceed
+all eight data registers. The reports retain image size, executed instruction
+count, and maximum callee stack use, while the runner
 verifies return or the expected controlled fault, precise fault location, stack
 balance on return, callee-saved registers including `A6`, memory guards, and
 the instruction budget.

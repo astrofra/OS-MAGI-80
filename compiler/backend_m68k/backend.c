@@ -36,6 +36,25 @@ static int output_fault_immediate(FILE *output, unsigned int value,
     return output_line(output, "        move.l  #%u,%s\n", value, reg);
 }
 
+int miga80_emit_gnu_m68k_normalize_integer(FILE *output,
+                                           enum miga80_type type,
+                                           const char *reg)
+{
+    if (type == MIGA80_TYPE_I8) {
+        return output_line(output, "        extb.l  %s\n", reg);
+    }
+    if (type == MIGA80_TYPE_U8) {
+        return output_line(output, "        and.l   #0xff,%s\n", reg);
+    }
+    if (type == MIGA80_TYPE_I16) {
+        return output_line(output, "        ext.l   %s\n", reg);
+    }
+    if (type == MIGA80_TYPE_U16) {
+        return output_line(output, "        and.l   #0xffff,%s\n", reg);
+    }
+    return type == MIGA80_TYPE_I32;
+}
+
 int miga80_emit_gnu_m68k_fault_site(FILE *output, const char *function_name,
                                     unsigned int site, unsigned int line,
                                     unsigned int column)
@@ -84,7 +103,7 @@ int miga80_emit_gnu_m68k(FILE *output,
     frame_size = (function->parameter_count + function->local_count) * 4U;
     if (!miga80_abi_frame_size_is_valid(frame_size)) {
         (void)snprintf(diagnostic->message, sizeof(diagnostic->message),
-                       "function frame violates native ABI 0.2");
+                       "function frame violates native ABI 0.3");
         return 0;
     }
 
@@ -110,7 +129,7 @@ int miga80_emit_gnu_m68k(FILE *output,
             diagnostic->line = 0U;
             diagnostic->column = 0U;
             (void)snprintf(diagnostic->message, sizeof(diagnostic->message),
-                           "unable to map argument through native ABI 0.2");
+                           "unable to map argument through native ABI 0.3");
             return 0;
         }
         if (!output_line(output, "        move.l  %s,-%u(%%a6)\n",
@@ -189,13 +208,33 @@ int miga80_emit_gnu_m68k(FILE *output,
         case MIGA80_IR_NEG_I32:
             success = output_line(output,
                                   "        move.l  (%%a7)+,%%d0\n"
-                                  "        neg.l   %%d0\n"
-                                  "        move.l  %%d0,-(%%a7)\n");
+                                  "        neg.l   %%d0\n");
+            if (success) {
+                success = miga80_emit_gnu_m68k_normalize_integer(
+                    output, instruction->type, "%d0");
+            }
+            if (success) {
+                success = output_line(output,
+                                      "        move.l  %%d0,-(%%a7)\n");
+            }
+            break;
+        case MIGA80_IR_NORMALIZE_INTEGER:
+            success = output_line(output,
+                                  "        move.l  (%%a7)+,%%d0\n");
+            if (success) {
+                success = miga80_emit_gnu_m68k_normalize_integer(
+                    output, instruction->type, "%d0");
+            }
+            if (success) {
+                success = output_line(output,
+                                      "        move.l  %%d0,-(%%a7)\n");
+            }
             break;
         case MIGA80_IR_ADD_I32:
         case MIGA80_IR_SUB_I32:
         case MIGA80_IR_MUL_I32:
         case MIGA80_IR_DIV_I32:
+        case MIGA80_IR_DIV_U32:
         case MIGA80_IR_EQ_I32:
         case MIGA80_IR_NE_I32:
         case MIGA80_IR_EQ_BOOL:
@@ -204,6 +243,10 @@ int miga80_emit_gnu_m68k(FILE *output,
         case MIGA80_IR_LE_I32:
         case MIGA80_IR_GT_I32:
         case MIGA80_IR_GE_I32:
+        case MIGA80_IR_LT_U32:
+        case MIGA80_IR_LE_U32:
+        case MIGA80_IR_GT_U32:
+        case MIGA80_IR_GE_U32:
             success = output_line(output,
                                   "        move.l  (%%a7)+,%%d1\n"
                                   "        move.l  (%%a7)+,%%d0\n");
@@ -223,6 +266,14 @@ int miga80_emit_gnu_m68k(FILE *output,
                     "        beq     .L_%s_divzero_%u\n"
                     "        divs.l  %%d1,%%d0\n",
                     function->name, index);
+            } else if (success &&
+                       instruction->opcode == MIGA80_IR_DIV_U32) {
+                success = output_line(
+                    output,
+                    "        tst.l   %%d1\n"
+                    "        beq     .L_%s_divzero_%u\n"
+                    "        divu.l  %%d1,%%d0\n",
+                    function->name, index);
             } else if (success) {
                 const char *condition = "seq";
 
@@ -237,12 +288,29 @@ int miga80_emit_gnu_m68k(FILE *output,
                     condition = "sgt";
                 } else if (instruction->opcode == MIGA80_IR_GE_I32) {
                     condition = "sge";
+                } else if (instruction->opcode == MIGA80_IR_LT_U32) {
+                    condition = "scs";
+                } else if (instruction->opcode == MIGA80_IR_LE_U32) {
+                    condition = "sls";
+                } else if (instruction->opcode == MIGA80_IR_GT_U32) {
+                    condition = "shi";
+                } else if (instruction->opcode == MIGA80_IR_GE_U32) {
+                    condition = "scc";
                 }
                 success = output_line(output,
                                       "        cmp.l   %%d1,%%d0\n"
                                       "        %s     %%d0\n"
                                       "        and.l   #1,%%d0\n",
                                       condition);
+            }
+            if (success &&
+                (instruction->opcode == MIGA80_IR_ADD_I32 ||
+                 instruction->opcode == MIGA80_IR_SUB_I32 ||
+                 instruction->opcode == MIGA80_IR_MUL_I32 ||
+                 instruction->opcode == MIGA80_IR_DIV_I32 ||
+                 instruction->opcode == MIGA80_IR_DIV_U32)) {
+                success = miga80_emit_gnu_m68k_normalize_integer(
+                    output, instruction->type, "%d0");
             }
             if (success) {
                 success =
@@ -292,7 +360,8 @@ int miga80_emit_gnu_m68k(FILE *output,
             const struct miga80_ir_instruction *instruction =
                 &function->instructions[index];
 
-            if (instruction->opcode != MIGA80_IR_DIV_I32) {
+            if (instruction->opcode != MIGA80_IR_DIV_I32 &&
+                instruction->opcode != MIGA80_IR_DIV_U32) {
                 continue;
             }
             if (!miga80_emit_gnu_m68k_fault_site(

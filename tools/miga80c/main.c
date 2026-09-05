@@ -16,7 +16,7 @@ static void usage(const char *program)
 {
     fprintf(stderr,
             "Usage: %s source.lua [-O0|-O1] -S -o output.s\n"
-            "       %s source.lua --eval [i32-argument ...]\n",
+            "       %s source.lua --eval [scalar-argument ...]\n",
             program, program);
 }
 
@@ -201,7 +201,7 @@ int main(int argc, char **argv)
         } else {
             for (index = 0; index < argument_count; ++index) {
                 if (!parse_argument(argv[index + 3U], &arguments[index])) {
-                    fprintf(stderr, "%s: invalid i32 argument '%s'\n",
+                    fprintf(stderr, "%s: invalid scalar argument '%s'\n",
                             argv[1], argv[index + 3U]);
                     break;
                 }

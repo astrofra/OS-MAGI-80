@@ -27,6 +27,7 @@ enum miga80_ir_opcode {
     MIGA80_IR_SUB_I32,
     MIGA80_IR_MUL_I32,
     MIGA80_IR_DIV_I32,
+    MIGA80_IR_DIV_U32,
     MIGA80_IR_EQ_I32,
     MIGA80_IR_NE_I32,
     MIGA80_IR_EQ_BOOL,
@@ -35,6 +36,11 @@ enum miga80_ir_opcode {
     MIGA80_IR_LE_I32,
     MIGA80_IR_GT_I32,
     MIGA80_IR_GE_I32,
+    MIGA80_IR_LT_U32,
+    MIGA80_IR_LE_U32,
+    MIGA80_IR_GT_U32,
+    MIGA80_IR_GE_U32,
+    MIGA80_IR_NORMALIZE_INTEGER,
     MIGA80_IR_BRANCH_FALSE,
     MIGA80_IR_JUMP,
     MIGA80_IR_RETURN
@@ -42,6 +48,7 @@ enum miga80_ir_opcode {
 
 struct miga80_ir_instruction {
     enum miga80_ir_opcode opcode;
+    enum miga80_type type;
     uint32_t operand;
     unsigned int line;
     unsigned int column;

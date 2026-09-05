@@ -35,7 +35,7 @@ balance, callee-saved registers, memory guards, and instruction limit, and
 retains a short disassembly trace on failure. It is the foundation for the Lua
 compiler path exercised below.
 
-Build the initial typed MIGA Lua compiler, verify native ABI 0.2,
+Build the initial typed MIGA Lua compiler, verify native ABI 0.3,
 and validate generated 68020 code against its typed-IR oracle with:
 
 ```sh
@@ -50,12 +50,16 @@ gmake compiler-amiga-test
 ```
 
 The implemented subset accepts one explicitly annotated scalar function with
-up to three immutable `i32`/`bool` parameters and 16 explicitly typed locals,
+up to three immutable `i8`/`u8`/`i16`/`u16`/`i32`/`bool` parameters and 16
+explicitly typed locals,
 initialized declarations, reassignment, one final return, arithmetic, all six
 comparisons (`!=` aliases `~=`), nested `if`/`then`/`else`/`end`, and nested
-`while`/`do`/`end` loops with loop-carried values, `break`, and `continue`. The
-signed `/` expression and statement-only `/=` use truncation toward zero and
-controlled division-by-zero faults. The typed IR carries up to 32 basic blocks.
+`while`/`do`/`end` loops with loop-carried values, `break`, and `continue`.
+Signed `/` truncates toward zero, unsigned `/` uses `DIVU.L`, and
+statement-only `/=` follows the target integer type; both use controlled
+division-by-zero faults. Narrow arithmetic wraps at its declared width and is
+kept in canonical sign- or zero-extended 32-bit ABI values. The typed IR carries
+up to 32 basic blocks.
 Multiple loop-control sites are folded through bounded binary funnels into a
 canonical latch and exit. Assembly generation defaults to the value-IR `-O1` backend;
 `-O0` keeps the stack baseline for comparison. `-O1` removes dead assignments,
@@ -64,15 +68,20 @@ coalesces compatible `phi` slots, schedules parallel edge copies, and uses
 bounded ABI frames when transfers or register pressure require them. See the [compiler
 bootstrap](documentation/MIGA-Lua-compiler-bootstrap.md)
 for its exact grammar, the [native ABI
-0.2](documentation/MIGA-Lua-native-ABI-v0.md) for the frozen register, stack,
+0.3](documentation/MIGA-Lua-native-ABI-v0.md) for the frozen register, stack,
 and fault core, and the [optimization
 strategy](documentation/MIGA-Lua-optimization-strategy.md) for the bounded
 on-Amiga compiler plan.
 
 The version 1 language contract is deliberately strict: parameter, return
-(including `void`), and local types are explicit; implicit conversions,
-polymorphic/union types, and multiple returns are excluded from version 1. Future
-fixed arrays are zero-based, with valid indices `0` through `N - 1`.
+(including `void`), and local types are explicit; runtime implicit conversions,
+polymorphic/union types, and multiple returns are excluded from version 1. The
+bootstrap only adapts an `i32` constant expression when it provably fits its
+narrow destination. Future fixed arrays are zero-based, with valid indices `0`
+through `N - 1`.
+There are no `byte`/`word` aliases. `string` and `symbol` are reserved type
+names; their immutable constant pool, descriptors, relocations, and address ABI
+form the next data tranche and are not yet accepted as runtime values.
 
 Run the inverse dual-playfield decoder and compositor → C2P → decoder differential with:
 

@@ -2,7 +2,8 @@
 
 ## Fast compiler development without launching UAE
 
-**Status:** runner, typed compiler, cyclic CFG/loop `phi` value-IR `-O1`, and spills implemented
+**Status:** runner, exact-width typed compiler, signed/unsigned division,
+cyclic CFG/loop `phi` value-IR `-O1`, and spills implemented
 
 **Primary target:** stock Amiga 1200, 68EC020 at approximately 14 MHz  
 **Host platforms:** macOS, Linux, and Windows  
@@ -147,7 +148,7 @@ Even if generated code is never supposed to perform an unaligned access, detecti
 
 The local runner becomes much simpler once the compiler has a stable calling
 convention. The frozen bootstrap convention is shown below. It is versioned in
-[MIGA Lua Native ABI 0.2](./MIGA-Lua-native-ABI-v0.md); extensions still need
+[MIGA Lua Native ABI 0.3](./MIGA-Lua-native-ABI-v0.md); extensions still need
 measurement and an explicit compatible revision or version bump.
 
 | Resource | Proposed use |
@@ -161,10 +162,12 @@ measurement and an explicit compatible revision or version bump.
 | `A6` | Optional frame pointer; omit in leaf functions when possible |
 | `A7` | Stack pointer |
 
-ABI 0.2 fixes 32-bit wrapping integers, canonical `bool` values, four-byte
-stack alignment, register-only bootstrap arguments, frames of at most 32,768
-bytes, and the first runtime-context entry for a non-returning controlled fault
-handler. The following extensions remain later decisions:
+ABI 0.3 adds canonical 32-bit register/slot representations and per-width
+wrapping for `i8`, `u8`, `i16`, and `u16` to the existing `i32` and `bool`
+contract. It retains four-byte stack alignment, register-only bootstrap
+arguments, frames of at most 32,768 bytes, and the first runtime-context entry
+for a non-returning controlled fault handler. The following extensions remain
+later decisions:
 
 - fixed-point representation and rounding rules;
 - array/string descriptor layout;
@@ -566,8 +569,9 @@ circular disassembly trace for failures. Run it with `gmake miga68k-test`.
 ### Phase 1 — connect the compiler
 
 **Initial connection implemented:** `miga80c` parses one explicitly annotated
-`i32`/`bool` function with typed local declarations, assignments, comparisons,
-signed division, statement-only `/=`, nested `if`/`else`, and nested `while`,
+`i8`/`u8`/`i16`/`u16`/`i32`/`bool` function with typed local declarations,
+assignments, signed/unsigned comparisons and division, statement-only `/=`,
+nested `if`/`else`, and nested `while`,
 lowers it to typed stack IR and value IR, renders GNU
 m68k assembly at `-O0` or `-O1`, and provides a host CFG evaluator. The IR has
 up to 32 blocks with bounded successors. Each loop is normalized around one
@@ -579,11 +583,12 @@ coalesces compatible `phi` slots, and schedules parallel edge copies with a
 bounded cycle-breaking temporary. The ordinary test path assembles both levels
 for seven corpora and checks six inputs per corpus against Musashi. A
 signed-division corpus adds twelve normal executions and four controlled
+faults. An exact-width corpus adds twelve normal executions and two controlled
 faults. A synthetic value-IR fixture forces three reusable
 spill slots in an `A6` frame and checks six more inputs, saved registers, stack
 balance, and maximum stack use. Host and 68020 test programs must render
-ordinary, local-heavy, conditional, loop, loop-control, division, and spilling
-assembly byte-identically.
+ordinary, local-heavy, conditional, loop, loop-control, division, exact-width,
+and spilling assembly byte-identically.
 The current GNU toolchain
 retains an Amiga relocatable object; ELF linking, symbol manifests, and broader
 language semantics remain pending. See
@@ -603,19 +608,20 @@ language semantics remain pending. See
 caller/callee-saved sets, `A5` context ownership, `A6` frames, Boolean values,
 and four-byte stack alignment. ABI 0.2 assigns runtime-context offset zero to a
 non-returning controlled fault handler and passes fault code/source location in
-`D0-D2`. The backend consumes the machine-readable
+`D0-D2`. ABI 0.3 defines canonical register/slot values and wrapping semantics
+for `i8`, `u8`, `i16`, and `u16`. The backend consumes the machine-readable
 contract and the Musashi runner derives its saved-register checks from it,
 including a deliberate clobber negative control. See
-[MIGA Lua Native ABI 0.2](./MIGA-Lua-native-ABI-v0.md).
+[MIGA Lua Native ABI 0.3](./MIGA-Lua-native-ABI-v0.md).
 
-- define register roles; **implemented for ABI 0.2**
+- define register roles; **implemented for ABI 0.3**
 - add calls and source locals; **typed source locals, assignments, and
   compiler-generated spill frames implemented; calls pending**
 - implement saved-register and stack guard checks; **implemented for the current
   entry path; nested calls remain pending**
 - define runtime traps; **division by zero implemented as controlled fault 1;
   other traps pending**
-- publish the ABI as a versioned document; **implemented for ABI 0.2**
+- publish the ABI as a versioned document; **implemented for ABI 0.3**
 
 **Exit condition:** separately compiled generated functions and runtime stubs can call one another reliably.
 
@@ -627,9 +633,12 @@ including a deliberate clobber negative control. See
   declarations or returns inside loop bodies**
 - signed `i32` `/`, statement-only `/=`, and controlled zero-divisor faults;
   **implemented with constant rejection and source-located runtime faults**
+- `i8`, `u8`, `i16`, and `u16` arithmetic, comparisons, division, constant-fit
+  conversion, and canonical ABI values; **implemented at `-O0` and `-O1`**
 - fixed-point arithmetic;
 - globals and arrays;
-- restricted tables/strings;
+- immutable string pool, `string` descriptors, and interned `symbol` IDs;
+  **type names reserved; runtime values and ABI pending**
 - bounds and error behaviour;
 - randomized differential tests.
 
@@ -637,11 +646,11 @@ including a deliberate clobber negative control. See
 
 **Initial signals implemented:** the generic runner reports image bytes,
 executed instructions, and maximum callee stack bytes. The differential suite
-locks reviewed `-O0`/`-O1` figures for seven ordinary source corpora, including nested
-conditional control flow, cyclic loop transfers, and multi-site loop-control
-funnels, plus signed division and a forced spill fixture: 106 Musashi
-executions in total. These are optimizer
-regressions only, not cycle or wall-time claims. In the conditional corpus,
+locks reviewed `-O0`/`-O1` figures for seven ordinary source corpora, including
+nested conditional control flow, cyclic loop transfers, and multi-site loop-control
+funnels, plus signed division, exact-width integers, and a forced spill fixture:
+120 Musashi executions in total. These are optimizer regressions only, not
+cycle or wall-time claims. In the conditional corpus,
 CFG-aware allocation reduces the `-O1` result to 356 code bytes, 60-62 executed
 instructions, and 24 maximum callee stack bytes; six live `phi` values share
 two slots. In the loop corpus, O1 reduces 308 code bytes, 313 instructions, and
@@ -655,6 +664,11 @@ The division image falls from 108 bytes, 28 normal-path instructions, and 28
 stack bytes at O0 to 44 bytes, 7 instructions, and no generated stack use at
 O1. Its four dynamic zero-divisor cases reach the ABI fault handler with the
 expected source location.
+
+The exact-width image falls from 472 bytes at O0 to 220 bytes at O1. Across its
+normal paths O1 executes 32-34 instructions instead of 107-110 and uses 20
+bytes of callee stack instead of 44; its unsigned zero-divisor path retains its
+source location.
 
 - record code size, instruction counts, and stack use; **implemented for the bootstrap**
 - add core-cycle estimates;

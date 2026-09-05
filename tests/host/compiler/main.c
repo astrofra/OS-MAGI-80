@@ -139,7 +139,7 @@ static int test_valid_function(void)
         fread(assembly_prefix, 1U, sizeof(assembly_prefix) - 1U, assembly);
     assembly_prefix[assembly_prefix_size] = '\0';
     if (ferror(assembly) ||
-        strstr(assembly_prefix, "native ABI 0.2") == NULL ||
+        strstr(assembly_prefix, "native ABI 0.3") == NULL ||
         strstr(assembly_prefix, "move.l  %d0,-4(%a6)") == NULL) {
         emitted = 0;
     }
@@ -352,6 +352,139 @@ static int test_signed_division_and_fault_liveness(void)
         strstr(assembly_text, "divs.l  #0x00000002") == NULL ||
         strstr(assembly_text, "fault_divzero") != NULL ||
         strstr(assembly_text, "tst.l") != NULL) {
+        emitted = 0;
+    }
+    closed = fclose(assembly);
+    return emitted && closed == 0;
+}
+
+static int test_narrow_integer_types(void)
+{
+    static const char source[] =
+        "function narrow(a: i8, b: u8, c: i16): u16\n"
+        "  local si: i8 = a + 1\n"
+        "  local ub: u8 = b + 2\n"
+        "  local quotient: u8 = b\n"
+        "  quotient /= ub\n"
+        "  local sw: i16 = c / -2\n"
+        "  local out: u16 = 65535\n"
+        "  if si < -1 then\n"
+        "    if quotient > 200 then out = 1 else out = 2 end\n"
+        "  else\n"
+        "    if sw <= -3 then out = 3 else out = 4 end\n"
+        "  end\n"
+        "  return out\n"
+        "end\n";
+    static const char increment_source[] =
+        "function increment(a: u16): u16 return a + 1 end";
+    static const char unsigned_comparison_source[] =
+        "function unsigned_order(a: u16, b: u16): bool "
+        "return ((a < b) == (a <= b)) == ((a > b) == (a >= b)) end";
+    struct miga80_ir_function ir;
+    struct miga80_value_function value_ir;
+    struct miga80_diagnostic diagnostic;
+    char assembly_text[16384];
+    uint32_t result;
+    size_t assembly_size;
+    FILE *assembly;
+    int emitted;
+    int closed;
+
+    if (miga80_normalize_integer(MIGA80_TYPE_I8, UINT32_C(0x80)) !=
+            UINT32_C(0xffffff80) ||
+        miga80_normalize_integer(MIGA80_TYPE_U8, UINT32_C(0x1ff)) !=
+            UINT32_C(0xff) ||
+        miga80_normalize_integer(MIGA80_TYPE_I16, UINT32_C(0x8000)) !=
+            UINT32_C(0xffff8000) ||
+        miga80_normalize_integer(MIGA80_TYPE_U16, UINT32_C(0x1ffff)) !=
+            UINT32_C(0xffff) ||
+        !compile_source(source, &ir, &diagnostic) ||
+        ir.parameter_types[0] != MIGA80_TYPE_I8 ||
+        ir.parameter_types[1] != MIGA80_TYPE_U8 ||
+        ir.parameter_types[2] != MIGA80_TYPE_I16 ||
+        ir.result_type != MIGA80_TYPE_U16 ||
+        !miga80_evaluate_ir(
+            &ir,
+            (const uint32_t[]){UINT32_C(0xffffff80), UINT32_C(0xff),
+                               UINT32_C(0xffff8000)},
+            3U, &result, &diagnostic) ||
+        result != 1U ||
+        !miga80_evaluate_ir(
+            &ir,
+            (const uint32_t[]){UINT32_C(0x7f), UINT32_C(0xfa), 6U},
+            3U, &result, &diagnostic) ||
+        result != 2U ||
+        !miga80_evaluate_ir(&ir, (const uint32_t[]){0U, 0U, 6U}, 3U,
+                            &result, &diagnostic) ||
+        result != 3U ||
+        !miga80_evaluate_ir(&ir, (const uint32_t[]){0U, 0U, 4U}, 3U,
+                            &result, &diagnostic) ||
+        result != 4U ||
+        miga80_evaluate_ir(&ir, (const uint32_t[]){0U, UINT32_C(0xfe), 0U},
+                           3U, &result, &diagnostic) ||
+        diagnostic.line != 5U || diagnostic.column != 12U ||
+        strstr(diagnostic.message, "division by zero") == NULL ||
+        miga80_evaluate_ir(&ir, (const uint32_t[]){UINT32_C(0x80), 0U, 0U},
+                           3U, &result, &diagnostic) ||
+        strstr(diagnostic.message, "integer argument is not canonical") ==
+            NULL ||
+        !miga80_build_value_ir(&ir, &value_ir, &diagnostic) ||
+        (assembly = tmpfile()) == NULL) {
+        return 0;
+    }
+    emitted = miga80_emit_gnu_m68k_o1(assembly, &value_ir, &diagnostic);
+    rewind(assembly);
+    assembly_size =
+        fread(assembly_text, 1U, sizeof(assembly_text) - 1U, assembly);
+    assembly_text[assembly_size] = '\0';
+    if (ferror(assembly) || strstr(assembly_text, "extb.l") == NULL ||
+        strstr(assembly_text, "and.l   #0xff") == NULL ||
+        strstr(assembly_text, "divu.l") == NULL ||
+        strstr(assembly_text, "divs.l") == NULL ||
+        strstr(assembly_text, "shi") == NULL) {
+        emitted = 0;
+    }
+    closed = fclose(assembly);
+    if (!emitted || closed != 0 ||
+        !compile_source(increment_source, &ir, &diagnostic) ||
+        !miga80_evaluate_ir(&ir, (const uint32_t[]){UINT32_C(0xffff)}, 1U,
+                            &result, &diagnostic) ||
+        result != 0U || !miga80_build_value_ir(&ir, &value_ir, &diagnostic) ||
+        (assembly = tmpfile()) == NULL) {
+        return 0;
+    }
+    emitted = miga80_emit_gnu_m68k_o1(assembly, &value_ir, &diagnostic);
+    rewind(assembly);
+    assembly_size =
+        fread(assembly_text, 1U, sizeof(assembly_text) - 1U, assembly);
+    assembly_text[assembly_size] = '\0';
+    if (ferror(assembly) || strstr(assembly_text, "and.l   #0xffff") == NULL) {
+        emitted = 0;
+    }
+    closed = fclose(assembly);
+    if (!emitted || closed != 0 ||
+        !compile_source(unsigned_comparison_source, &ir, &diagnostic) ||
+        !miga80_evaluate_ir(&ir, (const uint32_t[]){0U, UINT32_C(0xffff)},
+                            2U, &result, &diagnostic) ||
+        result != 1U ||
+        !miga80_evaluate_ir(&ir, (const uint32_t[]){UINT32_C(0xffff), 0U},
+                            2U, &result, &diagnostic) ||
+        result != 1U ||
+        !miga80_evaluate_ir(&ir, (const uint32_t[]){7U, 7U}, 2U, &result,
+                            &diagnostic) ||
+        result != 1U || !miga80_build_value_ir(&ir, &value_ir, &diagnostic) ||
+        (assembly = tmpfile()) == NULL) {
+        return 0;
+    }
+    emitted = miga80_emit_gnu_m68k_o1(assembly, &value_ir, &diagnostic);
+    rewind(assembly);
+    assembly_size =
+        fread(assembly_text, 1U, sizeof(assembly_text) - 1U, assembly);
+    assembly_text[assembly_size] = '\0';
+    if (ferror(assembly) || strstr(assembly_text, "scs") == NULL ||
+        strstr(assembly_text, "sls") == NULL ||
+        strstr(assembly_text, "shi") == NULL ||
+        strstr(assembly_text, "scc") == NULL) {
         emitted = 0;
     }
     closed = fclose(assembly);
@@ -913,6 +1046,7 @@ int main(int argc, char **argv)
 
     if (!test_valid_function() || !test_constant_folding() ||
         !test_signed_division_and_fault_liveness() ||
+        !test_narrow_integer_types() ||
         !test_locals_and_entry_block() ||
         !test_bool_comparisons_and_cfg() ||
         !test_while_cfg_and_loop_phis() ||
@@ -956,7 +1090,21 @@ int main(int argc, char **argv)
                       34U, "division by zero in constant expression") ||
         !expect_error("function f(): i32 local x: bool = true x /= 1 "
                       "return 0 end",
-                      1U, 42U, "operator '/=' requires i32 target") ||
+                      1U, 42U, "operator '/=' requires integer target") ||
+        !expect_error("function f(): u8 local x: u8 = 256 return x end", 1U,
+                      24U, "local initializer requires u8, found i32") ||
+        !expect_error("function f(a: u8, b: i16): u8 return a + b end", 1U,
+                      40U, "matching integer operands") ||
+        !expect_error("function f(a: u8): u8 return -a end", 1U, 30U,
+                      "unary '-' requires a signed integer") ||
+        !expect_error("function f(s: string): bool return true end", 1U,
+                      12U, "immutable-pool and address ABI tranche") ||
+        !expect_error("function f(): symbol return 0 end", 1U, 10U,
+                      "immutable-pool and address ABI tranche") ||
+        !expect_error("function f(a: byte): i32 return 0 end", 1U, 15U,
+                      "expected scalar type, found identifier") ||
+        !expect_error("function f(a: word): i32 return 0 end", 1U, 15U,
+                      "expected scalar type, found identifier") ||
         !expect_error("function f(flag: bool): i32 if flag /= true then "
                       "else end return 0 end",
                       1U, 37U, "expected 'then', found '/='") ||
@@ -968,7 +1116,7 @@ int main(int argc, char **argv)
                       "return 0 end",
                       1U, 39U, "statement follows loop control") ||
         !expect_error("function f(): bool return true < false end", 1U, 32U,
-                      "ordered comparison requires i32") ||
+                      "ordered comparison requires integer") ||
         !expect_error("function f(): bool return 1 == true end", 1U, 29U,
                       "different types") ||
         !expect_error("function f(): bool return !true end", 1U, 27U,
@@ -980,7 +1128,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    printf("PASS  compiler CFG, loop control, signed division faults, phis, "
-           "O0/O1, and spills\n");
+    printf("PASS  compiler CFG, narrow integers, integer division faults, "
+           "loop control, phis, O0/O1, and spills\n");
     return 0;
 }

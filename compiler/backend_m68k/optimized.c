@@ -66,8 +66,11 @@ static int opcode_has_left(enum miga80_value_opcode opcode)
 {
     return opcode == MIGA80_VALUE_NEG || opcode == MIGA80_VALUE_ADD ||
            opcode == MIGA80_VALUE_SUB || opcode == MIGA80_VALUE_MUL ||
-           opcode == MIGA80_VALUE_DIV ||
+           opcode == MIGA80_VALUE_DIV || opcode == MIGA80_VALUE_DIV_U ||
+           opcode == MIGA80_VALUE_NORMALIZE_INTEGER ||
            (opcode >= MIGA80_VALUE_EQ && opcode <= MIGA80_VALUE_GE_I32) ||
+           (opcode >= MIGA80_VALUE_LT_U32 &&
+            opcode <= MIGA80_VALUE_GE_U32) ||
            opcode == MIGA80_VALUE_PHI;
 }
 
@@ -75,7 +78,10 @@ static int opcode_has_right(enum miga80_value_opcode opcode)
 {
     return opcode == MIGA80_VALUE_ADD || opcode == MIGA80_VALUE_SUB ||
            opcode == MIGA80_VALUE_MUL || opcode == MIGA80_VALUE_DIV ||
+           opcode == MIGA80_VALUE_DIV_U ||
            (opcode >= MIGA80_VALUE_EQ && opcode <= MIGA80_VALUE_GE_I32) ||
+           (opcode >= MIGA80_VALUE_LT_U32 &&
+            opcode <= MIGA80_VALUE_GE_U32) ||
            opcode == MIGA80_VALUE_PHI;
 }
 
@@ -85,6 +91,14 @@ static int opcode_is_commutative(enum miga80_value_opcode opcode)
            opcode == MIGA80_VALUE_EQ || opcode == MIGA80_VALUE_NE;
 }
 
+static int opcode_is_comparison(enum miga80_value_opcode opcode)
+{
+    return (opcode >= MIGA80_VALUE_EQ &&
+            opcode <= MIGA80_VALUE_GE_I32) ||
+           (opcode >= MIGA80_VALUE_LT_U32 &&
+            opcode <= MIGA80_VALUE_GE_U32);
+}
+
 static int validate_value_function(
     const struct miga80_value_function *function,
     struct miga80_diagnostic *diagnostic)
@@ -92,7 +106,10 @@ static int validate_value_function(
     unsigned char seen_blocks[MIGA80_MAX_BASIC_BLOCKS];
     unsigned int index;
 
-    if (function->value_count == 0U ||
+    if (function->parameter_count > MIGA80_MAX_PARAMETERS ||
+        (function->result_type != MIGA80_TYPE_BOOL &&
+         !miga80_type_is_integer(function->result_type)) ||
+        function->value_count == 0U ||
         function->value_count > MIGA80_MAX_VALUE_INSTRUCTIONS ||
         function->result >= function->value_count ||
         !function->values[function->result].live ||
@@ -101,6 +118,13 @@ static int validate_value_function(
         function->block_order_count != function->block_count ||
         function->entry_block >= function->block_count) {
         return fail(diagnostic, 0U, 0U, "invalid O1 value function");
+    }
+    for (index = 0U; index < function->parameter_count; ++index) {
+        if (function->parameter_types[index] != MIGA80_TYPE_BOOL &&
+            !miga80_type_is_integer(function->parameter_types[index])) {
+            return fail(diagnostic, 0U, 0U,
+                        "invalid O1 parameter type");
+        }
     }
     (void)memset(seen_blocks, 0, sizeof(seen_blocks));
     for (index = 0U; index < function->block_order_count; ++index) {
@@ -142,8 +166,8 @@ static int validate_value_function(
         if (!value->live) {
             continue;
         }
-        if ((value->type != MIGA80_TYPE_I32 &&
-             value->type != MIGA80_TYPE_BOOL) ||
+        if ((value->type != MIGA80_TYPE_BOOL &&
+             !miga80_type_is_integer(value->type)) ||
             value->opcode < MIGA80_VALUE_CONSTANT ||
             value->opcode > MIGA80_VALUE_PHI) {
             return fail(diagnostic, value->line, value->column,
@@ -162,6 +186,65 @@ static int validate_value_function(
             return fail(diagnostic, value->line, value->column,
                         "invalid O1 value operand");
         }
+        if (value->opcode == MIGA80_VALUE_NEG &&
+            (!miga80_type_is_signed_integer(value->type) ||
+             function->values[value->left].type != value->type)) {
+            return fail(diagnostic, value->line, value->column,
+                        "invalid O1 integer negation");
+        }
+        if (value->opcode == MIGA80_VALUE_NORMALIZE_INTEGER &&
+            (!miga80_type_is_integer(value->type) ||
+             function->values[value->left].type != MIGA80_TYPE_I32)) {
+            return fail(diagnostic, value->line, value->column,
+                        "invalid O1 constant conversion");
+        }
+        if ((value->opcode == MIGA80_VALUE_ADD ||
+             value->opcode == MIGA80_VALUE_SUB ||
+             value->opcode == MIGA80_VALUE_MUL ||
+             value->opcode == MIGA80_VALUE_DIV ||
+             value->opcode == MIGA80_VALUE_DIV_U ||
+             opcode_is_comparison(value->opcode)) &&
+            (function->values[value->left].type !=
+                 function->values[value->right].type ||
+             (opcode_is_comparison(value->opcode)
+                  ? value->type != MIGA80_TYPE_BOOL
+                  : value->type != function->values[value->left].type))) {
+            return fail(diagnostic, value->line, value->column,
+                        "invalid O1 binary value type");
+        }
+        if ((value->opcode == MIGA80_VALUE_ADD ||
+             value->opcode == MIGA80_VALUE_SUB ||
+             value->opcode == MIGA80_VALUE_MUL) &&
+            !miga80_type_is_integer(value->type)) {
+            return fail(diagnostic, value->line, value->column,
+                        "invalid O1 integer arithmetic");
+        }
+        if (value->opcode == MIGA80_VALUE_DIV &&
+            !miga80_type_is_signed_integer(value->type)) {
+            return fail(diagnostic, value->line, value->column,
+                        "invalid O1 signed division");
+        }
+        if (value->opcode == MIGA80_VALUE_DIV_U &&
+            (!miga80_type_is_integer(value->type) ||
+             miga80_type_is_signed_integer(value->type))) {
+            return fail(diagnostic, value->line, value->column,
+                        "invalid O1 unsigned division");
+        }
+        if (value->opcode >= MIGA80_VALUE_LT_I32 &&
+            value->opcode <= MIGA80_VALUE_GE_I32 &&
+            !miga80_type_is_signed_integer(
+                function->values[value->left].type)) {
+            return fail(diagnostic, value->line, value->column,
+                        "invalid O1 signed comparison");
+        }
+        if (value->opcode >= MIGA80_VALUE_LT_U32 &&
+            value->opcode <= MIGA80_VALUE_GE_U32 &&
+            (!miga80_type_is_integer(function->values[value->left].type) ||
+             miga80_type_is_signed_integer(
+                 function->values[value->left].type))) {
+            return fail(diagnostic, value->line, value->column,
+                        "invalid O1 unsigned comparison");
+        }
         if (value->opcode == MIGA80_VALUE_PARAMETER &&
             (value->parameter_index >= function->parameter_count ||
              value->type !=
@@ -178,9 +261,12 @@ static int validate_value_function(
                         "invalid O1 phi predecessor");
         }
         if (value->opcode == MIGA80_VALUE_CONSTANT &&
-            value->type == MIGA80_TYPE_BOOL && value->immediate > 1U) {
+            ((value->type == MIGA80_TYPE_BOOL && value->immediate > 1U) ||
+             (miga80_type_is_integer(value->type) &&
+              !miga80_integer_value_is_canonical(value->type,
+                                                  value->immediate)))) {
             return fail(diagnostic, value->line, value->column,
-                        "invalid O1 bool constant");
+                        "invalid O1 scalar constant");
         }
     }
     if (function->values[function->result].type != function->result_type) {
@@ -1029,13 +1115,16 @@ static int emit_division(FILE *output,
                          const struct miga80_value_function *function,
                          const struct allocation_plan *plan,
                          unsigned int value_index, unsigned int source,
-                         int destination)
+                         int destination,
+                         enum miga80_value_opcode opcode)
 {
     const struct miga80_value_instruction *operand =
         &function->values[source];
+    const char *operation =
+        opcode == MIGA80_VALUE_DIV ? "divs.l" : "divu.l";
 
     if (operand->opcode == MIGA80_VALUE_CONSTANT) {
-        return output_line(output, "        divs.l  #0x%08x,%s\n",
+        return output_line(output, "        %-7s #0x%08x,%s\n", operation,
                            (unsigned int)operand->immediate,
                            data_register_name(destination));
     }
@@ -1054,7 +1143,7 @@ static int emit_division(FILE *output,
     }
     return output_line(output, "        beq     .L_%s_divzero_%u\n",
                        function->name, value_index) &&
-           emit_register_source(output, "divs.l", plan, source,
+           emit_register_source(output, operation, plan, source,
                                 destination);
 }
 
@@ -1089,6 +1178,14 @@ static int emit_comparison(FILE *output,
         condition = "sgt";
     } else if (opcode == MIGA80_VALUE_GE_I32) {
         condition = "sge";
+    } else if (opcode == MIGA80_VALUE_LT_U32) {
+        condition = "scs";
+    } else if (opcode == MIGA80_VALUE_LE_U32) {
+        condition = "sls";
+    } else if (opcode == MIGA80_VALUE_GT_U32) {
+        condition = "shi";
+    } else if (opcode == MIGA80_VALUE_GE_U32) {
+        condition = "scc";
     }
     if (operand->opcode == MIGA80_VALUE_CONSTANT) {
         compared = output_line(output, "        cmp.l   #0x%08x,%s\n",
@@ -1121,7 +1218,18 @@ static int emit_value(FILE *output,
         emitted =
             emit_move(output, function, plan, value->left, destination) &&
             output_line(output, "        neg.l   %s\n",
-                        data_register_name(destination));
+                        data_register_name(destination)) &&
+            miga80_emit_gnu_m68k_normalize_integer(
+                output, value->type, data_register_name(destination));
+        return emitted &&
+               store_spilled_result(output, plan, index, destination);
+    }
+
+    if (value->opcode == MIGA80_VALUE_NORMALIZE_INTEGER) {
+        emitted = emit_move(output, function, plan, value->left,
+                            destination) &&
+                  miga80_emit_gnu_m68k_normalize_integer(
+                      output, value->type, data_register_name(destination));
         return emitted &&
                store_spilled_result(output, plan, index, destination);
     }
@@ -1134,8 +1242,10 @@ static int emit_value(FILE *output,
         return 0;
     }
 
-    if (value->opcode >= MIGA80_VALUE_EQ &&
-        value->opcode <= MIGA80_VALUE_GE_I32) {
+    if ((value->opcode >= MIGA80_VALUE_EQ &&
+         value->opcode <= MIGA80_VALUE_GE_I32) ||
+        (value->opcode >= MIGA80_VALUE_LT_U32 &&
+         value->opcode <= MIGA80_VALUE_GE_U32)) {
         emitted = emit_comparison(output, function, plan, value->opcode,
                                   source, destination);
         return emitted &&
@@ -1144,13 +1254,21 @@ static int emit_value(FILE *output,
     if (function->values[source].opcode == MIGA80_VALUE_CONSTANT) {
         if (value->opcode == MIGA80_VALUE_ADD) {
             emitted = emit_add_immediate(
-                output, function->values[source].immediate, destination);
+                          output, function->values[source].immediate,
+                          destination) &&
+                      miga80_emit_gnu_m68k_normalize_integer(
+                          output, value->type,
+                          data_register_name(destination));
             return emitted &&
                    store_spilled_result(output, plan, index, destination);
         }
         if (value->opcode == MIGA80_VALUE_SUB) {
             emitted = emit_sub_immediate(
-                output, function->values[source].immediate, destination);
+                          output, function->values[source].immediate,
+                          destination) &&
+                      miga80_emit_gnu_m68k_normalize_integer(
+                          output, value->type,
+                          data_register_name(destination));
             return emitted &&
                    store_spilled_result(output, plan, index, destination);
         }
@@ -1161,12 +1279,21 @@ static int emit_value(FILE *output,
     } else if (value->opcode == MIGA80_VALUE_SUB) {
         emitted = emit_register_source(output, "sub.l", plan, source,
                                        destination);
-    } else if (value->opcode == MIGA80_VALUE_DIV) {
+    } else if (value->opcode == MIGA80_VALUE_DIV ||
+               value->opcode == MIGA80_VALUE_DIV_U) {
         emitted = emit_division(output, function, plan, index, source,
-                                destination);
+                                destination, value->opcode);
     } else {
         emitted =
             emit_multiply(output, function, plan, value, destination, source);
+    }
+    if (emitted && (value->opcode == MIGA80_VALUE_ADD ||
+                    value->opcode == MIGA80_VALUE_SUB ||
+                    value->opcode == MIGA80_VALUE_MUL ||
+                    value->opcode == MIGA80_VALUE_DIV ||
+                    value->opcode == MIGA80_VALUE_DIV_U)) {
+        emitted = miga80_emit_gnu_m68k_normalize_integer(
+            output, value->type, data_register_name(destination));
     }
     return emitted && store_spilled_result(output, plan, index, destination);
 }
@@ -1512,7 +1639,9 @@ static int emit_allocated_function(
             const struct miga80_value_instruction *value =
                 &function->values[index];
 
-            if (!value->live || value->opcode != MIGA80_VALUE_DIV ||
+            if (!value->live ||
+                (value->opcode != MIGA80_VALUE_DIV &&
+                 value->opcode != MIGA80_VALUE_DIV_U) ||
                 function->values[value->right].opcode ==
                     MIGA80_VALUE_CONSTANT) {
                 continue;

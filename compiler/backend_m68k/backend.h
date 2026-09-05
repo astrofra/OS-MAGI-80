@@ -18,5 +18,8 @@ int miga80_emit_gnu_m68k_fault_site(FILE *output, const char *function_name,
                                     unsigned int column);
 int miga80_emit_gnu_m68k_fault_tail(FILE *output,
                                     const char *function_name);
+int miga80_emit_gnu_m68k_normalize_integer(FILE *output,
+                                           enum miga80_type type,
+                                           const char *reg);
 
 #endif

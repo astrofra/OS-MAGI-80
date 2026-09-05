@@ -1,0 +1,16 @@
+PASS  generated-o0/zero D0=00000004 instructions=109 code_bytes=472 stack_bytes=44
+PASS  generated-o0/signed_min D0=00000001 instructions=108 code_bytes=472 stack_bytes=44
+PASS  generated-o0/signed_max D0=00000002 instructions=107 code_bytes=472 stack_bytes=44
+PASS  generated-o0/signed_division D0=00000003 instructions=110 code_bytes=472 stack_bytes=44
+PASS  generated-o0/signed_rounding D0=00000004 instructions=109 code_bytes=472 stack_bytes=44
+PASS  generated-o0/unsigned_boundary D0=00000004 instructions=109 code_bytes=472 stack_bytes=44
+PASS  generated-o0/div_zero fault=1 source=6:12 instructions=43 code_bytes=472 stack_bytes=44
+PASS  generated-o1/zero D0=00000004 instructions=32 code_bytes=220 stack_bytes=20
+PASS  generated-o1/signed_min D0=00000001 instructions=34 code_bytes=220 stack_bytes=20
+PASS  generated-o1/signed_max D0=00000002 instructions=33 code_bytes=220 stack_bytes=20
+PASS  generated-o1/signed_division D0=00000003 instructions=33 code_bytes=220 stack_bytes=20
+PASS  generated-o1/signed_rounding D0=00000004 instructions=32 code_bytes=220 stack_bytes=20
+PASS  generated-o1/unsigned_boundary D0=00000004 instructions=32 code_bytes=220 stack_bytes=20
+PASS  generated-o1/div_zero fault=1 source=6:12 instructions=15 code_bytes=220 stack_bytes=20
+PASS  compiler narrow integers match typed-IR oracle (12 values; 2 controlled faults)
+PASS  compiler O1 narrow-integer code size reduced from 472 to 220 bytes
