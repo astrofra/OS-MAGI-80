@@ -1,6 +1,6 @@
 # MIGA Lua Compiler Bootstrap
 
-**Status:** typed locals, `bool`, `if`/`else`, normalized `while`, `break`/`continue`, loop `phi`, `-O1`, and spills implemented
+**Status:** typed locals, signed division, controlled faults, normalized loops, `break`/`continue`, loop `phi`, `-O1`, and spills implemented
 
 ## Scope
 
@@ -18,7 +18,7 @@ statement  = local-declaration | control-statement ;
 control-statement = assignment | if-statement | while-statement
                     | loop-control-statement ;
 local-declaration = "local", name, ":", scalar-type, "=", expression ;
-assignment = local-name, "=", expression ;
+assignment = local-name, ( "=" | "/=" ), expression ;
 if-statement = "if", expression, "then", { control-statement },
                "else", { control-statement }, "end" ;
 while-statement = "while", expression, "do", { control-statement }, "end" ;
@@ -26,7 +26,7 @@ loop-control-statement = "break" | "continue" ;
 return-statement = "return", expression ;
 expression = sum, { ( "==" | "~=" | "!=" | "<" | "<=" | ">" | ">=" ), sum } ;
 sum        = product, { ( "+" | "-" ), product } ;
-product    = unary, { "*", unary } ;
+product    = unary, { ( "*" | "/" ), unary } ;
 unary      = "-", unary | integer | "true" | "false"
              | parameter-name | local-name
              | "(", expression, ")" ;
@@ -49,8 +49,12 @@ must terminate their immediate statement list; a following statement remains
 valid when it is reached through another branch of an enclosing `if`. The
 initial ABI supports at most three
 scalar parameters in `D0` through `D2`, with one scalar result in `D0`. Arithmetic has
-defined two's-complement wrapping semantics. Register and frame placement
-follows [MIGA Lua Native ABI 0.1](./MIGA-Lua-native-ABI-v0.md).
+defined two's-complement wrapping semantics. Signed `/` truncates toward zero;
+`INT32_MIN / -1` wraps to `INT32_MIN`. A provably constant zero divisor is a
+compile-time error. Every other divisor not proven nonzero is checked before
+`DIVS.L` and branches to a controlled, source-located runtime fault when zero.
+Register, frame, and fault placement follows
+[MIGA Lua Native ABI 0.2](./MIGA-Lua-native-ABI-v0.md).
 
 The version 1 language contract requires an explicit return annotation and
 includes `void`, but `void` code generation is not in this bootstrap tranche.
@@ -62,10 +66,10 @@ Arrays are not part of the bootstrap grammar yet. Their frozen version 1
 language contract is nevertheless zero-based: for `array<T, N>`, valid indices
 are exactly `0` through `N - 1`, and index `0` denotes the first element.
 
-Planned statement-only update sugar comprises `x++`, `x--`, `x += value`,
-`x -= value`, `x *= value`, and `x /= value`. These forms will never be
-expressions and therefore cannot appear in an `if` or `while` condition. `/=`
-also waits for the signed division and division-by-zero semantics to be frozen.
+`x /= value` is implemented as statement-only sugar for `x = x / value`; it
+cannot appear in an expression or an `if`/`while` condition. Planned sibling
+forms are `x++`, `x--`, `x += value`, `x -= value`, and `x *= value`, under the
+same statement-only rule.
 
 ## Pipeline
 
@@ -83,8 +87,8 @@ The implementation has four bounded, host-buildable layers:
    predecessors and binary `phi` values remain sufficient. A `while` whose
    body has no syntactic path back to the header is represented as acyclic and
    needs no unreachable latch. The host interpreter follows this CFG as the
-   semantic oracle and uses unsigned C operations to specify 32-bit wrapping
-   and implementation-independent signed comparisons.
+   semantic oracle and uses unsigned C operations to specify 32-bit wrapping,
+   signed comparisons, and signed division without C signed-overflow behavior.
 3. `-O1` renames locals to values throughout the CFG and creates typed `phi`
    values at two-predecessor joins and loop headers. It identifies natural
    loops with bounded dominator analysis, and validates their single
@@ -92,7 +96,9 @@ The implementation has four bounded, host-buildable layers:
    `phi` operands before the latch has been lowered, then completes their backward
    inputs and removes trivial self-joins. Constant folding, simplification,
    dead-value removal, and `live-in`/`live-out` analysis all accept cyclic value
-   flow. `phi` operands are edge-specific uses. Non-overlapping `phi` live
+   flow. A dynamic division remains live even when its result is overwritten,
+   because its zero-divisor fault is observable; division by a proven nonzero
+   constant remains removable. `phi` operands are edge-specific uses. Non-overlapping `phi` live
    regions reuse stack slots; edge transfers are scheduled as parallel copies,
    with one bounded temporary slot reserved only when a genuine copy cycle must
    be broken. Calls will need an explicit side-effect rule before value
@@ -101,10 +107,12 @@ The implementation has four bounded, host-buildable layers:
    parameter/local slots and expression-stack temporaries as a baseline. The
    default `-O1` keeps current local and expression values in registers and
    preserves any allocated `D3-D7` registers with `MOVEM`. Spilling functions
-   use ABI 0.1 `LINK`/`UNLK` frames, negative `A6` offsets, and `D7` as a saved
+   use ABI 0.2 `LINK`/`UNLK` frames, negative `A6` offsets, and `D7` as a saved
    scratch register. Both backends omit an unconditional jump when its target
    is the next emitted block, so the dedicated latch does not add a redundant
-   branch to the hot loop path.
+   branch to the hot loop path. Dynamic divisions add one `TST.L` and one
+   normally untaken branch before native `DIVS.L`; cold per-site stubs pass the
+   fault code, line, and column to the handler pointer in the `A5` context.
 
 For the current local toolchain, GNU `m68k-amigaos-as` retains a relocatable
 Amiga object and `m68k-amigaos-objcopy` extracts the flat image consumed by
@@ -149,15 +157,17 @@ machine-code emission; the shipping encoder and instruction-cache
 synchronization remain later work.
 
 The differential tests preserve `-O0`/`-O1` assembly, relocatable objects, and
-flat binaries under the compiler pipeline build directories. Seven source
+flat binaries under the compiler pipeline build directories. Seven ordinary source
 corpora—including typed locals, a nested 19-block comparison/branch fixture,
 the loop-carried cyclic-copy fixture, and a multi-site `break`/`continue`
 fixture—use six edge inputs each at both levels. Those 84 executions must
-produce the same `D0` value as the typed-IR interpreter. A synthetic value-IR
-schedule then forces three spills and adds six more oracle comparisons,
-bringing the total to 90. This is necessary because the current bounded source
+produce the same `D0` value as the typed-IR interpreter. An eighth signed-
+division corpus adds 12 successful results and four controlled zero faults. A
+synthetic value-IR schedule then forces three spills and adds six more oracle
+comparisons, bringing the total to 106. This is necessary because the current bounded source
 subset cannot naturally exceed all eight data registers. The reports retain
 image size,
 executed instruction count, and maximum callee stack use, while the runner
-verifies return, stack balance, callee-saved registers including `A6`, memory
-guards, and the instruction budget.
+verifies return or the expected controlled fault, precise fault location, stack
+balance on return, callee-saved registers including `A6`, memory guards, and
+the instruction budget.

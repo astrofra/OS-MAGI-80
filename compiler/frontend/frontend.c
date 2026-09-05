@@ -37,7 +37,9 @@ enum token_kind {
     TOKEN_GREATER_EQUAL,
     TOKEN_PLUS,
     TOKEN_MINUS,
-    TOKEN_STAR
+    TOKEN_STAR,
+    TOKEN_SLASH,
+    TOKEN_SLASH_EQUAL
 };
 
 struct token {
@@ -292,6 +294,15 @@ static struct token next_token(struct lexer *lexer)
     case '*':
         token.kind = TOKEN_STAR;
         break;
+    case '/':
+        if (peek(lexer, 0U) == '=') {
+            (void)advance(lexer);
+            token.length = 2U;
+            token.kind = TOKEN_SLASH_EQUAL;
+        } else {
+            token.kind = TOKEN_SLASH;
+        }
+        break;
     default:
         token.kind = TOKEN_INVALID;
         set_diagnostic(lexer->diagnostic, token.line, token.column,
@@ -368,6 +379,10 @@ static const char *token_name(enum token_kind kind)
         return "'-'";
     case TOKEN_STAR:
         return "'*'";
+    case TOKEN_SLASH:
+        return "'/'";
+    case TOKEN_SLASH_EQUAL:
+        return "'/='";
     default:
         return "valid token";
     }
@@ -470,6 +485,69 @@ static int find_local(const struct miga80_ast_function *function,
 }
 
 static int parse_expression(struct parser *parser);
+
+int miga80_divide_i32(uint32_t dividend, uint32_t divisor,
+                      uint32_t *quotient)
+{
+    uint32_t dividend_magnitude;
+    uint32_t divisor_magnitude;
+    uint32_t magnitude;
+    const int negative = ((dividend ^ divisor) >> 31) != 0U;
+
+    if (divisor == 0U || quotient == NULL) {
+        return 0;
+    }
+    dividend_magnitude = (dividend >> 31) != 0U ? 0U - dividend : dividend;
+    divisor_magnitude = (divisor >> 31) != 0U ? 0U - divisor : divisor;
+    magnitude = dividend_magnitude / divisor_magnitude;
+    *quotient = negative ? 0U - magnitude : magnitude;
+    return 1;
+}
+
+static int constant_i32(const struct miga80_ast_function *function,
+                        int node_index, uint32_t *constant)
+{
+    const struct miga80_ast_node *node;
+    uint32_t left;
+    uint32_t right;
+
+    if (node_index < 0 || (unsigned int)node_index >= function->node_count ||
+        constant == NULL) {
+        return 0;
+    }
+    node = &function->nodes[node_index];
+    if (node->kind == MIGA80_AST_LITERAL_I32) {
+        *constant = node->value;
+        return 1;
+    }
+    if (node->kind == MIGA80_AST_NEG_I32) {
+        if (!constant_i32(function, node->left, &left)) {
+            return 0;
+        }
+        *constant = 0U - left;
+        return 1;
+    }
+    if (node->kind != MIGA80_AST_ADD_I32 &&
+        node->kind != MIGA80_AST_SUB_I32 &&
+        node->kind != MIGA80_AST_MUL_I32 &&
+        node->kind != MIGA80_AST_DIV_I32) {
+        return 0;
+    }
+    if (!constant_i32(function, node->left, &left) ||
+        !constant_i32(function, node->right, &right)) {
+        return 0;
+    }
+    if (node->kind == MIGA80_AST_ADD_I32) {
+        *constant = left + right;
+    } else if (node->kind == MIGA80_AST_SUB_I32) {
+        *constant = left - right;
+    } else if (node->kind == MIGA80_AST_MUL_I32) {
+        *constant = left * right;
+    } else if (!miga80_divide_i32(left, right, constant)) {
+        return 0;
+    }
+    return 1;
+}
 
 static const char *type_name(enum miga80_type type)
 {
@@ -605,21 +683,35 @@ static int parse_multiply(struct parser *parser)
 {
     int left = parse_unary(parser);
 
-    while (!parser->failed && parser->current.kind == TOKEN_STAR) {
+    while (!parser->failed &&
+           (parser->current.kind == TOKEN_STAR ||
+            parser->current.kind == TOKEN_SLASH)) {
         const struct token operation = parser->current;
+        const enum miga80_ast_kind kind =
+            operation.kind == TOKEN_STAR ? MIGA80_AST_MUL_I32
+                                         : MIGA80_AST_DIV_I32;
         int right;
+        uint32_t right_constant;
 
         parser_advance(parser);
         right = parse_unary(parser);
         if (!require_type(parser, left, MIGA80_TYPE_I32, operation.line,
-                          operation.column, "operator '*'") ||
+                          operation.column, "multiplicative operator") ||
             !require_type(parser, right, MIGA80_TYPE_I32, operation.line,
-                          operation.column, "operator '*'")) {
+                          operation.column, "multiplicative operator")) {
             return MIGA80_INVALID_NODE;
         }
-        left = add_node(parser, MIGA80_AST_MUL_I32, operation.line,
-                        operation.column, left, right, 0U, 0U,
-                        MIGA80_TYPE_I32);
+        if (kind == MIGA80_AST_DIV_I32 &&
+            constant_i32(parser->function, right, &right_constant) &&
+            right_constant == 0U) {
+            set_diagnostic(parser->diagnostic, operation.line,
+                           operation.column,
+                           "division by zero in constant expression");
+            parser->failed = 1;
+            return MIGA80_INVALID_NODE;
+        }
+        left = add_node(parser, kind, operation.line, operation.column, left,
+                        right, 0U, 0U, MIGA80_TYPE_I32);
     }
     return left;
 }
@@ -858,6 +950,7 @@ static unsigned int parse_assignment(struct parser *parser)
 {
     const struct token name = parser->current;
     const int local = find_local(parser->function, &name);
+    struct token operation;
     int expression;
 
     if (local < 0) {
@@ -873,13 +966,57 @@ static unsigned int parse_assignment(struct parser *parser)
         parser->failed = 1;
         return MIGA80_INVALID_STATEMENT;
     }
-    if (!expect(parser, TOKEN_IDENTIFIER) || !expect(parser, TOKEN_EQUAL)) {
+    if (!expect(parser, TOKEN_IDENTIFIER)) {
         return MIGA80_INVALID_STATEMENT;
     }
+    operation = parser->current;
+    if (operation.kind != TOKEN_EQUAL &&
+        operation.kind != TOKEN_SLASH_EQUAL) {
+        set_diagnostic(parser->diagnostic, operation.line, operation.column,
+                       "expected '=' or '/=', found %s",
+                       token_name(operation.kind));
+        parser->failed = 1;
+        return MIGA80_INVALID_STATEMENT;
+    }
+    parser_advance(parser);
     expression = parse_expression(parser);
-    if (!require_type(parser, expression,
-                      parser->function->local_types[local], name.line,
-                      name.column, "assignment")) {
+    if (operation.kind == TOKEN_SLASH_EQUAL) {
+        int target;
+        uint32_t right_constant;
+
+        if (parser->function->local_types[local] != MIGA80_TYPE_I32) {
+            set_diagnostic(parser->diagnostic, operation.line,
+                           operation.column,
+                           "operator '/=' requires i32 target");
+            parser->failed = 1;
+            return MIGA80_INVALID_STATEMENT;
+        }
+        if (!require_type(parser, expression, MIGA80_TYPE_I32,
+                          operation.line, operation.column,
+                          "operator '/='")) {
+            return MIGA80_INVALID_STATEMENT;
+        }
+        if (constant_i32(parser->function, expression, &right_constant) &&
+            right_constant == 0U) {
+            set_diagnostic(parser->diagnostic, operation.line,
+                           operation.column,
+                           "division by zero in constant expression");
+            parser->failed = 1;
+            return MIGA80_INVALID_STATEMENT;
+        }
+        target = add_node(parser, MIGA80_AST_LOCAL_I32, name.line,
+                          name.column, MIGA80_INVALID_NODE,
+                          MIGA80_INVALID_NODE, 0U, (unsigned int)local,
+                          MIGA80_TYPE_I32);
+        expression = add_node(parser, MIGA80_AST_DIV_I32, operation.line,
+                              operation.column, target, expression, 0U, 0U,
+                              MIGA80_TYPE_I32);
+        if (expression == MIGA80_INVALID_NODE) {
+            return MIGA80_INVALID_STATEMENT;
+        }
+    } else if (!require_type(parser, expression,
+                             parser->function->local_types[local], name.line,
+                             name.column, "assignment")) {
         return MIGA80_INVALID_STATEMENT;
     }
     return allocate_statement(parser, MIGA80_AST_LOCAL_ASSIGN,

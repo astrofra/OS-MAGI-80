@@ -2,7 +2,7 @@
 # Generated after a successful full build and C99/68020 smoke test.
 
 manifest_format=1
-validated_at=2026-09-04
+validated_at=2026-09-05
 
 [host]
 architecture=arm64
@@ -54,7 +54,7 @@ musashi_cpu=68EC020
 compiler_development_assembler=m68k-amigaos-as
 compiler_development_object=amiga_relocatable
 compiler_development_flat_extractor=m68k-amigaos-objcopy
-miga_lua_native_abi=0.1
+miga_lua_native_abi=0.2
 
 [homebrew]
 autoconf=2.73
@@ -93,7 +93,7 @@ miga68k_abi_and_stack_guards=pass
 miga68k_invalid_memory_detection=pass
 miga68k_instruction_limit=pass
 miga68k_abi_saved_register_negative_control=pass
-miga80c_native_abi_0_1=pass
+miga80c_native_abi_0_2=pass_controlled_fault_entry_at_context_offset_0
 miga80c_amiga_bootstrap_eval=pass
 miga80c_amiga_o1_renderer_identity=pass
 miga80c_amiga_o1_locals_renderer_identity=pass
@@ -101,7 +101,8 @@ miga80c_amiga_o1_spill_renderer_identity=pass
 miga80c_amiga_o1_conditionals_renderer_identity=pass
 miga80c_amiga_o1_loops_renderer_identity=pass
 miga80c_amiga_o1_loop_control_renderer_identity=pass
-miga80c_amiga_bootstrap_bytes_os=49416
+miga80c_amiga_o1_division_renderer_identity=pass
+miga80c_amiga_bootstrap_bytes_os=52084
 miga80c_typed_scalar_frontend=pass_i32_bool_explicit
 miga80c_typed_scalar_locals=pass_i32_bool_16_locals_32_statements
 miga80c_typed_ir_oracle=pass
@@ -111,6 +112,9 @@ miga80c_loop_normal_form=pass_dedicated_latch_unique_exit
 miga80c_loop_membership=pass_nested_structured_bitsets
 miga80c_break_continue=pass_multiple_sites_nearest_nested_loop
 miga80c_loop_control_funnels=pass_binary_predecessor_bound
+miga80c_signed_i32_division=pass_truncate_toward_zero_min_over_minus_one_wraps
+miga80c_division_by_zero=pass_constant_rejection_dynamic_controlled_fault_source_location
+miga80c_statement_divide_assign=pass_i32_statement_only
 miga80c_fallthrough_jump_elision=pass_o0_o1
 miga80c_value_ir_o1=pass
 miga80c_value_ir_phi=pass
@@ -119,7 +123,7 @@ miga80c_cfg_liveness=pass_fixed_point_edge_phi_uses
 miga80c_phi_slot_coalescing=pass_6_values_2_slots
 miga80c_phi_parallel_copy=pass_cycle_temporary_slot
 miga80c_gnu_m68k_renderer=pass
-miga80c_musashi_differential=pass_90_o0_o1_bool_if_while_break_continue_locals_spill_executions
+miga80c_musashi_differential=pass_106_o0_o1_bool_if_while_break_continue_division_locals_spill_executions
 miga80c_o1_spill_frame=pass_3_slots_36_stack_bytes
 miga80c_o1_spill_code_bytes=96
 miga80c_o1_spill_instructions=33
@@ -140,6 +144,12 @@ miga80c_o1_loop_control_code_bytes=288
 miga80c_o1_loop_control_instructions_min=39
 miga80c_o1_loop_control_instructions_max=352
 miga80c_o1_loop_control_stack_bytes=32
+miga80c_o0_division_code_bytes=108
+miga80c_o0_division_instructions=28
+miga80c_o0_division_stack_bytes=28
+miga80c_o1_division_code_bytes=44
+miga80c_o1_division_instructions=7
+miga80c_o1_division_stack_bytes=0
 c99_compile=pass
 amiga_hunk_link=pass
 amigaos_dos_api_link=pass

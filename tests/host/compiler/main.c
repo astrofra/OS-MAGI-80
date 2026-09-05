@@ -139,7 +139,7 @@ static int test_valid_function(void)
         fread(assembly_prefix, 1U, sizeof(assembly_prefix) - 1U, assembly);
     assembly_prefix[assembly_prefix_size] = '\0';
     if (ferror(assembly) ||
-        strstr(assembly_prefix, "native ABI 0.1") == NULL ||
+        strstr(assembly_prefix, "native ABI 0.2") == NULL ||
         strstr(assembly_prefix, "move.l  %d0,-4(%a6)") == NULL) {
         emitted = 0;
     }
@@ -180,10 +180,19 @@ static int expect_error(const char *source, unsigned int line,
     struct miga80_diagnostic diagnostic;
 
     if (miga80_parse_function(source, strlen(source), &ast, &diagnostic)) {
+        fprintf(stderr, "expected parser error, source was accepted: %s\n",
+                source);
         return 0;
     }
-    return diagnostic.line == line && diagnostic.column == column &&
-           strstr(diagnostic.message, message) != NULL;
+    if (diagnostic.line != line || diagnostic.column != column ||
+        strstr(diagnostic.message, message) == NULL) {
+        fprintf(stderr,
+                "parser error mismatch: expected %u:%u %s, got %u:%u %s\n",
+                line, column, message, diagnostic.line, diagnostic.column,
+                diagnostic.message);
+        return 0;
+    }
+    return 1;
 }
 
 static int test_constant_folding(void)
@@ -229,6 +238,120 @@ static int test_constant_folding(void)
     if (ferror(assembly) ||
         strstr(assembly_text, "moveq   #-20,%d0") == NULL ||
         strstr(assembly_text, "movem.l") != NULL) {
+        emitted = 0;
+    }
+    closed = fclose(assembly);
+    return emitted && closed == 0;
+}
+
+static int test_signed_division_and_fault_liveness(void)
+{
+    static const char source[] =
+        "function divide(a: i32, b: i32, c: i32): i32\n"
+        "  local quotient: i32 = a / b\n"
+        "  quotient /= c\n"
+        "  local discarded: i32 = a / b\n"
+        "  discarded = 0\n"
+        "  return quotient\n"
+        "end\n";
+    static const char optimized_source[] =
+        "function divided(a: i32): i32 return 35 / 5 + a / -1 end";
+    static const char constant_divisor_source[] =
+        "function halved(a: i32): i32 return a / 2 end";
+    struct miga80_ir_function ir;
+    struct miga80_value_function value_ir;
+    struct miga80_diagnostic diagnostic;
+    const uint32_t arguments[] = {35U, 5U, 2U};
+    char assembly_text[8192];
+    uint32_t result;
+    unsigned int live_divisions = 0U;
+    unsigned int index;
+    size_t assembly_size;
+    FILE *assembly;
+    int emitted;
+    int closed;
+
+    if (!miga80_divide_i32(35U, 5U, &result) || result != 7U ||
+        !miga80_divide_i32(UINT32_C(0xffffffdd), 5U, &result) ||
+        result != UINT32_C(0xfffffff9) ||
+        !miga80_divide_i32(35U, UINT32_C(0xfffffffb), &result) ||
+        result != UINT32_C(0xfffffff9) ||
+        !miga80_divide_i32(UINT32_C(0xffffffdd),
+                           UINT32_C(0xfffffffb), &result) ||
+        result != 7U ||
+        !miga80_divide_i32(UINT32_C(0x80000000), UINT32_MAX, &result) ||
+        result != UINT32_C(0x80000000) ||
+        miga80_divide_i32(1U, 0U, &result) ||
+        !compile_source(source, &ir, &diagnostic) ||
+        !miga80_evaluate_ir(&ir, arguments, ARRAY_COUNT(arguments), &result,
+                            &diagnostic) ||
+        result != 3U ||
+        miga80_evaluate_ir(&ir, (const uint32_t[]){7U, 0U, 1U}, 3U,
+                           &result, &diagnostic) ||
+        diagnostic.line != 2U || diagnostic.column != 27U ||
+        strstr(diagnostic.message, "division by zero") == NULL ||
+        miga80_evaluate_ir(&ir, (const uint32_t[]){7U, 1U, 0U}, 3U,
+                           &result, &diagnostic) ||
+        diagnostic.line != 3U || diagnostic.column != 12U ||
+        !miga80_build_value_ir(&ir, &value_ir, &diagnostic)) {
+        return 0;
+    }
+    for (index = 0U; index < value_ir.value_count; ++index) {
+        if (value_ir.values[index].live &&
+            value_ir.values[index].opcode == MIGA80_VALUE_DIV) {
+            ++live_divisions;
+        }
+    }
+    if (live_divisions != 3U || (assembly = tmpfile()) == NULL) {
+        return 0;
+    }
+    emitted = miga80_emit_gnu_m68k_o1(assembly, &value_ir, &diagnostic);
+    rewind(assembly);
+    assembly_size =
+        fread(assembly_text, 1U, sizeof(assembly_text) - 1U, assembly);
+    assembly_text[assembly_size] = '\0';
+    if (ferror(assembly) || strstr(assembly_text, "divs.l") == NULL ||
+        strstr(assembly_text, "fault_divzero") == NULL ||
+        strstr(assembly_text, "movea.l 0(%a5),%a0") == NULL) {
+        emitted = 0;
+    }
+    closed = fclose(assembly);
+    if (!emitted || closed != 0 ||
+        !compile_source(optimized_source, &ir, &diagnostic) ||
+        !miga80_build_value_ir(&ir, &value_ir, &diagnostic) ||
+        !miga80_evaluate_ir(&ir, (const uint32_t[]){3U}, 1U, &result,
+                            &diagnostic) ||
+        result != 4U || (assembly = tmpfile()) == NULL) {
+        return 0;
+    }
+    emitted = miga80_emit_gnu_m68k_o1(assembly, &value_ir, &diagnostic);
+    rewind(assembly);
+    assembly_size =
+        fread(assembly_text, 1U, sizeof(assembly_text) - 1U, assembly);
+    assembly_text[assembly_size] = '\0';
+    if (ferror(assembly) || strstr(assembly_text, "divs.l") != NULL ||
+        strstr(assembly_text, "fault_divzero") != NULL ||
+        strstr(assembly_text, "neg.l") == NULL) {
+        emitted = 0;
+    }
+    closed = fclose(assembly);
+    if (!emitted || closed != 0 ||
+        !compile_source(constant_divisor_source, &ir, &diagnostic) ||
+        !miga80_build_value_ir(&ir, &value_ir, &diagnostic) ||
+        !miga80_evaluate_ir(&ir, (const uint32_t[]){UINT32_C(0xfffffffd)},
+                            1U, &result, &diagnostic) ||
+        result != UINT32_MAX || (assembly = tmpfile()) == NULL) {
+        return 0;
+    }
+    emitted = miga80_emit_gnu_m68k_o1(assembly, &value_ir, &diagnostic);
+    rewind(assembly);
+    assembly_size =
+        fread(assembly_text, 1U, sizeof(assembly_text) - 1U, assembly);
+    assembly_text[assembly_size] = '\0';
+    if (ferror(assembly) ||
+        strstr(assembly_text, "divs.l  #0x00000002") == NULL ||
+        strstr(assembly_text, "fault_divzero") != NULL ||
+        strstr(assembly_text, "tst.l") != NULL) {
         emitted = 0;
     }
     closed = fclose(assembly);
@@ -789,6 +912,7 @@ int main(int argc, char **argv)
     }
 
     if (!test_valid_function() || !test_constant_folding() ||
+        !test_signed_division_and_fault_liveness() ||
         !test_locals_and_entry_block() ||
         !test_bool_comparisons_and_cfg() ||
         !test_while_cfg_and_loop_phis() ||
@@ -828,6 +952,14 @@ int main(int argc, char **argv)
                       1U, 25U, "if condition requires bool") ||
         !expect_error("function f(): i32 while 1 do end return 0 end", 1U,
                       19U, "while condition requires bool") ||
+        !expect_error("function f(a: i32): i32 return a / (2 - 2) end", 1U,
+                      34U, "division by zero in constant expression") ||
+        !expect_error("function f(): i32 local x: bool = true x /= 1 "
+                      "return 0 end",
+                      1U, 42U, "operator '/=' requires i32 target") ||
+        !expect_error("function f(flag: bool): i32 if flag /= true then "
+                      "else end return 0 end",
+                      1U, 37U, "expected 'then', found '/='") ||
         !expect_error("function f(): i32 break return 0 end", 1U, 19U,
                       "break is only valid inside while") ||
         !expect_error("function f(): i32 continue return 0 end", 1U, 19U,
@@ -848,7 +980,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    printf("PASS  compiler CFG liveness, loop control, phis, O0/O1, and "
-           "spill frames\n");
+    printf("PASS  compiler CFG, loop control, signed division faults, phis, "
+           "O0/O1, and spills\n");
     return 0;
 }

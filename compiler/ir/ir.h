@@ -26,6 +26,7 @@ enum miga80_ir_opcode {
     MIGA80_IR_ADD_I32,
     MIGA80_IR_SUB_I32,
     MIGA80_IR_MUL_I32,
+    MIGA80_IR_DIV_I32,
     MIGA80_IR_EQ_I32,
     MIGA80_IR_NE_I32,
     MIGA80_IR_EQ_BOOL,

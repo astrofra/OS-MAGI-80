@@ -27,6 +27,39 @@ static int output_failure(struct miga80_diagnostic *diagnostic,
     return 0;
 }
 
+static int output_fault_immediate(FILE *output, unsigned int value,
+                                  const char *reg)
+{
+    if (value <= 127U) {
+        return output_line(output, "        moveq   #%u,%s\n", value, reg);
+    }
+    return output_line(output, "        move.l  #%u,%s\n", value, reg);
+}
+
+int miga80_emit_gnu_m68k_fault_site(FILE *output, const char *function_name,
+                                    unsigned int site, unsigned int line,
+                                    unsigned int column)
+{
+    return output_line(output, ".L_%s_divzero_%u:\n", function_name, site) &&
+           output_fault_immediate(output, line, "%d1") &&
+           output_fault_immediate(output, column, "%d2") &&
+           output_line(output, "        bra     .L_%s_fault_divzero\n",
+                       function_name);
+}
+
+int miga80_emit_gnu_m68k_fault_tail(FILE *output,
+                                    const char *function_name)
+{
+    return output_line(
+        output,
+        ".L_%s_fault_divzero:\n"
+        "        moveq   #%u,%%d0\n"
+        "        movea.l %u(%%a5),%%a0\n"
+        "        jmp     (%%a0)\n",
+        function_name, MIGA80_ABI_FAULT_DIVISION_BY_ZERO,
+        MIGA80_ABI_RUNTIME_FAULT_HANDLER_OFFSET);
+}
+
 int miga80_emit_gnu_m68k(FILE *output,
                          const struct miga80_ir_function *function,
                          struct miga80_diagnostic *diagnostic)
@@ -51,7 +84,7 @@ int miga80_emit_gnu_m68k(FILE *output,
     frame_size = (function->parameter_count + function->local_count) * 4U;
     if (!miga80_abi_frame_size_is_valid(frame_size)) {
         (void)snprintf(diagnostic->message, sizeof(diagnostic->message),
-                       "function frame violates native ABI 0.1");
+                       "function frame violates native ABI 0.2");
         return 0;
     }
 
@@ -77,7 +110,7 @@ int miga80_emit_gnu_m68k(FILE *output,
             diagnostic->line = 0U;
             diagnostic->column = 0U;
             (void)snprintf(diagnostic->message, sizeof(diagnostic->message),
-                           "unable to map argument through native ABI 0.1");
+                           "unable to map argument through native ABI 0.2");
             return 0;
         }
         if (!output_line(output, "        move.l  %s,-%u(%%a6)\n",
@@ -162,6 +195,7 @@ int miga80_emit_gnu_m68k(FILE *output,
         case MIGA80_IR_ADD_I32:
         case MIGA80_IR_SUB_I32:
         case MIGA80_IR_MUL_I32:
+        case MIGA80_IR_DIV_I32:
         case MIGA80_IR_EQ_I32:
         case MIGA80_IR_NE_I32:
         case MIGA80_IR_EQ_BOOL:
@@ -181,6 +215,14 @@ int miga80_emit_gnu_m68k(FILE *output,
             } else if (success &&
                        instruction->opcode == MIGA80_IR_MUL_I32) {
                 success = output_line(output, "        muls.l  %%d1,%%d0\n");
+            } else if (success &&
+                       instruction->opcode == MIGA80_IR_DIV_I32) {
+                success = output_line(
+                    output,
+                    "        tst.l   %%d1\n"
+                    "        beq     .L_%s_divzero_%u\n"
+                    "        divs.l  %%d1,%%d0\n",
+                    function->name, index);
             } else if (success) {
                 const char *condition = "seq";
 
@@ -240,6 +282,29 @@ int miga80_emit_gnu_m68k(FILE *output,
         }
         if (!success) {
             return output_failure(diagnostic, instruction);
+        }
+    }
+
+    {
+        int has_division = 0;
+
+        for (index = 0U; index < function->instruction_count; ++index) {
+            const struct miga80_ir_instruction *instruction =
+                &function->instructions[index];
+
+            if (instruction->opcode != MIGA80_IR_DIV_I32) {
+                continue;
+            }
+            if (!miga80_emit_gnu_m68k_fault_site(
+                    output, function->name, index, instruction->line,
+                    instruction->column)) {
+                return output_failure(diagnostic, instruction);
+            }
+            has_division = 1;
+        }
+        if (has_division &&
+            !miga80_emit_gnu_m68k_fault_tail(output, function->name)) {
+            return output_failure(diagnostic, NULL);
         }
     }
 

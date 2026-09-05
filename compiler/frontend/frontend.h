@@ -37,6 +37,7 @@ enum miga80_ast_kind {
     MIGA80_AST_ADD_I32,
     MIGA80_AST_SUB_I32,
     MIGA80_AST_MUL_I32,
+    MIGA80_AST_DIV_I32,
     MIGA80_AST_EQ,
     MIGA80_AST_NE,
     MIGA80_AST_LT_I32,
@@ -97,5 +98,7 @@ struct miga80_ast_function {
 int miga80_parse_function(const char *source, size_t source_size,
                           struct miga80_ast_function *function,
                           struct miga80_diagnostic *diagnostic);
+int miga80_divide_i32(uint32_t dividend, uint32_t divisor,
+                      uint32_t *quotient);
 
 #endif

@@ -68,12 +68,19 @@ static int register_classes_are_valid(void)
 int main(void)
 {
     if (MIGA80_ABI_VERSION_MAJOR != 0U ||
-        MIGA80_ABI_VERSION_MINOR != 1U ||
+        MIGA80_ABI_VERSION_MINOR != 2U ||
         MIGA80_ABI_SCALAR_RETURN_REGISTER != MIGA80_ABI_D0 ||
         MIGA80_ABI_ADDRESS_RETURN_REGISTER != MIGA80_ABI_A0 ||
         MIGA80_ABI_RUNTIME_CONTEXT_REGISTER != MIGA80_ABI_A5 ||
         MIGA80_ABI_FRAME_POINTER_REGISTER != MIGA80_ABI_A6 ||
         MIGA80_ABI_STACK_POINTER_REGISTER != MIGA80_ABI_A7 ||
+        MIGA80_ABI_RUNTIME_FAULT_HANDLER_OFFSET != 0U ||
+        MIGA80_ABI_RUNTIME_CONTEXT_MIN_SIZE != 4U ||
+        MIGA80_ABI_FAULT_DIVISION_BY_ZERO != 1U ||
+        MIGA80_ABI_FAULT_CODE_REGISTER != MIGA80_ABI_D0 ||
+        MIGA80_ABI_FAULT_LINE_REGISTER != MIGA80_ABI_D1 ||
+        MIGA80_ABI_FAULT_COLUMN_REGISTER != MIGA80_ABI_D2 ||
+        MIGA80_ABI_FAULT_SCRATCH_REGISTER != MIGA80_ABI_A0 ||
         MIGA80_ABI_BOOL_FALSE != 0U || MIGA80_ABI_BOOL_TRUE != 1U ||
         !argument_registers_are_valid() || !register_classes_are_valid() ||
         !miga80_abi_frame_size_is_valid(0U) ||
@@ -85,6 +92,6 @@ int main(void)
         return 1;
     }
 
-    printf("PASS  MIGA Lua native ABI 0.1 register and stack contract\n");
+    printf("PASS  MIGA Lua native ABI 0.2 register, stack, and fault contract\n");
     return 0;
 }

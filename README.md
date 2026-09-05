@@ -35,7 +35,7 @@ balance, callee-saved registers, memory guards, and instruction limit, and
 retains a short disassembly trace on failure. It is the foundation for the Lua
 compiler path exercised below.
 
-Build the initial typed MIGA Lua compiler, verify native ABI 0.1,
+Build the initial typed MIGA Lua compiler, verify native ABI 0.2,
 and validate generated 68020 code against its typed-IR oracle with:
 
 ```sh
@@ -54,17 +54,18 @@ up to three immutable `i32`/`bool` parameters and 16 explicitly typed locals,
 initialized declarations, reassignment, one final return, arithmetic, all six
 comparisons (`!=` aliases `~=`), nested `if`/`then`/`else`/`end`, and nested
 `while`/`do`/`end` loops with loop-carried values, `break`, and `continue`. The
-typed IR carries up to 32 basic blocks. Multiple loop-control sites are folded
-through bounded binary funnels into a canonical latch and exit. Assembly
-generation defaults to the value-IR `-O1` backend;
+signed `/` expression and statement-only `/=` use truncation toward zero and
+controlled division-by-zero faults. The typed IR carries up to 32 basic blocks.
+Multiple loop-control sites are folded through bounded binary funnels into a
+canonical latch and exit. Assembly generation defaults to the value-IR `-O1` backend;
 `-O0` keeps the stack baseline for comparison. `-O1` removes dead assignments,
 creates typed branch and loop join values, computes cyclic CFG-aware liveness,
 coalesces compatible `phi` slots, schedules parallel edge copies, and uses
 bounded ABI frames when transfers or register pressure require them. See the [compiler
 bootstrap](documentation/MIGA-Lua-compiler-bootstrap.md)
 for its exact grammar, the [native ABI
-0.1](documentation/MIGA-Lua-native-ABI-v0.md) for the frozen register/stack
-core, and the [optimization
+0.2](documentation/MIGA-Lua-native-ABI-v0.md) for the frozen register, stack,
+and fault core, and the [optimization
 strategy](documentation/MIGA-Lua-optimization-strategy.md) for the bounded
 on-Amiga compiler plan.
 

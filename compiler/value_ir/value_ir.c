@@ -148,6 +148,12 @@ static unsigned int make_binary(struct miga80_value_function *function,
         left_is_constant = 0;
         right_is_constant = 1;
     }
+    if (opcode == MIGA80_VALUE_DIV && right_is_constant &&
+        right_constant == 0U) {
+        (void)fail(diagnostic, line, column,
+                   "division by zero in constant expression");
+        return MIGA80_INVALID_VALUE;
+    }
     if (left_is_constant && right_is_constant) {
         uint32_t folded;
 
@@ -157,6 +163,12 @@ static unsigned int make_binary(struct miga80_value_function *function,
             folded = left_constant - right_constant;
         } else if (opcode == MIGA80_VALUE_MUL) {
             folded = left_constant * right_constant;
+        } else if (opcode == MIGA80_VALUE_DIV) {
+            if (!miga80_divide_i32(left_constant, right_constant, &folded)) {
+                (void)fail(diagnostic, line, column,
+                           "division by zero in constant expression");
+                return MIGA80_INVALID_VALUE;
+            }
         } else {
             folded = fold_comparison(opcode, left_constant, right_constant);
         }
@@ -185,6 +197,14 @@ static unsigned int make_binary(struct miga80_value_function *function,
         }
         if (right_constant == 1U) {
             return left;
+        }
+    }
+    if (opcode == MIGA80_VALUE_DIV && right_is_constant) {
+        if (right_constant == 1U) {
+            return left;
+        }
+        if (right_constant == UINT32_MAX) {
+            return make_neg(function, left, line, column, diagnostic);
         }
     }
     if (comparison_opcode(opcode) && left == right) {
@@ -243,14 +263,15 @@ static int opcode_has_left(enum miga80_value_opcode opcode)
 {
     return opcode == MIGA80_VALUE_NEG || opcode == MIGA80_VALUE_ADD ||
            opcode == MIGA80_VALUE_SUB || opcode == MIGA80_VALUE_MUL ||
+           opcode == MIGA80_VALUE_DIV ||
            comparison_opcode(opcode) || opcode == MIGA80_VALUE_PHI;
 }
 
 static int opcode_has_right(enum miga80_value_opcode opcode)
 {
     return opcode == MIGA80_VALUE_ADD || opcode == MIGA80_VALUE_SUB ||
-           opcode == MIGA80_VALUE_MUL || comparison_opcode(opcode) ||
-           opcode == MIGA80_VALUE_PHI;
+           opcode == MIGA80_VALUE_MUL || opcode == MIGA80_VALUE_DIV ||
+           comparison_opcode(opcode) || opcode == MIGA80_VALUE_PHI;
 }
 
 static int mark_root(struct miga80_value_function *function,
@@ -275,6 +296,7 @@ static int mark_live_values(struct miga80_value_function *function,
     unsigned int worklist[MIGA80_MAX_VALUE_INSTRUCTIONS];
     unsigned int worklist_size = 0U;
     unsigned int block_index;
+    unsigned int value_index;
 
     if (!mark_root(function, function->result, worklist, &worklist_size,
                    diagnostic)) {
@@ -285,6 +307,18 @@ static int mark_live_values(struct miga80_value_function *function,
         if (function->blocks[block_index].terminator == MIGA80_VALUE_BRANCH &&
             !mark_root(function, function->blocks[block_index].condition,
                        worklist, &worklist_size, diagnostic)) {
+            return 0;
+        }
+    }
+    for (value_index = 0U; value_index < function->value_count;
+         ++value_index) {
+        const struct miga80_value_instruction *value =
+            &function->values[value_index];
+
+        if (value->opcode == MIGA80_VALUE_DIV &&
+            !is_constant(function, value->right, NULL) &&
+            !mark_root(function, value_index, worklist, &worklist_size,
+                       diagnostic)) {
             return 0;
         }
     }
@@ -324,6 +358,8 @@ static enum miga80_value_opcode value_opcode(enum miga80_ir_opcode opcode)
         return MIGA80_VALUE_SUB;
     case MIGA80_IR_MUL_I32:
         return MIGA80_VALUE_MUL;
+    case MIGA80_IR_DIV_I32:
+        return MIGA80_VALUE_DIV;
     case MIGA80_IR_EQ_I32:
     case MIGA80_IR_EQ_BOOL:
         return MIGA80_VALUE_EQ;
@@ -765,6 +801,7 @@ static int lower_block_values(const struct miga80_ir_function *source,
         case MIGA80_IR_ADD_I32:
         case MIGA80_IR_SUB_I32:
         case MIGA80_IR_MUL_I32:
+        case MIGA80_IR_DIV_I32:
         case MIGA80_IR_EQ_I32:
         case MIGA80_IR_NE_I32:
         case MIGA80_IR_EQ_BOOL:

@@ -1,0 +1,18 @@
+PASS  generated-o0/zero D0=00000000 instructions=28 code_bytes=108 stack_bytes=28
+PASS  generated-o0/positive D0=00000003 instructions=28 code_bytes=108 stack_bytes=28
+PASS  generated-o0/negative_a D0=fffffffd instructions=28 code_bytes=108 stack_bytes=28
+PASS  generated-o0/negative_b D0=fffffffd instructions=28 code_bytes=108 stack_bytes=28
+PASS  generated-o0/both_negative D0=fffffffd instructions=28 code_bytes=108 stack_bytes=28
+PASS  generated-o0/min_i32 D0=80000000 instructions=28 code_bytes=108 stack_bytes=28
+PASS  generated-o0/div_zero_expression fault=1 source=3:27 instructions=16 code_bytes=108 stack_bytes=28
+PASS  generated-o0/div_zero_update fault=1 source=4:12 instructions=26 code_bytes=108 stack_bytes=28
+PASS  generated-o1/zero D0=00000000 instructions=7 code_bytes=44 stack_bytes=0
+PASS  generated-o1/positive D0=00000003 instructions=7 code_bytes=44 stack_bytes=0
+PASS  generated-o1/negative_a D0=fffffffd instructions=7 code_bytes=44 stack_bytes=0
+PASS  generated-o1/negative_b D0=fffffffd instructions=7 code_bytes=44 stack_bytes=0
+PASS  generated-o1/both_negative D0=fffffffd instructions=7 code_bytes=44 stack_bytes=0
+PASS  generated-o1/min_i32 D0=80000000 instructions=7 code_bytes=44 stack_bytes=0
+PASS  generated-o1/div_zero_expression fault=1 source=3:27 instructions=8 code_bytes=44 stack_bytes=0
+PASS  generated-o1/div_zero_update fault=1 source=4:12 instructions=11 code_bytes=44 stack_bytes=0
+PASS  compiler signed division matches typed-IR oracle (12 values; 4 controlled faults)
+PASS  compiler O1 division code size reduced from 108 to 44 bytes

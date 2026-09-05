@@ -17,6 +17,7 @@
 #define STACK_GUARD_SIZE 16U
 #define TEST_STACK_TOP (MIGA68K_STACK_END - STACK_GUARD_SIZE)
 #define RETURN_SENTINEL (MIGA68K_CODE_END - 2U)
+#define FAULT_SENTINEL (MIGA68K_CODE_END - 4U)
 #define TEST_RUNTIME_CONTEXT MIGA68K_DATA_START
 
 struct trace_buffer {
@@ -35,6 +36,7 @@ struct test_case {
 
 enum stop_reason {
     STOP_RETURNED,
+    STOP_RUNTIME_FAULT,
     STOP_MEMORY_FAULT,
     STOP_BAD_PC,
     STOP_INSTRUCTION_LIMIT
@@ -62,7 +64,7 @@ static const uint8_t invalid_read_code[] = {0x20, 0x10, 0x4e, 0x75};
 /* BRA.S * -- used to prove that non-returning code is budget-stopped. */
 static const uint8_t infinite_loop_code[] = {0x60, 0xfe};
 
-/* MOVEQ #0,D3; RTS -- proves that ABI 0.1 saved-register damage is caught. */
+/* MOVEQ #0,D3; RTS -- proves that ABI 0.2 saved-register damage is caught. */
 static const uint8_t saved_register_clobber_code[] = {0x76, 0x00, 0x4e, 0x75};
 
 static struct trace_buffer *active_trace;
@@ -230,7 +232,10 @@ static int prepare_program(const char *name, const uint8_t *code,
         !miga68k_memory_host_write_u32(MIGA68K_VECTOR_START + 4U,
                                       MIGA68K_CODE_START) ||
         !miga68k_memory_host_write_u32(TEST_STACK_TOP - 4U,
-                                      RETURN_SENTINEL)) {
+                                      RETURN_SENTINEL) ||
+        !miga68k_memory_host_write_u32(
+            TEST_RUNTIME_CONTEXT + MIGA80_ABI_RUNTIME_FAULT_HANDLER_OFFSET,
+            FAULT_SENTINEL)) {
         fprintf(stderr, "TEST: %s\nUnable to initialize virtual memory.\n",
                 name);
         return 0;
@@ -266,6 +271,10 @@ static enum stop_reason execute_program(struct trace_buffer *trace,
         if (pc == RETURN_SENTINEL) {
             finish_stack_measurement(stack_bytes);
             return STOP_RETURNED;
+        }
+        if (pc == FAULT_SENTINEL) {
+            finish_stack_measurement(stack_bytes);
+            return STOP_RUNTIME_FAULT;
         }
         if (!miga68k_memory_is_executable(pc)) {
             finish_stack_measurement(stack_bytes);
@@ -311,6 +320,8 @@ static int run_case(const struct test_case *test,
     }
     if (stop == STOP_INSTRUCTION_LIMIT) {
         failure = "instruction limit reached";
+    } else if (stop == STOP_RUNTIME_FAULT) {
+        failure = "unexpected controlled runtime fault";
     } else if (stop == STOP_BAD_PC) {
         failure = "execution left the code segment";
     } else if (stop == STOP_MEMORY_FAULT) {
@@ -341,6 +352,60 @@ static int run_case(const struct test_case *test,
         print_registers();
         print_trace(&trace);
         passed = 0;
+    }
+    active_trace = NULL;
+    return passed;
+}
+
+static int run_fault_case(const struct test_case *test,
+                          uint32_t expected_fault,
+                          uint32_t expected_line,
+                          uint32_t expected_column,
+                          unsigned int *executed_instructions,
+                          unsigned int *maximum_stack_bytes)
+{
+    struct trace_buffer trace;
+    unsigned int instruction_count;
+    unsigned int stack_bytes = 0U;
+    enum stop_reason stop;
+    int passed;
+
+    (void)memset(&trace, 0, sizeof(trace));
+    if (!prepare_program(test->name, active_program_code,
+                         active_program_code_size, test->a, test->b,
+                         test->c)) {
+        active_trace = NULL;
+        return 0;
+    }
+    stop = execute_program(&trace, &instruction_count, &stack_bytes);
+    if (executed_instructions != NULL) {
+        *executed_instructions = instruction_count;
+    }
+    if (maximum_stack_bytes != NULL) {
+        *maximum_stack_bytes = stack_bytes;
+    }
+    passed = stop == STOP_RUNTIME_FAULT &&
+             m68k_get_reg(NULL, M68K_REG_D0) == expected_fault &&
+             m68k_get_reg(NULL, M68K_REG_D1) == expected_line &&
+             m68k_get_reg(NULL, M68K_REG_D2) == expected_column &&
+             m68k_get_reg(NULL, M68K_REG_A5) == TEST_RUNTIME_CONTEXT &&
+             miga68k_memory_range_is(MIGA68K_STACK_START,
+                                     STACK_GUARD_SIZE, STACK_POISON) &&
+             miga68k_memory_range_is(TEST_STACK_TOP, STACK_GUARD_SIZE,
+                                     STACK_POISON);
+    if (!passed) {
+        fprintf(stderr,
+                "TEST: %s\nRESULT: expected controlled fault %u at %u:%u, "
+                "got stop=%u D0=%08x D1=%08x D2=%08x\n"
+                "INSTRUCTIONS: %u\nSTACK BYTES: %u\n",
+                test->name, (unsigned int)expected_fault,
+                (unsigned int)expected_line, (unsigned int)expected_column,
+                (unsigned int)stop, m68k_get_reg(NULL, M68K_REG_D0),
+                m68k_get_reg(NULL, M68K_REG_D1),
+                m68k_get_reg(NULL, M68K_REG_D2), instruction_count,
+                stack_bytes);
+        print_registers();
+        print_trace(&trace);
     }
     active_trace = NULL;
     return passed;
@@ -420,7 +485,7 @@ static int run_saved_register_guard_test(void)
 
     fprintf(stderr,
             "TEST: guard/saved_register\n"
-            "RESULT: ABI 0.1 saved-register damage was not detected\n"
+            "RESULT: ABI 0.2 saved-register damage was not detected\n"
             "INSTRUCTIONS: %u\n",
             instruction_count);
     print_registers();
@@ -469,11 +534,49 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    if (argc > 2 || (argc == 2 && strcmp(argv[1], "--case") == 0)) {
+    if (argc == 10 && strcmp(argv[1], "--fault-case") == 0) {
+        unsigned int instruction_count;
+        unsigned int stack_bytes;
+        uint32_t expected_fault;
+        uint32_t expected_line;
+        uint32_t expected_column;
+
+        command_line_case.name = argv[3];
+        if (!load_program_image(argv[2]) ||
+            !parse_u32(argv[4], &command_line_case.a) ||
+            !parse_u32(argv[5], &command_line_case.b) ||
+            !parse_u32(argv[6], &command_line_case.c) ||
+            !parse_u32(argv[7], &expected_fault) ||
+            !parse_u32(argv[8], &expected_line) ||
+            !parse_u32(argv[9], &expected_column)) {
+            fprintf(stderr, "Invalid --fault-case arguments.\n");
+            return 2;
+        }
+        m68k_init();
+        m68k_set_instr_hook_callback(instruction_hook);
+        if (!run_fault_case(&command_line_case, expected_fault,
+                            expected_line, expected_column,
+                            &instruction_count, &stack_bytes)) {
+            return 1;
+        }
+        printf("PASS  %s fault=%u source=%u:%u instructions=%u "
+               "code_bytes=%lu stack_bytes=%u\n",
+               command_line_case.name, (unsigned int)expected_fault,
+               (unsigned int)expected_line, (unsigned int)expected_column,
+               instruction_count, (unsigned long)active_program_code_size,
+               stack_bytes);
+        return 0;
+    }
+
+    if (argc > 2 ||
+        (argc == 2 && (strcmp(argv[1], "--case") == 0 ||
+                       strcmp(argv[1], "--fault-case") == 0))) {
         fprintf(stderr,
                 "Usage: %s [mul_add.bin]\n"
-                "       %s --case image.bin name D0 D1 D2 expected\n",
-                argv[0], argv[0]);
+                "       %s --case image.bin name D0 D1 D2 expected\n"
+                "       %s --fault-case image.bin name D0 D1 D2 "
+                "fault line column\n",
+                argv[0], argv[0], argv[0]);
         return 2;
     }
     if (argc == 2 && !load_program_image(argv[1])) {

@@ -83,6 +83,9 @@ static int lower_node(const struct miga80_ast_function *ast, int node_index,
     case MIGA80_AST_MUL_I32:
         opcode = MIGA80_IR_MUL_I32;
         break;
+    case MIGA80_AST_DIV_I32:
+        opcode = MIGA80_IR_DIV_I32;
+        break;
     case MIGA80_AST_EQ:
         if (node->left < 0 || (unsigned int)node->left >= ast->node_count) {
             return fail(diagnostic, node->line, node->column,
@@ -709,6 +712,7 @@ static int validate_block_stack(const struct miga80_ir_function *ir,
         } else if (instruction->opcode == MIGA80_IR_ADD_I32 ||
                    instruction->opcode == MIGA80_IR_SUB_I32 ||
                    instruction->opcode == MIGA80_IR_MUL_I32 ||
+                   instruction->opcode == MIGA80_IR_DIV_I32 ||
                    instruction->opcode == MIGA80_IR_EQ_I32 ||
                    instruction->opcode == MIGA80_IR_NE_I32 ||
                    instruction->opcode == MIGA80_IR_EQ_BOOL ||
@@ -939,6 +943,7 @@ int miga80_evaluate_ir(const struct miga80_ir_function *ir,
             case MIGA80_IR_ADD_I32:
             case MIGA80_IR_SUB_I32:
             case MIGA80_IR_MUL_I32:
+            case MIGA80_IR_DIV_I32:
             case MIGA80_IR_EQ_I32:
             case MIGA80_IR_NE_I32:
             case MIGA80_IR_EQ_BOOL:
@@ -955,6 +960,13 @@ int miga80_evaluate_ir(const struct miga80_ir_function *ir,
                     stack[stack_size - 1U] = left - right;
                 } else if (instruction->opcode == MIGA80_IR_MUL_I32) {
                     stack[stack_size - 1U] = left * right;
+                } else if (instruction->opcode == MIGA80_IR_DIV_I32) {
+                    if (!miga80_divide_i32(left, right,
+                                           &stack[stack_size - 1U])) {
+                        return fail(diagnostic, instruction->line,
+                                    instruction->column,
+                                    "division by zero");
+                    }
                 } else if (instruction->opcode == MIGA80_IR_EQ_I32 ||
                            instruction->opcode == MIGA80_IR_EQ_BOOL) {
                     stack[stack_size - 1U] = left == right ? 1U : 0U;

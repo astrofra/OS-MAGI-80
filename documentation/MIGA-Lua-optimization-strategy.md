@@ -1,6 +1,8 @@
 # MIGA Lua Optimization Strategy
 
-**Status:** normalized `break`/`continue` loops, cyclic CFG liveness, branch/loop `phi`, parallel edge copies, `-O1`, spilling, and frame layout implemented
+**Status:** signed division with controlled faults, normalized `break`/`continue`
+loops, cyclic CFG liveness, branch/loop `phi`, parallel edge copies, `-O1`,
+spilling, and frame layout implemented
 
 MIGA Lua is a statically typed, ahead-of-time compiled dialect designed for
 native 68EC020/68020 code. Familiar Lua syntax is a usability goal. Dynamic Lua
@@ -91,11 +93,19 @@ branches may reuse locations. Used `D3-D7` registers are preserved once with
 two or three is strength-reduced when the available registers make that
 profitable.
 
+Signed `i32` division truncates toward zero and defines `INT32_MIN / -1` as
+`INT32_MIN`. The optimizer removes `/ 1`, turns `/ -1` into wrapping negation,
+and folds constant divisions. A division with a dynamic divisor remains a
+liveness root even if its result is overwritten because its zero-divisor fault
+is observable. A proven nonzero constant divisor needs no guard and a dead such
+division may be removed. Replacing other constant divisors, including powers of
+two, remains future measured strength-reduction work.
+
 The allocator first tries all eight data registers, so ordinary leaf functions
 do not lose `D7` merely to reserve a scratch register. If that plan needs a
 spill, a second bounded pass allocates values in `D0-D6`, reserves `D7` as the
 spill scratch, and reuses four-byte spill slots after their last use. The
-backend emits an ABI 0.1 `A6` frame with `LINK`/`UNLK`, addresses slots at
+backend emits an ABI 0.2 `A6` frame with `LINK`/`UNLK`, addresses slots at
 negative `A6` offsets, consumes spilled operands directly as 68020 memory
 operands where possible, and preserves `D7` with the other used saved
 registers. Frame size is checked before any assembly is emitted.
@@ -122,10 +132,9 @@ interprocedural optimization, speculative dynamic typing, and exhaustive
 instruction scheduling remain excluded until measurements justify their
 compiler cost.
 
-Statement-only `++`, `--`, `+=`, `-=`, `*=`, and `/=` are recorded language
-work, not expressions; they will therefore never participate directly in CFG
-conditions. The first five can lower to ordinary typed assignments. `/=` also
-depends on the future signed-division and division-by-zero contract.
+Statement-only `/=` is implemented as a typed read/divide/write and can never
+participate directly in a CFG condition. Statement-only `++`, `--`, `+=`,
+`-=`, and `*=` remain recorded language work and will follow the same rule.
 
 The first 68020-specific choices include keeping scalars in data registers,
 keeping future addresses in address registers, folding constant displacements
@@ -161,10 +170,12 @@ memory-operation widths. Stable curated kernels may receive reviewed limits.
 FS-UAE remains an integration check, while timing decisions require repeated
 measurements on a stock physical A1200 under a declared DMA and memory profile.
 
-The first optimization milestone is met. Across seven reviewed source corpora
-and six edge inputs each, both optimization levels agree with the typed IR
-under Musashi. The current regression measurements are shown as code bytes /
-executed instructions / maximum callee stack bytes:
+The first optimization milestone is met. Across seven ordinary source corpora
+with six edge inputs each, a signed-division corpus with twelve successful
+executions and four controlled faults, and a six-input spill fixture, both
+optimization levels agree with the typed IR under Musashi. The current
+regression measurements are shown as code bytes / executed instructions /
+maximum callee stack bytes:
 
 | Corpus | `-O0` | `-O1` |
 | --- | ---: | ---: |
@@ -175,18 +186,19 @@ executed instructions / maximum callee stack bytes:
 | six comparisons and nested `if`/`else` | 548 / 120-122 / 32 | 356 / 60-62 / 24 |
 | `while`, loop-carried values, nested `if`, copy cycle | 308 / 313 / 48 | 188 / 164 / 28 |
 | multiple `break`/`continue` sites and binary funnels | 356 / 69-684 / 32 | 288 / 39-352 / 32 |
+| signed `/` and `/=`, including controlled faults | 108 / 16-28 / 28 | 44 / 7-11 / 0 |
 
 The register-pressure corpus forces simultaneous `D3/D4` allocation and
 verifies their ABI preservation. A separate deliberately pressure-heavy value
 IR fixture forces three reusable spill slots; its 96-byte image executes 33
 instructions with 36 callee stack bytes and agrees with the source-level oracle
-for six edge inputs. This brings the current Musashi compiler total to 90
+for six edge inputs. This brings the current Musashi compiler total to 106
 executions.
 
-The `-Os` 68020/libnix compiler currently has a 49,416-byte linked
-text/data/BSS footprint (49,016 text, 280 data, 120 BSS). Its host and Amiga
+The `-Os` 68020/libnix compiler currently has a 52,084-byte linked
+text/data/BSS footprint (51,684 text, 280 data, 120 BSS). Its host and Amiga
 builds emit byte-identical ordinary, local-heavy, conditional, loop, and
-loop-control `-O1` assembly, plus the synthetic spilling fixture. Unconditional
+loop-control, division, and synthetic spilling `-O1` assembly. Unconditional
 jumps to the physically next block are elided at both optimization levels. This
 lets the dedicated latch normalize the IR without adding an extra runtime
 branch per iteration, and also removes other redundant fall-through jumps. The
@@ -199,3 +211,9 @@ counts are regression signals, not A1200 cycle claims. In the new loop-control
 corpus, O1 saves 19% of code and 44-49% of executed instructions; its 32-byte
 stack high-water currently matches O0 because the additional control joins
 need edge-transfer slots.
+
+On the division corpus, O1 reduces code from 108 to 44 bytes, the successful
+path from 28 to 7 instructions, and generated stack use from 28 bytes to zero.
+The fault paths execute 8 or 11 instructions at O1 and preserve the exact
+source line and column. These figures measure this corpus, not general division
+latency or physical A1200 cycles.

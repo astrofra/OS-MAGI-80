@@ -66,6 +66,7 @@ static int opcode_has_left(enum miga80_value_opcode opcode)
 {
     return opcode == MIGA80_VALUE_NEG || opcode == MIGA80_VALUE_ADD ||
            opcode == MIGA80_VALUE_SUB || opcode == MIGA80_VALUE_MUL ||
+           opcode == MIGA80_VALUE_DIV ||
            (opcode >= MIGA80_VALUE_EQ && opcode <= MIGA80_VALUE_GE_I32) ||
            opcode == MIGA80_VALUE_PHI;
 }
@@ -73,7 +74,7 @@ static int opcode_has_left(enum miga80_value_opcode opcode)
 static int opcode_has_right(enum miga80_value_opcode opcode)
 {
     return opcode == MIGA80_VALUE_ADD || opcode == MIGA80_VALUE_SUB ||
-           opcode == MIGA80_VALUE_MUL ||
+           opcode == MIGA80_VALUE_MUL || opcode == MIGA80_VALUE_DIV ||
            (opcode >= MIGA80_VALUE_EQ && opcode <= MIGA80_VALUE_GE_I32) ||
            opcode == MIGA80_VALUE_PHI;
 }
@@ -1024,6 +1025,39 @@ static int emit_multiply(FILE *output,
                                 destination);
 }
 
+static int emit_division(FILE *output,
+                         const struct miga80_value_function *function,
+                         const struct allocation_plan *plan,
+                         unsigned int value_index, unsigned int source,
+                         int destination)
+{
+    const struct miga80_value_instruction *operand =
+        &function->values[source];
+
+    if (operand->opcode == MIGA80_VALUE_CONSTANT) {
+        return output_line(output, "        divs.l  #0x%08x,%s\n",
+                           (unsigned int)operand->immediate,
+                           data_register_name(destination));
+    }
+    if (plan->registers[source] != MIGA80_NO_REGISTER) {
+        if (!output_line(output, "        tst.l   %s\n",
+                         data_register_name(plan->registers[source]))) {
+            return 0;
+        }
+    } else if (plan->spill_slots[source] != MIGA80_NO_SPILL_SLOT) {
+        if (!output_line(output, "        tst.l   -%u(%%a6)\n",
+                         spill_offset(plan, source))) {
+            return 0;
+        }
+    } else {
+        return 0;
+    }
+    return output_line(output, "        beq     .L_%s_divzero_%u\n",
+                       function->name, value_index) &&
+           emit_register_source(output, "divs.l", plan, source,
+                                destination);
+}
+
 static int store_spilled_result(FILE *output,
                                 const struct allocation_plan *plan,
                                 unsigned int index, int source)
@@ -1127,6 +1161,9 @@ static int emit_value(FILE *output,
     } else if (value->opcode == MIGA80_VALUE_SUB) {
         emitted = emit_register_source(output, "sub.l", plan, source,
                                        destination);
+    } else if (value->opcode == MIGA80_VALUE_DIV) {
+        emitted = emit_division(output, function, plan, index, source,
+                                destination);
     } else {
         emitted =
             emit_multiply(output, function, plan, value, destination, source);
@@ -1465,6 +1502,33 @@ static int emit_allocated_function(
                    !emit_epilogue(output, saved_registers, frame_size)) {
             return fail(diagnostic, 0U, 0U,
                         "unable to write O1 return");
+        }
+    }
+    {
+        int has_division_fault = 0;
+        unsigned int index;
+
+        for (index = 0U; index < function->value_count; ++index) {
+            const struct miga80_value_instruction *value =
+                &function->values[index];
+
+            if (!value->live || value->opcode != MIGA80_VALUE_DIV ||
+                function->values[value->right].opcode ==
+                    MIGA80_VALUE_CONSTANT) {
+                continue;
+            }
+            if (!miga80_emit_gnu_m68k_fault_site(
+                    output, function->name, index, value->line,
+                    value->column)) {
+                return fail(diagnostic, value->line, value->column,
+                            "unable to write O1 division fault site");
+            }
+            has_division_fault = 1;
+        }
+        if (has_division_fault &&
+            !miga80_emit_gnu_m68k_fault_tail(output, function->name)) {
+            return fail(diagnostic, 0U, 0U,
+                        "unable to write O1 division fault tail");
         }
     }
     if (fflush(output) != 0 || ferror(output)) {
