@@ -1,6 +1,6 @@
 # MIGA Lua Compiler Bootstrap
 
-**Status:** typed locals, `bool`, `if`/`else`, `while`, loop `phi`, `-O1`, and spills implemented
+**Status:** typed locals, `bool`, `if`/`else`, normalized `while`, loop `phi`, `-O1`, and spills implemented
 
 ## Scope
 
@@ -65,14 +65,17 @@ The implementation has four bounded, host-buildable layers:
    tables and reports the first error with a one-based line and column.
 2. Lowering produces a typed stack IR with explicit local loads/stores,
    comparisons, conditional/unconditional terminators, and up to 32 basic
-   blocks with two successor slots each. A `while` has an explicit preheader,
-   header, body, exit, and backward edge. The host interpreter follows this CFG
-   as the semantic oracle and uses unsigned C operations to specify 32-bit
-   wrapping and implementation-independent signed comparisons.
+   blocks with two successor slots each. A `while` has the canonical shape
+   `preheader -> header -> body -> latch -> header`, plus one dedicated exit
+   reached by the false header edge. The latch is a separate block containing
+   only its jump to the header. The host interpreter follows this CFG as the
+   semantic oracle and uses unsigned C operations to specify 32-bit wrapping
+   and implementation-independent signed comparisons.
 3. `-O1` renames locals to values throughout the CFG and creates typed `phi`
    values at two-predecessor joins and loop headers. It identifies natural
-   loops with bounded dominator analysis, creates provisional loop `phi`
-   operands before the latch has been lowered, then completes their backward
+   loops with bounded dominator analysis, and validates their single
+   preheader, dedicated latch, and unique exit. It creates provisional loop
+   `phi` operands before the latch has been lowered, then completes their backward
    inputs and removes trivial self-joins. Constant folding, simplification,
    dead-value removal, and `live-in`/`live-out` analysis all accept cyclic value
    flow. `phi` operands are edge-specific uses. Non-overlapping `phi` live
@@ -85,7 +88,9 @@ The implementation has four bounded, host-buildable layers:
    default `-O1` keeps current local and expression values in registers and
    preserves any allocated `D3-D7` registers with `MOVEM`. Spilling functions
    use ABI 0.1 `LINK`/`UNLK` frames, negative `A6` offsets, and `D7` as a saved
-   scratch register.
+   scratch register. Both backends omit an unconditional jump when its target
+   is the next emitted block, so the dedicated latch does not add a redundant
+   branch to the hot loop path.
 
 For the current local toolchain, GNU `m68k-amigaos-as` retains a relocatable
 Amiga object and `m68k-amigaos-objcopy` extracts the flat image consumed by

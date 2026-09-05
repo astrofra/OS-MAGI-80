@@ -54,7 +54,8 @@ up to three immutable `i32`/`bool` parameters and 16 explicitly typed locals,
 initialized declarations, reassignment, one final return, arithmetic, all six
 comparisons (`!=` aliases `~=`), nested `if`/`then`/`else`/`end`, and nested
 `while`/`do`/`end` loops with loop-carried values. The typed IR carries up to 32
-basic blocks. Assembly generation defaults to the value-IR `-O1` backend;
+basic blocks. Each loop is lowered to a canonical preheader, header, body,
+single latch, and single exit. Assembly generation defaults to the value-IR `-O1` backend;
 `-O0` keeps the stack baseline for comparison. `-O1` removes dead assignments,
 creates typed branch and loop join values, computes cyclic CFG-aware liveness,
 coalesces compatible `phi` slots, schedules parallel edge copies, and uses

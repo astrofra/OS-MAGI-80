@@ -216,9 +216,14 @@ int miga80_emit_gnu_m68k(FILE *output,
                                   (unsigned int)instruction->operand);
             break;
         case MIGA80_IR_JUMP:
-            success = output_line(output, "        bra     .L_%s_b%u\n",
-                                  function->name,
-                                  (unsigned int)instruction->operand);
+            if (function->blocks[instruction->operand].first_instruction ==
+                index + 1U) {
+                success = 1;
+            } else {
+                success = output_line(output, "        bra     .L_%s_b%u\n",
+                                      function->name,
+                                      (unsigned int)instruction->operand);
+            }
             break;
         case MIGA80_IR_RETURN:
             success = output_line(output,

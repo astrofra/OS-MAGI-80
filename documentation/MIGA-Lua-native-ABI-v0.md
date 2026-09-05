@@ -88,7 +88,9 @@ negative-offset reloads, and preservation of `D3-D7/A6` across six edge
 inputs. The conditional corpus exercises canonical Boolean arguments and
 results, all six integer comparisons, conditional branches, nested CFG joins,
 and CFG-aware coalesced `phi` edge slots. The loop corpus exercises backward
-branches, loop-carried `phi` values, and parallel edge transfers. A genuine
+branches through a dedicated single latch, one exit target, loop-carried `phi`
+values, and parallel edge transfers. Fall-through jump elision prevents that
+normalized shape from adding a redundant branch per iteration. A genuine
 two-value exchange on the latch proves that the backend preserves one old
 value in a four-byte temporary before rewriting the cyclic destinations; the
 optimized case uses a 20-byte `A6` frame and reaches 28 bytes of callee stack

@@ -1328,11 +1328,12 @@ static int emit_jump_edge(FILE *output,
                           const struct miga80_value_function *function,
                           const struct allocation_plan *plan,
                           unsigned int predecessor,
-                          unsigned int successor)
+                          unsigned int successor, int branch_required)
 {
     return emit_phi_edge(output, function, plan, predecessor, successor) &&
-           output_line(output, "        bra     .L_%s_b%u\n", function->name,
-                       successor);
+           (!branch_required ||
+            output_line(output, "        bra     .L_%s_b%u\n", function->name,
+                        successor));
 }
 
 static int emit_branch(FILE *output,
@@ -1350,7 +1351,8 @@ static int emit_branch(FILE *output,
             condition->immediate != 0U ? block->successors[0]
                                        : block->successors[1];
 
-        return emit_jump_edge(output, function, plan, block_index, successor);
+        return emit_jump_edge(output, function, plan, block_index, successor,
+                              1);
     }
     if (plan->registers[block->condition] != MIGA80_NO_REGISTER) {
         if (!output_line(output, "        tst.l   %s\n",
@@ -1371,11 +1373,11 @@ static int emit_branch(FILE *output,
     return output_line(output, "        beq     .L_%s_b%u_false\n",
                        function->name, block_index) &&
            emit_jump_edge(output, function, plan, block_index,
-                          block->successors[0]) &&
+                          block->successors[0], 1) &&
            output_line(output, ".L_%s_b%u_false:\n", function->name,
                        block_index) &&
            emit_jump_edge(output, function, plan, block_index,
-                          block->successors[1]);
+                          block->successors[1], 1);
 }
 
 static int emit_allocated_function(
@@ -1449,8 +1451,13 @@ static int emit_allocated_function(
                             "unable to write O1 conditional branch");
             }
         } else if (block->terminator == MIGA80_VALUE_JUMP) {
+            const int branch_required =
+                order_index + 1U == function->block_order_count ||
+                function->block_order[order_index + 1U] !=
+                    block->successors[0];
+
             if (!emit_jump_edge(output, function, plan, block_index,
-                                block->successors[0])) {
+                                block->successors[0], branch_required)) {
                 return fail(diagnostic, 0U, 0U,
                             "unable to write O1 jump edge");
             }

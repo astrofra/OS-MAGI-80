@@ -484,31 +484,60 @@ static int test_while_cfg_and_loop_phis(void)
     (void)memset(&ir, 0, sizeof(ir));
     (void)memset(&value_ir, 0, sizeof(value_ir));
     (void)memset(&diagnostic, 0, sizeof(diagnostic));
-    if (!compile_source(source, &ir, &diagnostic) || ir.block_count != 7U ||
+    if (!compile_source(source, &ir, &diagnostic) || ir.block_count != 8U ||
         ir.blocks[0].successor_count != 1U ||
         ir.blocks[0].successors[0] != 1U ||
         ir.blocks[1].successor_count != 2U ||
         ir.blocks[1].successors[0] != 2U ||
-        ir.blocks[1].successors[1] != 3U ||
-        ir.blocks[6].successor_count != 1U ||
-        ir.blocks[6].successors[0] != 1U ||
+        ir.blocks[1].successors[1] != 4U ||
+        ir.blocks[3].instruction_count != 1U ||
+        ir.instructions[ir.blocks[3].first_instruction].opcode !=
+            MIGA80_IR_JUMP ||
+        ir.blocks[3].successor_count != 1U ||
+        ir.blocks[3].successors[0] != 1U ||
+        ir.blocks[7].successor_count != 1U ||
+        ir.blocks[7].successors[0] != 3U ||
         !miga80_evaluate_ir(&ir, arguments, ARRAY_COUNT(arguments), &result,
                             &diagnostic) ||
         result != 35U ||
         !miga80_build_value_ir(&ir, &value_ir, &diagnostic) ||
-        value_ir.block_order_count != 7U ||
+        value_ir.blocks[3].predecessor_count != 1U ||
+        value_ir.blocks[3].predecessors[0] != 7U ||
+        value_ir.blocks[4].predecessor_count != 1U ||
+        value_ir.blocks[4].predecessors[0] != 1U ||
+        value_ir.block_order_count != 8U ||
         value_ir.block_order[0] != 0U || value_ir.block_order[1] != 1U ||
-        value_ir.block_order[2] != 2U || value_ir.block_order[3] != 4U ||
-        value_ir.block_order[4] != 5U || value_ir.block_order[5] != 6U ||
-        value_ir.block_order[6] != 3U) {
+        value_ir.block_order[2] != 2U || value_ir.block_order[3] != 5U ||
+        value_ir.block_order[4] != 6U || value_ir.block_order[5] != 7U ||
+        value_ir.block_order[6] != 3U || value_ir.block_order[7] != 4U) {
         fprintf(stderr,
-                "while CFG mismatch: blocks=%u order=%u,%u,%u,%u,%u,%u,%u "
+                "while CFG mismatch: blocks=%u "
+                "order=%u,%u,%u,%u,%u,%u,%u,%u "
                 "result=%08x diagnostic=%s\n",
                 ir.block_count, value_ir.block_order[0],
                 value_ir.block_order[1], value_ir.block_order[2],
                 value_ir.block_order[3], value_ir.block_order[4],
                 value_ir.block_order[5], value_ir.block_order[6],
+                value_ir.block_order[7],
                 (unsigned int)result, diagnostic.message);
+        return 0;
+    }
+    assembly = tmpfile();
+    if (assembly == NULL) {
+        return 0;
+    }
+    emitted = miga80_emit_gnu_m68k(assembly, &ir, &diagnostic);
+    rewind(assembly);
+    assembly_size =
+        fread(assembly_text, 1U, sizeof(assembly_text) - 1U, assembly);
+    assembly_text[assembly_size] = '\0';
+    if (ferror(assembly) ||
+        strstr(assembly_text, "bra     .L_loops_b1") == NULL ||
+        strstr(assembly_text, "bra     .L_loops_b3") != NULL) {
+        emitted = 0;
+    }
+    closed = fclose(assembly);
+    if (!emitted || closed != 0) {
         return 0;
     }
     for (index = 0U; index < value_ir.value_count; ++index) {
@@ -534,7 +563,8 @@ static int test_while_cfg_and_loop_phis(void)
     if (ferror(assembly) ||
         strstr(assembly_text, "link.w  %a6,#-20") == NULL ||
         strstr(assembly_text, "move.l  %d7,-20(%a6)") == NULL ||
-        strstr(assembly_text, "bra     .L_loops_b1") == NULL) {
+        strstr(assembly_text, "bra     .L_loops_b1") == NULL ||
+        strstr(assembly_text, "bra     .L_loops_b3") != NULL) {
         emitted = 0;
     }
     closed = fclose(assembly);
@@ -562,7 +592,11 @@ static int test_nested_while_and_trivial_phi(void)
     int emitted;
     int closed;
 
-    if (!compile_source(source, &ir, &diagnostic) || ir.block_count != 7U ||
+    if (!compile_source(source, &ir, &diagnostic) || ir.block_count != 9U ||
+        ir.blocks[3].instruction_count != 1U ||
+        ir.blocks[3].successors[0] != 1U ||
+        ir.blocks[7].instruction_count != 1U ||
+        ir.blocks[7].successors[0] != 5U ||
         !miga80_evaluate_ir(&ir, arguments, ARRAY_COUNT(arguments), &result,
                             &diagnostic) ||
         result != 54U ||

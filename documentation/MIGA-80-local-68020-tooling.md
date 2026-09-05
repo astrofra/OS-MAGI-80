@@ -568,8 +568,9 @@ circular disassembly trace for failures. Run it with `gmake miga68k-test`.
 `i32`/`bool` function with typed local declarations, assignments, comparisons,
 nested `if`/`else`, and nested `while`, lowers it to typed stack IR and value IR, renders GNU
 m68k assembly at `-O0` or `-O1`, and provides a host CFG evaluator. The IR has
-up to 32 blocks with bounded successors and backedges; O1 inserts typed branch
-and loop join values. The optimizer solves bounded per-block liveness, treats
+up to 32 blocks with bounded successors. Each loop is normalized around one
+preheader, header, dedicated latch, and dedicated exit; O1 verifies that form
+and inserts typed branch and loop join values. The optimizer solves bounded per-block liveness, treats
 `phi` inputs as edge uses, reuses registers across exclusive branches,
 coalesces compatible `phi` slots, and schedules parallel edge copies with a
 bounded cycle-breaking temporary. The ordinary test path assembles both levels
@@ -612,8 +613,9 @@ including a deliberate clobber negative control. See
 ### Phase 3 — expand semantics
 
 - comparisons, `bool`, and nested `if`/`else`; **implemented**
-- `while`, nested loops, and loop-carried value joins; **implemented without
-  `break`, `continue`, declarations, or returns inside loop bodies**
+- `while`, nested loops, loop-carried value joins, and canonical single-latch /
+  single-exit loop CFGs; **implemented without `break`, `continue`,
+  declarations, or returns inside loop bodies**
 - fixed-point arithmetic;
 - globals and arrays;
 - restricted tables/strings;
@@ -628,10 +630,12 @@ locks reviewed `-O0`/`-O1` figures for six source corpora, including nested
 conditional control flow and cyclic loop transfers, plus a forced spill
 fixture: 78 Musashi executions in total. These are optimizer
 regressions only, not cycle or wall-time claims. In the conditional corpus,
-CFG-aware allocation reduces the `-O1` result to 380 code bytes, 63 executed
+CFG-aware allocation reduces the `-O1` result to 356 code bytes, 60-62 executed
 instructions, and 24 maximum callee stack bytes; six live `phi` values share
-two slots. In the loop corpus, O1 reduces 316 code bytes, 315 instructions, and
-48 stack bytes to 196, 166, and 28 respectively.
+two slots. In the loop corpus, O1 reduces 308 code bytes, 313 instructions, and
+48 stack bytes to 188, 164, and 28 respectively. Both renderers omit jumps to
+the next emitted block, so the dedicated latch adds no redundant hot-path
+branch.
 
 - record code size, instruction counts, and stack use; **implemented for the bootstrap**
 - add core-cycle estimates;

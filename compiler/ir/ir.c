@@ -277,14 +277,17 @@ static int lower_statement_list(struct lower_context *context,
         } else if (statement->kind == MIGA80_AST_WHILE) {
             unsigned int header_block;
             unsigned int body_block;
+            unsigned int latch_block;
             unsigned int exit_block;
             unsigned int body_end;
 
             header_block = create_block(context);
             body_block = create_block(context);
+            latch_block = create_block(context);
             exit_block = create_block(context);
             if (header_block == MIGA80_INVALID_BLOCK ||
                 body_block == MIGA80_INVALID_BLOCK ||
+                latch_block == MIGA80_INVALID_BLOCK ||
                 exit_block == MIGA80_INVALID_BLOCK ||
                 !emit_instruction(context->ir, MIGA80_IR_JUMP,
                                   header_block, statement->line,
@@ -310,9 +313,18 @@ static int lower_statement_list(struct lower_context *context,
             if (!lower_statement_list(context, statement->then_statement,
                                       &body_end) ||
                 !emit_instruction(context->ir, MIGA80_IR_JUMP,
+                                  latch_block, statement->line,
+                                  statement->column, context->diagnostic) ||
+                !finish_block(context, body_end, latch_block,
+                              MIGA80_INVALID_BLOCK, 1U)) {
+                return 0;
+            }
+
+            begin_block(context, latch_block);
+            if (!emit_instruction(context->ir, MIGA80_IR_JUMP,
                                   header_block, statement->line,
                                   statement->column, context->diagnostic) ||
-                !finish_block(context, body_end, header_block,
+                !finish_block(context, latch_block, header_block,
                               MIGA80_INVALID_BLOCK, 1U)) {
                 return 0;
             }
